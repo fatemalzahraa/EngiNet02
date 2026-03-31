@@ -32,7 +32,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:8000/register'), 
+        Uri.parse('https://enginet02-1.onrender.com/register'), 
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'username': username,

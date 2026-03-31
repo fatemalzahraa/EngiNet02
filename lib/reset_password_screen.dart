@@ -16,7 +16,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final _confirmPasswordController = TextEditingController();
   bool isLoading = false;
 
-  final String baseUrl = "http://10.0.2.2:8000";
+  final String baseUrl = "https://enginet02-1.onrender.com";
 
   Future<void> resetPassword() async {
     final email = _emailController.text.trim();

@@ -16,7 +16,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   Map<String, dynamic>? book;
   bool isLoading = true;
   bool isBookmarked = false;
-  final String baseUrl = "http://10.0.2.2:8000";
+  final String baseUrl = "https://enginet02-1.onrender.com";
 
   @override
   void initState() {

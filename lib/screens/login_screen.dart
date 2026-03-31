@@ -20,7 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordController.text.trim();
 
     final response = await http.post(
-      Uri.parse('http://10.0.2.2:8000/token'),
+      Uri.parse('https://enginet02-1.onrender.com'),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {'username': email, 'password': password},
     );
@@ -100,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
               navigator.pop();
 
               final response = await http.post(
-                Uri.parse('http://10.0.2.2:8000/forgot-password?email=$email'),
+                Uri.parse('https://enginet02-1.onrender.com/forgot-password?email=$email'),
               );
 
               if (!mounted) return;

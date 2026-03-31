@@ -17,7 +17,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   List<dynamic> lessons = [];
   List<bool> completedLessons = [];
   bool isLoading = true;
-  final String baseUrl = "http://10.0.2.2:8000";
+  final String baseUrl = "https://enginet02-1.onrender.com";
 
   @override
   void initState() {

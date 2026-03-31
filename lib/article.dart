@@ -18,7 +18,7 @@ class _ArticleScreenState extends State<ArticleScreen> {
   bool showSearch = false;
   final TextEditingController _searchController = TextEditingController();
 
-  final String baseUrl = "http://10.0.2.2:8000";
+  final String baseUrl = "https://enginet02-1.onrender.com";
 
   @override
   void initState() {
