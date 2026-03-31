@@ -1,7 +1,7 @@
 import sqlite3
-from passlib.context import CryptContext
+import bcrypt
 
-pwd = CryptContext(schemes=["bcrypt"], deprecated="auto")
+bcrypt.hashpw("12341234".encode(), bcrypt.gensalt()).decode()
 conn = sqlite3.connect("enginet.db")
 cursor = conn.cursor()
 

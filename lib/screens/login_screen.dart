@@ -20,7 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final password = _passwordController.text.trim();
 
     final response = await http.post(
-      Uri.parse('https://enginet02.onrender.com'),
+      Uri.parse('https://enginet02.onrender.com/token'),
       headers: {'Content-Type': 'application/x-www-form-urlencoded'},
       body: {'username': email, 'password': password},
     );

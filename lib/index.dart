@@ -181,6 +181,14 @@ class _IndexPageState extends State<IndexPage> {
                 },
               ),
               ListTile(
+  leading: const Icon(Icons.question_answer),
+  title: const Text('Questions'),
+  onTap: () {
+    Navigator.pop(context);
+    Navigator.pushNamed(context, '/questions');
+  },
+),
+              ListTile(
                 leading: const Icon(Icons.book),
                 title: const Text('Kitaplar'),
                 selected: _currentIndex == 2,
@@ -207,6 +215,14 @@ class _IndexPageState extends State<IndexPage> {
                   Navigator.pop(context);
                 },
               ),
+              ListTile(
+  leading: const Icon(Icons.smart_toy),
+  title: const Text('AI Chat'),
+  onTap: () {
+    Navigator.pop(context);
+    Navigator.pushNamed(context, '/ai-chat');
+  },
+),
               ListTile(
                 leading: const Icon(Icons.logout_rounded),
                 title: const Text('Logout'),

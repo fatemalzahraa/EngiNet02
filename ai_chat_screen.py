@@ -4,7 +4,7 @@ from openai import OpenAI
 
 app = FastAPI()
 
-OPENAI_API_KEY = "sk-...MqEA"
+OPENAI_API_KEY = "...-y9Y"
 
 client = OpenAI(api_key=OPENAI_API_KEY)
 

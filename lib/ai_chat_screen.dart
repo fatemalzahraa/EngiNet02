@@ -16,8 +16,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
   final List<Map<String, String>> _messages = [];
   bool _isLoading = false;
 
-  // ⚠️ ضع هنا مفتاح OpenAI API الخاص بك
-  static const String _apiKey = "sk-...MqEA";
+  static const String _apiKey = "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";
 
   static const String _systemPrompt = """
 أنت مساعد ذكاء اصطناعي متخصص في مجال الهندسة والبرمجة لمنصة EngiNet.
@@ -43,46 +42,55 @@ class _AIChatScreenState extends State<AIChatScreen> {
     _scrollToBottom();
 
     try {
-      final apiMessages = [
-        {"role": "system", "content": _systemPrompt},
-        ..._messages
-            .where((m) => m["role"] != "error")
-            .map((m) => {"role": m["role"]!, "content": m["content"]!}),
-      ];
+      final apiMessages = _messages
+          .where((m) => m["role"] != "error")
+          .map((m) => {
+                "role": m["role"] == "assistant" ? "model" : "user",
+                "parts": [{"text": m["content"]!}]
+              })
+          .toList();
+
+      // أضف الـ system prompt كأول رسالة
+      apiMessages.insert(0, {
+        "role": "user",
+        "parts": [{"text": _systemPrompt}]
+      });
 
       final response = await http.post(
-        
-        Uri.parse("https://api.openai.com/v1/chat/completions"),
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer $_apiKey"
-        },
-        body: jsonEncode({
-          "model": "gpt-4o-mini",
-          "max_tokens": 1024,
-          "messages": apiMessages,
-        }),
-      );
-      final data = jsonDecode(response.body);
-      final reply = data["reply"];
+  Uri.parse("https://api.groq.com/openai/v1/chat/completions"),
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer $_apiKey"
+  },
+  body: jsonEncode({
+    "model": "llama-3.3-70b-versatile",
+    "max_tokens": 1024,
+    "messages": [
+      {"role": "system", "content": _systemPrompt},
+      ..._messages
+          .where((m) => m["role"] != "error")
+          .map((m) => {"role": m["role"]!, "content": m["content"]!}),
+    ],
+  }),
+);
 
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-       final reply = data["choices"][0]["message"]["content"].toString();
-        setState(() {
-          _messages.add({"role": "assistant", "content": reply});
-          _isLoading = false;
-        });
-      } else {
-        final error = jsonDecode(response.body);
-        setState(() {
-          _messages.add({
-            "role": "error",
-            "content": "❌ خطأ: ${error['error']?['message'] ?? 'حدث خطأ غير متوقع'}"
-          });
-          _isLoading = false;
-        });
-      }
+if (response.statusCode == 200) {
+  final data = jsonDecode(response.body);
+  final reply = data["choices"][0]["message"]["content"].toString();
+  setState(() {
+    _messages.add({"role": "assistant", "content": reply});
+    _isLoading = false;
+  });
+} else {
+  final error = jsonDecode(response.body);
+  setState(() {
+    _messages.add({
+      "role": "error",
+      "content": "❌ خطأ: ${error['error']?['message'] ?? 'حدث خطأ غير متوقع'}"
+    });
+    _isLoading = false;
+  });
+}
     } catch (e) {
       setState(() {
         _messages.add({
@@ -176,7 +184,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
                 ),
               ),
               const Text(
-                "Powered by ChatGPT",
+                "Powered by Gemini",
                 style: TextStyle(color: Colors.white54, fontSize: 12),
               ),
             ],
@@ -255,7 +263,8 @@ class _AIChatScreenState extends State<AIChatScreen> {
             Expanded(
               child: Text(
                 question,
-                style: const TextStyle(color: Colors.white70, fontSize: 13),
+                style:
+                    const TextStyle(color: Colors.white70, fontSize: 13),
               ),
             ),
           ],
@@ -285,7 +294,8 @@ class _AIChatScreenState extends State<AIChatScreen> {
                 ),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+              child:
+                  const Icon(Icons.smart_toy, color: Colors.white, size: 18),
             ),
             const SizedBox(width: 8),
           ],
@@ -347,7 +357,8 @@ class _AIChatScreenState extends State<AIChatScreen> {
               ),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+            child:
+                const Icon(Icons.smart_toy, color: Colors.white, size: 18),
           ),
           const SizedBox(width: 8),
           Container(
@@ -440,7 +451,6 @@ class _AIChatScreenState extends State<AIChatScreen> {
   }
 }
 
-// ── Animated Typing Dots ──
 class _DotAnimation extends StatefulWidget {
   final int delay;
   const _DotAnimation({required this.delay});

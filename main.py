@@ -189,3 +189,115 @@ def get_engineers():
     engineers = cursor.fetchall()
     db.close()
     return [dict(e) for e in engineers]
+
+# ===================== QUESTIONS =====================
+from pydantic import BaseModel as PydanticBase
+
+class QuestionRequest(PydanticBase):
+    title: str
+    content: str
+    category: str = ""
+
+class AnswerRequest(PydanticBase):
+    content: str
+
+@app.post("/questions")
+def create_question(q: QuestionRequest, current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT id FROM users WHERE email = ?", (current_user["email"],))
+    user = cursor.fetchone()
+    cursor.execute("""
+        INSERT INTO questions (user_id, title, content, category)
+        VALUES (?, ?, ?, ?)
+    """, (user["id"], q.title, q.content, q.category))
+    db.commit()
+    db.close()
+    return {"message": "Question posted successfully"}
+
+@app.get("/questions")
+def get_questions():
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("""
+        SELECT q.id, q.title, q.content, q.category, q.likes, q.created_at,
+               u.username, u.profile_image
+        FROM questions q
+        JOIN users u ON q.user_id = u.id
+        ORDER BY q.created_at DESC
+    """)
+    questions = cursor.fetchall()
+    db.close()
+    return [dict(q) for q in questions]
+
+@app.post("/questions/{question_id}/answers")
+def post_answer(question_id: int, a: AnswerRequest, current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    cursor = db.cursor()
+
+    # جيب الـ user
+    cursor.execute("SELECT id FROM users WHERE email = ?", (current_user["email"],))
+    user = cursor.fetchone()
+
+    # أضف الجواب
+    cursor.execute("""
+        INSERT INTO answers (question_id, user_id, content)
+        VALUES (?, ?, ?)
+    """, (question_id, user["id"], a.content))
+
+    # جيب صاحب السؤال عشان تبعتله notification
+    cursor.execute("SELECT user_id FROM questions WHERE id = ?", (question_id,))
+    question = cursor.fetchone()
+
+    if question and question["user_id"] != user["id"]:
+        cursor.execute("""
+            INSERT INTO notifications (user_id, message)
+            VALUES (?, ?)
+        """, (question["user_id"], f"👨‍💻 {current_user['email']} answered your question!"))
+
+    db.commit()
+    db.close()
+    return {"message": "Answer posted successfully"}
+
+@app.get("/questions/{question_id}/answers")
+def get_answers(question_id: int):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("""
+        SELECT a.id, a.content, a.likes, a.is_accepted, a.created_at,
+               u.username, u.profile_image
+        FROM answers a
+        JOIN users u ON a.user_id = u.id
+        WHERE a.question_id = ?
+        ORDER BY a.created_at ASC
+    """, (question_id,))
+    answers = cursor.fetchall()
+    db.close()
+    return [dict(a) for a in answers]
+
+# ===================== NOTIFICATIONS =====================
+@app.get("/notifications")
+def get_notifications(current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT id FROM users WHERE email = ?", (current_user["email"],))
+    user = cursor.fetchone()
+    cursor.execute("""
+        SELECT id, message, is_read, created_at
+        FROM notifications WHERE user_id = ?
+        ORDER BY created_at DESC
+    """, (user["id"],))
+    notifs = cursor.fetchall()
+    db.close()
+    return [dict(n) for n in notifs]
+
+@app.post("/notifications/read")
+def mark_notifications_read(current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    cursor = db.cursor()
+    cursor.execute("SELECT id FROM users WHERE email = ?", (current_user["email"],))
+    user = cursor.fetchone()
+    cursor.execute("UPDATE notifications SET is_read = 1 WHERE user_id = ?", (user["id"],))
+    db.commit()
+    db.close()
+    return {"message": "All notifications marked as read"}
