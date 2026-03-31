@@ -16,7 +16,8 @@ class _AIChatScreenState extends State<AIChatScreen> {
   final List<Map<String, String>> _messages = [];
   bool _isLoading = false;
 
-  static const String _apiKey = "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";
+ 
+  static const String _apiKey = "YOUR_API_KEY";
 
   static const String _systemPrompt = """
 أنت مساعد ذكاء اصطناعي متخصص في مجال الهندسة والبرمجة لمنصة EngiNet.
