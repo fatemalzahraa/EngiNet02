@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 from fastapi.middleware.cors import CORSMiddleware
 from books_router import router as books_router
-from passlib.context import CryptContext
+import bcrypt
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 from database import get_db
@@ -14,6 +14,7 @@ from courses_router import router as course_router
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from fastapi.middleware.cors import CORSMiddleware
 
 # ===================== CONFIG =====================
 SECRET_KEY = "enginet_super_secret_key_2025"
@@ -26,16 +27,16 @@ GMAIL_PASSWORD = "omhoqaqptlanznmd"
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+
 app = FastAPI(title="EngiNet API", version="1.0")
 app.include_router(books_router)
 app.include_router(articles_router)
 app.include_router(course_router)
 app.include_router(profile_router)
 app.include_router(post_router)
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,7 +65,10 @@ def get_current_user(token: str = Depends(oauth2_scheme)):
 def register(user: User):
     db = get_db()
     cursor = db.cursor()
-    hashed_password = pwd_context.hash(user.password)
+    hashed_password = bcrypt.hashpw(
+    user.password.encode("utf-8"), 
+    bcrypt.gensalt()
+).decode("utf-8")
     try:
         cursor.execute("""
             INSERT INTO users (username, email, password, role)

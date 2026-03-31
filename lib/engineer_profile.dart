@@ -18,7 +18,7 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
   List<dynamic> articles = [];
   bool isLoading = true;
   int selectedTab = 0;
-  final String baseUrl = "https://enginet02-1.onrender.com";
+  final String baseUrl = "https://enginet02.onrender.com";
 
   @override
   void initState() {

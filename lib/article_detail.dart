@@ -14,7 +14,7 @@ class ArticleDetailScreen extends StatefulWidget {
 class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
   Map<String, dynamic>? article;
   bool isLoading = true;
-  final String baseUrl = "https://enginet02-1.onrender.com";
+  final String baseUrl = "https://enginet02.onrender.com";
 
   @override
   void initState() {

@@ -16,7 +16,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   List<dynamic> courses = [];
   bool isLoading = true;
   int selectedTab = 0;
-  final String baseUrl = "https://enginet02-1.onrender.com";
+  final String baseUrl = "https://enginet02.onrender.com";
 
   @override
   void initState() {

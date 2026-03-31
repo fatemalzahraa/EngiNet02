@@ -17,7 +17,7 @@ class _CourseScreenState extends State<CourseScreen> {
   bool isLoading = true;
   bool showSearch = false;
   final TextEditingController _searchController = TextEditingController();
-  final String baseUrl = "https://enginet02-1.onrender.com";
+  final String baseUrl = "https://enginet02.onrender.com";
 
   @override
   void initState() {
