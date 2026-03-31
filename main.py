@@ -14,7 +14,6 @@ from courses_router import router as course_router
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from fastapi.middleware.cors import CORSMiddleware
 
 # ===================== CONFIG =====================
 SECRET_KEY = "enginet_super_secret_key_2025"
@@ -24,9 +23,7 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 GMAIL_USER = "appenginet2026@gmail.com"
 GMAIL_PASSWORD = "omhoqaqptlanznmd"
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
 
 app = FastAPI(title="EngiNet API", version="1.0")
 app.include_router(books_router)
@@ -36,7 +33,7 @@ app.include_router(profile_router)
 app.include_router(post_router)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -66,9 +63,9 @@ def register(user: User):
     db = get_db()
     cursor = db.cursor()
     hashed_password = bcrypt.hashpw(
-    user.password.encode("utf-8"), 
-    bcrypt.gensalt()
-).decode("utf-8")
+        user.password.encode("utf-8"),
+        bcrypt.gensalt()
+    ).decode("utf-8")
     try:
         cursor.execute("""
             INSERT INTO users (username, email, password, role)
@@ -99,7 +96,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     if not user:
         raise HTTPException(status_code=400, detail="Incorrect email or password")
 
-    if not pwd_context.verify(form_data.password, user["password"]):
+    if not bcrypt.checkpw(form_data.password.encode("utf-8"), user["password"].encode("utf-8")):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
 
     token = create_access_token({"sub": user["email"], "role": user["role"]})
@@ -173,7 +170,7 @@ def reset_password(data: ResetPasswordRequest):
         db.close()
         raise HTTPException(status_code=404, detail="Email not found")
 
-    hashed = pwd_context.hash(data.new_password)
+    hashed = bcrypt.hashpw(data.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
     cursor.execute("UPDATE users SET password = ? WHERE email = ?",
                    (hashed, data.email))
     db.commit()
