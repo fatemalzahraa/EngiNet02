@@ -3,3 +3,4 @@ uvicorn==0.22.0
 python-multipart==0.0.6
 requests==2.32.0
 mysql-connector-python==9.5.0
+passlib==1.7.4
