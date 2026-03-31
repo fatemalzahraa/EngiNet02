@@ -3,5 +3,5 @@ uvicorn==0.22.0
 python-multipart==0.0.6
 requests==2.32.0
 mysql-connector-python==9.5.0
-passlib[bcrypt]==1.7.4       # ضروري للتشفير وكلمات المرور
-python-jose==3.3.0           # للتعامل مع JWT tokens
+bcrypt==4.2.1      
+python-jose==3.3.0           
