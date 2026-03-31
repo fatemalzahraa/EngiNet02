@@ -1,494 +1,291 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeScreen extends StatefulWidget {
-  final String title;
-  const HomeScreen({super.key, required this.title});
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-  static const TextStyle optionStyle = TextStyle(
-    fontSize: 30,
-    fontWeight: FontWeight.bold,
-  );
-  static const List<Widget> _widgetOptions = <Widget>[
-    Text('Index 0: Home', style: optionStyle),
-    Text('Index 1: Profile', style: optionStyle),
-    Text('Index 2: Kitaplar', style: optionStyle),
-    Text('Index 3: Makaleler', style: optionStyle),
-    Text('Index 4: Kurslar', style: optionStyle),
-    Text('Index 5: Logout', style: optionStyle),
-  ];
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+  List<dynamic> engineers = [];
+  List<dynamic> posts = [];
+  bool isLoading = true;
+  final String baseUrl = "http://10.0.2.2:8000";
+
+  @override
+  void initState() {
+    super.initState();
+    loadData();
+  }
+
+  Future<String?> getToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('token');
+  }
+
+  Future<void> loadData() async {
+    final token = await getToken();
+    try {
+      final usersRes = await http.get(
+        Uri.parse("$baseUrl/users/engineers"),
+        headers: token != null ? {"Authorization": "Bearer $token"} : {},
+      );
+      final postsRes = await http.get(
+        Uri.parse("$baseUrl/posts/"),
+        headers: token != null ? {"Authorization": "Bearer $token"} : {},
+      );
+
+      if (!mounted) return;
+      setState(() {
+        if (usersRes.statusCode == 200) engineers = json.decode(usersRes.body);
+        if (postsRes.statusCode == 200) posts = json.decode(postsRes.body);
+        isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => isLoading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF071739),
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
-        title: Text(
-          widget.title,
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 40,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        leading: Builder(
-          builder: (context) {
-            return IconButton(
-              icon: const Icon(Icons.menu, color: const Color(0xFFE3C39D)),
-              onPressed: () {
-                Scaffold.of(context).openDrawer();
-              },
-            );
-          },
-        ),
-      ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator(color: Color(0xFF6C94C6)))
+          : RefreshIndicator(
+              onRefresh: loadData,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // Engineers Section
+                  Text(
+                    "Engineer",
+                    style: GoogleFonts.agbalumo(
+                      color: const Color(0xFF6C94C6),
+                      fontSize: 24,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Engineers Row
+                  SizedBox(
+                    height: 150,
+                    child: engineers.isEmpty
+                        ? const Center(
+                            child: Text("No engineers",
+                                style: TextStyle(color: Colors.white54)))
+                        : ListView.builder(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: engineers.length,
+                            itemBuilder: (context, index) {
+                              final eng = engineers[index];
+                              return _buildEngineerCard(eng);
+                            },
+                          ),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // Posts Section
+                  Text(
+                    "posts",
+                    style: GoogleFonts.agbalumo(
+                      color: const Color(0xFF6C94C6),
+                      fontSize: 24,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // Posts List
+                  ...posts.map((post) => _buildPostCard(post)).toList(),
+                ],
+              ),
+            ),
+    );
+  }
+
+  Widget _buildEngineerCard(dynamic eng) {
+    final name = eng['username'] ?? '';
+    final image = eng['profile_image'] ?? '';
+
+    return Container(
+      width: 110,
+      margin: const EdgeInsets.only(right: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-         
-          Padding(
-            padding: const EdgeInsets.only(left: 10),
-            child: Text(
-              "Engineers",
-              style: GoogleFonts.agbalumo(
-                fontSize: 40,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF7FB6CB),
-              ),
-            ),
-          ),
-
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(34),
-                    color: const Color(0xFFC6AE8B),
-                  ),
-                  height: 141,
-                  width: 128,
-                  margin: EdgeInsets.all(8),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Stack(
-                        children: [
-                          Align(
-                            alignment: Alignment(0, -0.5),
-                            child: SizedBox(
-                              width: 80,
-                              height: 89,
-                              child: ClipOval(
-                                child: Image.asset(
-                                  "images/user2.png",
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: 60,
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              width: 22,
-                              height: 22,
-                              decoration: BoxDecoration(
-                                color: const Color.fromARGB(255, 82, 43, 28),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.black,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.add,
-                                  size: 20,
-                                  color: Color(0xFFC6AE8B),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        "Eng.jack",
-                        style: GoogleFonts.agbalumo(
-                          fontSize: 12,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(34),
-                    color: const Color(0xFFC6AE8B),
-                  ),
-                  height: 141,
-                  width: 128,
-                  margin: EdgeInsets.all(8),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Stack(
-                        children: [
-                          Align(
-                            alignment: Alignment(0, -0.5),
-                            child: SizedBox(
-                              width: 80,
-                              height: 89,
-                              child: ClipOval(
-                                child: Image.asset(
-                                  "images/user3.png",
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: 60,
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              width: 22,
-                              height: 22,
-                              decoration: BoxDecoration(
-                                color: const Color.fromARGB(255, 82, 43, 28),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.black,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.add,
-                                  size: 20,
-                                  color: Color(0xFFC6AE8B),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        "Eng.jack",
-                        style: GoogleFonts.agbalumo(
-                          fontSize: 12,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(34),
-                    color: const Color(0xFFC6AE8B),
-                  ),
-                  height: 141,
-                  width: 128,
-                  margin: EdgeInsets.all(8),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Stack(
-                        children: [
-                          Align(
-                            alignment: Alignment(0, -0.5),
-                            child: SizedBox(
-                              width: 80,
-                              height: 89,
-                              child: ClipOval(
-                                child: Image.asset(
-                                  "images/user4.png",
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: 60,
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              width: 22,
-                              height: 22,
-                              decoration: BoxDecoration(
-                                color: const Color.fromARGB(255, 82, 43, 28),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.black,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.add,
-                                  size: 20,
-                                  color: Color(0xFFC6AE8B),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        "Eng.jack",
-                        style: GoogleFonts.agbalumo(
-                          fontSize: 12,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(34),
-                    color: const Color(0xFFC6AE8B),
-                  ),
-                  height: 141,
-                  width: 128,
-                  margin: EdgeInsets.all(8),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Stack(
-                        children: [
-                          Align(
-                            alignment: Alignment(0, -0.5),
-                            child: SizedBox(
-                              width: 80,
-                              height: 89,
-                              child: ClipOval(
-                                child: Image.asset(
-                                  "images/user5.png",
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                          ),
-                          Positioned(
-                            left: 60,
-                            right: 0,
-                            bottom: 0,
-                            child: Container(
-                              width: 22,
-                              height: 22,
-                              decoration: BoxDecoration(
-                                color: const Color.fromARGB(255, 82, 43, 28),
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: Colors.black,
-                                  width: 1,
-                                ),
-                              ),
-                              child: Center(
-                                child: Icon(
-                                  Icons.add,
-                                  size: 20,
-                                  color: Color(0xFFC6AE8B),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        "Eng.jack",
-                        style: GoogleFonts.agbalumo(
-                          fontSize: 12,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.only(left: 10),
-            child: Text(
-              "Posts",
-              style: GoogleFonts.agbalumo(
-                fontSize: 40,
-                fontWeight: FontWeight.bold,
-                color: const Color(0xFF7FB6CB),
-              ),
-            ),
-          ),
-          Center(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    color: const Color(0xFFE3C39D),
-                  ),
-                  width: 406,
-                  height: 196,
-
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Padding(
-                            padding: const EdgeInsets.all(5),
-                            child: SizedBox(
-                              height: 50,
-                              width: 50,
-
-                              child: ClipOval(
-                                child: Image.asset(
-                                  "images/user2.png",
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                          ),
-                          SizedBox(width: 10),
-                          Text(
-                            "Eng.jack",
-                            style: GoogleFonts.agbalumo(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 10),
-                        child: Text(
-                          "Sizce yapay zekâ gelecekte programcıların yerini alacak mı? Bu konuda görüşünüz nedir?",
-                          style: GoogleFonts.aDLaMDisplay(
-                            fontSize: 12,
-                            color: const Color(0xFF4B6382),
-                          ),
-                        ),
-                      ),
-                      
-                    ],
-                  ),
-                ),
-                SizedBox(height: 10),
-              ],
-            ),
-          ),
-        ],
-      ),
-
-      drawer: Drawer(
-        
-        child: Container(
-          color: const Color(0xFFE3C39D),
-          child: ListView(
-            
-            padding: EdgeInsets.zero,
+          Stack(
             children: [
-              DrawerHeader(
-                decoration: BoxDecoration(color: const Color(0xFFA68868)),
-                child: Column(
-                  children: [
-                    Image.asset('images/user1.png', width: 100, height: 100),
-                    SizedBox(height: 10),
-                    Text('User Name'),
-                  ],
+              Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFD8C09A),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFE3C39D), width: 2),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(18),
+                  child: image.isNotEmpty
+                      ? Image.network(image,
+                          width: 100, height: 100, fit: BoxFit.cover,
+                          errorBuilder: (c, e, s) => const Icon(
+                              Icons.person, size: 50, color: Colors.grey))
+                      : const Icon(Icons.person, size: 50, color: Colors.grey),
                 ),
               ),
-
-              ListTile(
-                leading: const Icon(Icons.home),
-                title: const Text('Home'),
-                selected: _selectedIndex == 0,
-                onTap: () {
-          
-                  _onItemTapped(0);
-                 
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.account_box_rounded),
-                title: const Text('Profile'),
-                selected: _selectedIndex == 1,
-                onTap: () {
-               
-                  _onItemTapped(1);
-              
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.book),
-                title: const Text('kitaplar'),
-                selected: _selectedIndex == 2,
-                onTap: () {
-                 
-                  _onItemTapped(2);
-                
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.article_rounded),
-                title: const Text('makaleler'),
-                selected: _selectedIndex == 3,
-                onTap: () {
-                
-                  _onItemTapped(3);
-                
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.video_collection_rounded),
-                title: const Text('kurslar'),
-                selected: _selectedIndex == 4,
-                onTap: () {
-                
-                  _onItemTapped(4);
-              
-                  Navigator.pop(context);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.logout_rounded),
-                title: const Text('logout'),
-                selected: _selectedIndex == 5,
-                onTap: () {
-                
-                  _onItemTapped(5);
-             
-                  Navigator.pop(context);
-                },
+              Positioned(
+                bottom: 4,
+                right: 4,
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  decoration: const BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.add, size: 14, color: Colors.white),
+                ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 8),
+          Text(
+            name,
+            style: GoogleFonts.agbalumo(color: Colors.white, fontSize: 13),
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPostCard(dynamic post) {
+    final content = post['content'] ?? '';
+    final username = post['username'] ?? '';
+    final profileImage = post['profile_image'] ?? '';
+    final likes = post['likes'] ?? 0;
+    final linkedCourse = post['linked_course'];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFD8C09A),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // المستخدم
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundImage: profileImage.isNotEmpty
+                    ? NetworkImage(profileImage)
+                    : null,
+                backgroundColor: const Color(0xFF4A6FA5),
+                child: profileImage.isEmpty
+                    ? const Icon(Icons.person, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                username,
+                style: GoogleFonts.agbalumo(fontSize: 14, color: Colors.black87),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          // المحتوى
+          Text(
+            content,
+            style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.4),
+          ),
+
+          // الكورس المرتبط
+          if (linkedCourse != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5ECD7),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.all(8),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: linkedCourse['image_url'] != null &&
+                            linkedCourse['image_url'].isNotEmpty
+                        ? Image.network(
+                            linkedCourse['image_url'],
+                            width: 50,
+                            height: 50,
+                            fit: BoxFit.cover,
+                            errorBuilder: (c, e, s) => const Icon(
+                                Icons.play_circle, size: 40, color: Colors.grey),
+                          )
+                        : const Icon(Icons.play_circle, size: 40, color: Colors.grey),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      linkedCourse['title'] ?? '',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.black87),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          const SizedBox(height: 10),
+
+          // الإعجابات والتعليقات
+          Row(
+            children: [
+              GestureDetector(
+                onTap: () async {
+                  await http.post(
+                      Uri.parse("$baseUrl/posts/${post['id']}/like"));
+                  loadData();
+                },
+                child: Row(
+                  children: [
+                    const Icon(Icons.favorite_border,
+                        size: 18, color: Colors.black54),
+                    const SizedBox(width: 4),
+                    Text("$likes",
+                        style: const TextStyle(color: Colors.black54)),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              const Icon(Icons.chat_bubble_outline,
+                  size: 18, color: Color(0xFF5B7FA6)),
+              const SizedBox(width: 4),
+              const Text("10", style: TextStyle(color: Colors.black54)),
+              const Spacer(),
+              const Icon(Icons.bookmark_border, size: 20, color: Colors.black54),
+            ],
+          ),
+        ],
       ),
     );
   }

@@ -1,0 +1,110 @@
+-- database: /Users/fatema2003/Development/enginet/backend/enginet.db
+-- Use the ▷ button in the top right corner to run the entire file.
+SELECT
+    *
+FROM
+    sessions;
+
+CREATE Table
+    book (
+        book_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL,
+        author TEXT NOT NULL,
+        book_categories TEXT NOT NULL,
+        description TEXT NOT NULL,
+        file_url TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        file_size INTEGER,
+        like_counter INTEGER DEFAULT 0 CHECK (like_counter >= 0),
+        language TEXT,
+        publish_year INTEGER CHECK (publish_year >= 1800)
+    );
+
+ALTER TABLE book
+ADD COLUMN image_url TEXT;
+
+INSERT INTO
+    book (
+        title,
+        author,
+        book_categories,
+        description,
+        file_url,
+        file_size,
+        like_counter,
+        language,
+        publish_year,
+        image_url
+    )
+VALUES
+    (
+        'Clean Code',
+        'Robert C. Martin',
+        'Software Engineering, Programming',
+        'A practical guide to writing clean, readable, and maintainable code.',
+        'https://example.com/files/clean_code.pdf',
+        5240,
+        120,
+        'English',
+        2008,
+        'https://example.com/images/clean_code.jpg'
+    ),
+    (
+        'The Pragmatic Programmer',
+        'Andrew Hunt & David Thomas',
+        'Programming, Software Development',
+        'Classic book offering practical advice and best practices for programmers.',
+        'https://example.com/files/pragmatic_programmer.pdf',
+        6840,
+        210,
+        'English',
+        1999,
+        'https://example.com/images/pragmatic_programmer.jpg'
+    ),
+    (
+        'Introduction to Algorithms',
+        'Thomas H. Cormen',
+        'Algorithms, Computer Science',
+        'Comprehensive textbook covering a wide range of algorithms in depth.',
+        'https://example.com/files/algorithms.pdf',
+        15320,
+        95,
+        'English',
+        2009,
+        'https://example.com/images/algorithms.jpg'
+    ),
+    (
+        'Flutter for Beginners',
+        'Alessandro Biessek',
+        'Mobile Development, Flutter',
+        'Step-by-step guide to building cross-platform mobile applications using Flutter.',
+        'https://example.com/files/flutter_beginners.pdf',
+        3890,
+        45,
+        'English',
+        2021,
+        'https://example.com/images/flutter.jpg'
+    ),
+    (
+        'Artificial Intelligence Basics',
+        'Tom Taulli',
+        'Artificial Intelligence, Technology',
+        'An introductory overview of artificial intelligence concepts and applications.',
+        'https://example.com/files/ai_basics.pdf',
+        4320,
+        60,
+        'English',
+        2019,
+        'https://example.com/images/ai_basics.jpg'
+    );
+
+UPDATE book
+SET
+    image_url = 'https://m.media-amazon.com/images/I/71rBSK09S7L._AC_UF1000,1000_QL80_.jpg'
+WHERE
+    book_id = 5;
+
+SELECT
+    *
+FROM
+    book

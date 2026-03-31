@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+
 
 
 class SignupScreen extends StatefulWidget {
@@ -32,13 +32,13 @@ class _SignupScreenState extends State<SignupScreen> {
 
     try {
       final response = await http.post(
-        Uri.parse('http://10.0.2.2:8000/register'), // رابط الـ backend
+        Uri.parse('http://10.0.2.2:8000/register'), 
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'username': username,
           'email': email,
           'password': password,
-          'role': _selectedRole.toLowerCase(), // student / engineer
+          'role': _selectedRole.toLowerCase(),
         }),
       );
       if (!mounted) return;
