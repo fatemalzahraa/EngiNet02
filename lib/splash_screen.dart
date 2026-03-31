@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -66,13 +67,22 @@ class _SplashScreenState extends State<SplashScreen>
     _runAnimations();
   }
 
-  void _runAnimations() async {
+ void _runAnimations() async {
     await _rotateController.forward();
     _logoJumpController.forward();
     await Future.delayed(Duration(milliseconds: 500));
     await _textController.forward();
     await Future.delayed(Duration(milliseconds: 800));
-    if (mounted) {
+    
+    if (!mounted) return;
+    
+    // تحقق من الـ token
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token') ?? '';
+    
+    if (token.isNotEmpty) {
+      Navigator.pushReplacementNamed(context, '/home');
+    } else {
       Navigator.pushReplacementNamed(context, '/login');
     }
   }

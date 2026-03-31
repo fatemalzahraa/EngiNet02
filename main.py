@@ -207,6 +207,11 @@ def create_question(q: QuestionRequest, current_user: dict = Depends(get_current
     cursor = db.cursor()
     cursor.execute("SELECT id FROM users WHERE email = ?", (current_user["email"],))
     user = cursor.fetchone()
+    
+    if not user:
+        db.close()
+        raise HTTPException(status_code=404, detail="User not found")
+    
     cursor.execute("""
         INSERT INTO questions (user_id, title, content, category)
         VALUES (?, ?, ?, ?)

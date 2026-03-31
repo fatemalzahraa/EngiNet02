@@ -79,27 +79,28 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12))),
                 onPressed: () async {
-                  if (titleCtrl.text.isEmpty || contentCtrl.text.isEmpty) return;
-                  final res = await http.post(
-                    Uri.parse("$baseUrl/questions"),
-                    headers: {
-                      "Content-Type": "application/json",
-                      "Authorization": "Bearer $_token"
-                    },
-                    body: jsonEncode({
-                      "title": titleCtrl.text,
-                      "content": contentCtrl.text,
-                      "category": ""
-                    }),
-                  );
-                  if (!ctx.mounted) return;
-                  Navigator.pop(ctx);
-                  if (res.statusCode == 200) {
-                    _fetchQuestions();
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("✅ Question posted!")));
-                  }
-                },
+  if (titleCtrl.text.isEmpty || contentCtrl.text.isEmpty) return;
+  final res = await http.post(
+    Uri.parse("$baseUrl/questions"),
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer $_token"
+    },
+    body: jsonEncode({
+      "title": titleCtrl.text,
+      "content": contentCtrl.text,
+      "category": ""
+    }),
+  );
+  if (context.mounted) Navigator.pop(context); // غيري ctx لـ context
+  if (res.statusCode == 200) {
+    _fetchQuestions();
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("✅ Question posted!")));
+    }
+  }
+},
                 child: const Text("Post", style: TextStyle(color: Colors.white)),
               ),
             ),

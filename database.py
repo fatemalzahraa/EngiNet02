@@ -1,8 +1,9 @@
-import sqlite3
+import psycopg2
+import psycopg2.extras
 
-DB_NAME = "enginet.db"
+DATABASE_URL = "postgresql://postgres:Sweetzozo847..@db.ksfrsnbfdzgtkxhswobs.supabase.co:5432/postgres"
 
 def get_db():
-    conn = sqlite3.connect(DB_NAME)
-    conn.row_factory = sqlite3.Row
+    conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = False
     return conn

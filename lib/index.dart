@@ -122,26 +122,31 @@ class _IndexPageState extends State<IndexPage> {
     return Scaffold(
       backgroundColor: const Color(0xFF071739),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
-        title: Text(
-          widget.title,
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 40,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-        leading: Builder(
-          builder: (context) {
-            return IconButton(
-              icon: const Icon(Icons.menu, color: Color(0xFFE3C39D)),
-              onPressed: () {
-                Scaffold.of(context).openDrawer();
-              },
-            );
-          },
-        ),
-      ),
+  backgroundColor: const Color(0xFF071739),
+  centerTitle: true,
+  title: Text(
+    widget.title,
+    style: GoogleFonts.agbalumo(
+      color: const Color(0xFFE3C39D),
+      fontSize: 40,
+      fontWeight: FontWeight.bold,
+    ),
+  ),
+  leading: Builder(
+    builder: (context) {
+      return IconButton(
+        icon: const Icon(Icons.menu, color: Color(0xFFE3C39D)),
+        onPressed: () => Scaffold.of(context).openDrawer(),
+      );
+    },
+  ),
+  actions: [
+    IconButton(
+      icon: const Icon(Icons.notifications, color: Color(0xFFE3C39D)),
+      onPressed: () => Navigator.pushNamed(context, '/notifications'),
+    ),
+  ],
+),
       body: IndexedStack(
         index: _currentIndex,
         children: _isBottomNav ? _pagesNav : _pages,

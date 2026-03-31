@@ -1,6 +1,7 @@
 
 import 'package:enginet/ai_chat_screen.dart';
 import 'package:enginet/index.dart';
+import 'package:enginet/notifications_screen.dart';
 import 'package:enginet/questions_screen.dart';
 import 'package:enginet/screens/login_screen.dart';
 import 'package:enginet/screens/signup_screen.dart';
@@ -9,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'reset_password_screen.dart';
 import 'student_profile.dart';
 import 'engineer_profile.dart';
+
 
 
 
@@ -39,6 +41,7 @@ class MyApp extends StatelessWidget {
         '/engineer-profile': (context) => const EngineerProfileScreen(),
         '/ai-chat': (context) => const AIChatScreen(),
         '/questions': (context) => const QuestionsScreen(),
+        '/notifications': (context) => const NotificationsScreen(),
       },
     );
   }
