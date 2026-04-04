@@ -1,8 +1,9 @@
 import 'dart:convert';
+
+import 'package:enginet/core/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,7 +16,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> engineers = [];
   List<dynamic> posts = [];
   bool isLoading = true;
-  final String baseUrl = "https://enginet02.onrender.com";
 
   @override
   void initState() {
@@ -23,33 +23,42 @@ class _HomeScreenState extends State<HomeScreen> {
     loadData();
   }
 
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
-  }
-
   Future<void> loadData() async {
-    final token = await getToken();
     try {
-      final usersRes = await http.get(
-        Uri.parse("$baseUrl/users/engineers"),
-        headers: token != null ? {"Authorization": "Bearer $token"} : {},
-      );
-      final postsRes = await http.get(
-        Uri.parse("$baseUrl/posts/"),
-        headers: token != null ? {"Authorization": "Bearer $token"} : {},
-      );
+      final engineersResponse =
+          await http.get(Uri.parse('${AppConstants.baseUrl}/users/engineers'));
+      final postsResponse =
+          await http.get(Uri.parse('${AppConstants.baseUrl}/posts/'));
+
+      final engineersRes = engineersResponse.statusCode == 200
+          ? jsonDecode(engineersResponse.body) as List<dynamic>
+          : <dynamic>[];
+      final postsRes = postsResponse.statusCode == 200
+          ? jsonDecode(postsResponse.body) as List<dynamic>
+          : <dynamic>[];
 
       if (!mounted) return;
       setState(() {
-        if (usersRes.statusCode == 200) engineers = json.decode(usersRes.body);
-        if (postsRes.statusCode == 200) posts = json.decode(postsRes.body);
+        engineers = engineersRes;
+        posts = postsRes;
         isLoading = false;
       });
+
+      if (engineersResponse.statusCode != 200) {
+        debugPrint('Engineers endpoint failed: ${engineersResponse.statusCode}');
+      }
+      if (postsResponse.statusCode != 200) {
+        debugPrint('Posts endpoint failed: ${postsResponse.statusCode}');
+      }
     } catch (e) {
+      debugPrint("Error loading data: $e");
       if (!mounted) return;
       setState(() => isLoading = false);
     }
+  }
+
+  Future<void> likePost(dynamic post) async {
+    // Keeping UI read-only until the backend auth flow is fully unified.
   }
 
   @override
@@ -57,53 +66,62 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF071739),
       body: isLoading
-          ? const Center(child: CircularProgressIndicator(color: Color(0xFF6C94C6)))
+          ? const Center(
+              child:
+                  CircularProgressIndicator(color: Color(0xFF6C94C6)))
           : RefreshIndicator(
               onRefresh: loadData,
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  // Engineers Section
+                  // ---- Engineers ----
                   Text(
-                    "Engineer",
+                    "Engineers",
                     style: GoogleFonts.agbalumo(
                       color: const Color(0xFF6C94C6),
                       fontSize: 24,
                     ),
                   ),
                   const SizedBox(height: 12),
-
-                  // Engineers Row
                   SizedBox(
                     height: 150,
                     child: engineers.isEmpty
                         ? const Center(
                             child: Text("No engineers",
-                                style: TextStyle(color: Colors.white54)))
+                                style:
+                                    TextStyle(color: Colors.white54)))
                         : ListView.builder(
                             scrollDirection: Axis.horizontal,
                             itemCount: engineers.length,
                             itemBuilder: (context, index) {
-                              final eng = engineers[index];
-                              return _buildEngineerCard(eng);
+                              return _buildEngineerCard(
+                                  engineers[index]);
                             },
                           ),
                   ),
-
                   const SizedBox(height: 20),
 
-                  // Posts Section
+                  // ---- Posts ----
                   Text(
-                    "posts",
+                    "Posts",
                     style: GoogleFonts.agbalumo(
                       color: const Color(0xFF6C94C6),
                       fontSize: 24,
                     ),
                   ),
                   const SizedBox(height: 12),
-
-                  // Posts List
-                  ...posts.map((post) => _buildPostCard(post)).toList(),
+                  if (posts.isEmpty)
+                    const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Text("No posts yet",
+                            style: TextStyle(color: Colors.white54)),
+                      ),
+                    )
+                  else
+                    ...posts
+                        .map((post) => _buildPostCard(post))
+                        .toList(),
                 ],
               ),
             ),
@@ -111,8 +129,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildEngineerCard(dynamic eng) {
-    final name = eng['username'] ?? '';
-    final image = eng['profile_image'] ?? '';
+    final name = eng['username']?.toString() ?? '';
+    final image = eng['profile_image']?.toString() ?? '';
 
     return Container(
       width: 110,
@@ -128,16 +146,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(
                   color: const Color(0xFFD8C09A),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFE3C39D), width: 2),
+                  border: Border.all(
+                      color: const Color(0xFFE3C39D), width: 2),
                 ),
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(18),
                   child: image.isNotEmpty
                       ? Image.network(image,
-                          width: 100, height: 100, fit: BoxFit.cover,
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.cover,
                           errorBuilder: (c, e, s) => const Icon(
-                              Icons.person, size: 50, color: Colors.grey))
-                      : const Icon(Icons.person, size: 50, color: Colors.grey),
+                              Icons.person,
+                              size: 50,
+                              color: Colors.grey))
+                      : const Icon(Icons.person,
+                          size: 50, color: Colors.grey),
                 ),
               ),
               Positioned(
@@ -150,7 +174,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     color: Colors.red,
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.add, size: 14, color: Colors.white),
+                  child: const Icon(Icons.add,
+                      size: 14, color: Colors.white),
                 ),
               ),
             ],
@@ -158,7 +183,8 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 8),
           Text(
             name,
-            style: GoogleFonts.agbalumo(color: Colors.white, fontSize: 13),
+            style: GoogleFonts.agbalumo(
+                color: Colors.white, fontSize: 13),
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
           ),
@@ -168,11 +194,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildPostCard(dynamic post) {
-    final content = post['content'] ?? '';
-    final username = post['username'] ?? '';
-    final profileImage = post['profile_image'] ?? '';
+    final profile = post['profiles'];
+    final linkedCourse = post['linked_course'] ?? post['courses'];
+
+    final content = post['content']?.toString() ?? '';
+    final username = post['username']?.toString() ??
+        profile?['username']?.toString() ??
+        '';
+    final profileImage = post['profile_image']?.toString() ??
+        profile?['profile_image']?.toString() ??
+        '';
     final likes = post['likes'] ?? 0;
-    final linkedCourse = post['linked_course'];
+    final postImageUrl = post['image_url']?.toString() ?? '';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -184,7 +217,7 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // المستخدم
+          // ---- Header ----
           Row(
             children: [
               CircleAvatar(
@@ -200,20 +233,35 @@ class _HomeScreenState extends State<HomeScreen> {
               const SizedBox(width: 8),
               Text(
                 username,
-                style: GoogleFonts.agbalumo(fontSize: 14, color: Colors.black87),
+                style: GoogleFonts.agbalumo(
+                    fontSize: 14, color: Colors.black87),
               ),
             ],
           ),
-
           const SizedBox(height: 10),
 
-          // المحتوى
+          // ---- Content ----
           Text(
             content,
-            style: const TextStyle(fontSize: 14, color: Colors.black87, height: 1.4),
+            style: const TextStyle(
+                fontSize: 14, color: Colors.black87, height: 1.4),
           ),
 
-          // الكورس المرتبط
+          // ---- Post Image ----
+          if (postImageUrl.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.network(
+                postImageUrl,
+                width: double.infinity,
+                fit: BoxFit.cover,
+                errorBuilder: (c, e, s) => const SizedBox.shrink(),
+              ),
+            ),
+          ],
+
+          // ---- Linked Course ----
           if (linkedCourse != null) ...[
             const SizedBox(height: 10),
             Container(
@@ -227,21 +275,26 @@ class _HomeScreenState extends State<HomeScreen> {
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: linkedCourse['image_url'] != null &&
-                            linkedCourse['image_url'].isNotEmpty
+                            linkedCourse['image_url']
+                                .toString()
+                                .isNotEmpty
                         ? Image.network(
-                            linkedCourse['image_url'],
+                            linkedCourse['image_url'].toString(),
                             width: 50,
                             height: 50,
                             fit: BoxFit.cover,
                             errorBuilder: (c, e, s) => const Icon(
-                                Icons.play_circle, size: 40, color: Colors.grey),
+                                Icons.play_circle,
+                                size: 40,
+                                color: Colors.grey),
                           )
-                        : const Icon(Icons.play_circle, size: 40, color: Colors.grey),
+                        : const Icon(Icons.play_circle,
+                            size: 40, color: Colors.grey),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      linkedCourse['title'] ?? '',
+                      linkedCourse['title']?.toString() ?? '',
                       style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 13,
@@ -257,32 +310,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
           const SizedBox(height: 10),
 
-          // الإعجابات والتعليقات
+          // ---- Actions ----
           Row(
             children: [
               GestureDetector(
-                onTap: () async {
-                  await http.post(
-                      Uri.parse("$baseUrl/posts/${post['id']}/like"));
-                  loadData();
-                },
+                onTap: () => likePost(post),
                 child: Row(
                   children: [
                     const Icon(Icons.favorite_border,
                         size: 18, color: Colors.black54),
                     const SizedBox(width: 4),
                     Text("$likes",
-                        style: const TextStyle(color: Colors.black54)),
+                        style:
+                            const TextStyle(color: Colors.black54)),
                   ],
                 ),
               ),
               const SizedBox(width: 16),
               const Icon(Icons.chat_bubble_outline,
                   size: 18, color: Color(0xFF5B7FA6)),
-              const SizedBox(width: 4),
-              const Text("10", style: TextStyle(color: Colors.black54)),
               const Spacer(),
-              const Icon(Icons.bookmark_border, size: 20, color: Colors.black54),
+              const Icon(Icons.bookmark_border,
+                  size: 20, color: Colors.black54),
             ],
           ),
         ],

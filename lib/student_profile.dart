@@ -1,8 +1,11 @@
 import 'dart:convert';
+
+import 'package:enginet/core/constants.dart';
+import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({super.key});
@@ -12,11 +15,13 @@ class StudentProfileScreen extends StatefulWidget {
 }
 
 class _StudentProfileScreenState extends State<StudentProfileScreen> {
+  final supabase = Supabase.instance.client;
+
   Map<String, dynamic>? user;
   List<dynamic> courses = [];
   bool isLoading = true;
   int selectedTab = 0;
-  final String baseUrl = "https://enginet02.onrender.com";
+  String _username = '';
 
   @override
   void initState() {
@@ -24,36 +29,42 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     loadProfile();
   }
 
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
-  }
-
   Future<void> loadProfile() async {
-    final token = await getToken();
-    if (token == null) return;
-
     try {
-      final userRes = await http.get(
-        Uri.parse("$baseUrl/profile/me"),
-        headers: {"Authorization": "Bearer $token"},
-      );
-      final coursesRes = await http.get(
-        Uri.parse("$baseUrl/courses/"),
-        headers: {"Authorization": "Bearer $token"},
+      final token = await SessionManager.getToken();
+      _username = (await SessionManager.getUsername()) ?? '';
+
+      if (token == null || token.isEmpty || _username.isEmpty) {
+        if (!mounted) return;
+        setState(() => isLoading = false);
+        return;
+      }
+
+      final profileResponse = await http.get(
+        Uri.parse('${AppConstants.baseUrl}/profile/me'),
+        headers: {'Authorization': 'Bearer $token'},
       );
 
-      if (userRes.statusCode == 200) {
-        if (!mounted) return;
-        setState(() {
-          user = json.decode(userRes.body);
-          if (coursesRes.statusCode == 200) {
-            courses = json.decode(coursesRes.body);
-          }
-          isLoading = false;
-        });
+      if (profileResponse.statusCode != 200) {
+        throw Exception('Failed to load profile');
       }
+
+      final userRes = jsonDecode(profileResponse.body) as Map<String, dynamic>;
+
+      // جلب الكورسات
+      final coursesRes = await supabase
+          .from('courses')
+          .select()
+          .order('created_at', ascending: false);
+
+      if (!mounted) return;
+      setState(() {
+        user = userRes;
+        courses = coursesRes;
+        isLoading = false;
+      });
     } catch (e) {
+      debugPrint("Error loading profile: $e");
       if (!mounted) return;
       setState(() => isLoading = false);
     }
@@ -85,25 +96,32 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           ),
           TextButton(
             onPressed: () async {
-              final token = await getToken();
-              if (token == null) return;
-              await http.put(
-                Uri.parse("$baseUrl/profile/me"),
-                headers: {
-                  "Authorization": "Bearer $token",
-                  "Content-Type": "application/json",
-                },
-                body: jsonEncode({
-                  "bio": bioController.text,
-                  "profile_image": imageController.text,
-                }),
-              );
-              if (!mounted) return;
-              Navigator.pop(context);
-              loadProfile();
+              try {
+                final token = await SessionManager.getToken();
+                if (token == null || token.isEmpty) return;
+
+                await http.put(
+                  Uri.parse('${AppConstants.baseUrl}/profile/me'),
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer $token',
+                  },
+                  body: jsonEncode({
+                    "bio": bioController.text,
+                    "profile_image": imageController.text,
+                  }),
+                );
+
+                if (!mounted) return;
+                Navigator.pop(context);
+                loadProfile();
+              } catch (e) {
+                debugPrint("Error updating profile: $e");
+              }
             },
             child: Text("Save",
-                style: GoogleFonts.agbalumo(color: const Color(0xFFE3C39D))),
+                style:
+                    GoogleFonts.agbalumo(color: const Color(0xFFE3C39D))),
           ),
         ],
       ),
@@ -134,7 +152,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     if (isLoading) {
       return const Scaffold(
         backgroundColor: Color(0xFF071739),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF6C94C6))),
+        body: Center(
+            child: CircularProgressIndicator(color: Color(0xFF6C94C6))),
       );
     }
 
@@ -148,7 +167,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // HEADER - لون بني
+            // HEADER
             Container(
               color: const Color(0xFF8B6F47),
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 60),
@@ -178,7 +197,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                   const Spacer(),
                   GestureDetector(
                     onTap: showEditDialog,
-                    child: const Icon(Icons.edit, color: Color(0xFFE3C39D)),
+                    child:
+                        const Icon(Icons.edit, color: Color(0xFFE3C39D)),
                   ),
                 ],
               ),
@@ -327,8 +347,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   Widget _buildCoursesList() {
     if (courses.isEmpty) {
       return const Center(
-        child: Text("No courses yet",
-            style: TextStyle(color: Colors.white54)),
+        child:
+            Text("No courses yet", style: TextStyle(color: Colors.white54)),
       );
     }
     return ListView.builder(
@@ -357,15 +377,19 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 ),
                 child: imageUrl.isNotEmpty
                     ? Image.network(imageUrl,
-                        width: 90, height: 80, fit: BoxFit.cover,
+                        width: 90,
+                        height: 80,
+                        fit: BoxFit.cover,
                         errorBuilder: (c, e, s) => Container(
-                          width: 90, height: 80,
-                          color: const Color(0xFF4A6FA5),
-                          child: const Icon(Icons.play_circle,
-                              color: Colors.white54),
-                        ))
+                              width: 90,
+                              height: 80,
+                              color: const Color(0xFF4A6FA5),
+                              child: const Icon(Icons.play_circle,
+                                  color: Colors.white54),
+                            ))
                     : Container(
-                        width: 90, height: 80,
+                        width: 90,
+                        height: 80,
                         color: const Color(0xFF4A6FA5),
                         child: const Icon(Icons.play_circle,
                             color: Colors.white54),

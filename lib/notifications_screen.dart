@@ -1,10 +1,10 @@
 import 'dart:convert';
+
+import 'package:enginet/core/constants.dart';
+import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
-
-const String baseUrl = "https://enginet02.onrender.com";
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -16,7 +16,6 @@ class NotificationsScreen extends StatefulWidget {
 class _NotificationsScreenState extends State<NotificationsScreen> {
   List _notifications = [];
   bool _isLoading = true;
-  String _token = "";
 
   @override
   void initState() {
@@ -25,30 +24,53 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   Future<void> _loadData() async {
-    final prefs = await SharedPreferences.getInstance();
-    _token = prefs.getString('token') ?? '';
     await _fetchNotifications();
     await _markAsRead();
   }
 
   Future<void> _fetchNotifications() async {
-    final res = await http.get(
-      Uri.parse("$baseUrl/notifications"),
-      headers: {"Authorization": "Bearer $_token"},
-    );
-    if (res.statusCode == 200) {
+    try {
+      final token = await SessionManager.getToken();
+      if (token == null || token.isEmpty) {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final response = await http.get(
+        Uri.parse('${AppConstants.baseUrl}/notifications'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to fetch notifications');
+      }
+
+      final res = jsonDecode(response.body) as List<dynamic>;
+
+      if (!mounted) return;
       setState(() {
-        _notifications = jsonDecode(res.body);
+        _notifications = res;
         _isLoading = false;
       });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
     }
   }
 
   Future<void> _markAsRead() async {
-    await http.post(
-      Uri.parse("$baseUrl/notifications/read"),
-      headers: {"Authorization": "Bearer $_token"},
-    );
+    try {
+      final token = await SessionManager.getToken();
+      if (token == null || token.isEmpty) return;
+
+      await http.post(
+        Uri.parse('${AppConstants.baseUrl}/notifications/read'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+    } catch (e) {
+      // تجاهل الخطأ
+    }
   }
 
   String _timeAgo(String dateStr) {
@@ -76,7 +98,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFFE3C39D)))
+              child:
+                  CircularProgressIndicator(color: Color(0xFFE3C39D)))
           : _notifications.isEmpty
               ? Center(
                   child: Column(
@@ -96,7 +119,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   itemCount: _notifications.length,
                   itemBuilder: (_, i) {
                     final n = _notifications[i];
-                    final isRead = n["is_read"] == 1;
+                    // ✅ Supabase يرجع bool مباشرة بدل 0/1
+                    final isRead = n["is_read"] == true;
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.all(14),
@@ -107,7 +131,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                         borderRadius: BorderRadius.circular(14),
                         border: isRead
                             ? null
-                            : Border.all(color: const Color(0xFFE3C39D)),
+                            : Border.all(
+                                color: const Color(0xFFE3C39D)),
                       ),
                       child: Row(
                         children: [
@@ -129,7 +154,8 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment:
+                                  CrossAxisAlignment.start,
                               children: [
                                 Text(n["message"] ?? "",
                                     style: TextStyle(
@@ -138,9 +164,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                                             : Colors.white,
                                         fontSize: 14)),
                                 const SizedBox(height: 4),
-                                Text(_timeAgo(n["created_at"] ?? ""),
+                                Text(
+                                    _timeAgo(n["created_at"] ?? ""),
                                     style: const TextStyle(
-                                        color: Colors.white38, fontSize: 12)),
+                                        color: Colors.white38,
+                                        fontSize: 12)),
                               ],
                             ),
                           ),

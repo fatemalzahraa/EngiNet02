@@ -1,8 +1,11 @@
 import 'dart:convert';
+
+import 'package:enginet/core/constants.dart';
+import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 class EngineerProfileScreen extends StatefulWidget {
   const EngineerProfileScreen({super.key});
@@ -12,13 +15,14 @@ class EngineerProfileScreen extends StatefulWidget {
 }
 
 class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
+  final supabase = Supabase.instance.client;
+
   Map<String, dynamic>? user;
   List<dynamic> posts = [];
   List<dynamic> books = [];
   List<dynamic> articles = [];
   bool isLoading = true;
   int selectedTab = 0;
-  final String baseUrl = "https://enginet02.onrender.com";
 
   @override
   void initState() {
@@ -26,32 +30,46 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
     loadProfile();
   }
 
-  Future<String?> getToken() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('token');
-  }
-
   Future<void> loadProfile() async {
-    final token = await getToken();
-    if (token == null) return;
-
     try {
-      final userRes = await http.get(
-        Uri.parse("$baseUrl/profile/me"),
-        headers: {"Authorization": "Bearer $token"},
-      );
-      final booksRes = await http.get(Uri.parse("$baseUrl/books/"));
-      final articlesRes = await http.get(Uri.parse("$baseUrl/articles/"));
-
-      if (userRes.statusCode == 200) {
+      final token = await SessionManager.getToken();
+      final username = await SessionManager.getUsername();
+      if (token == null || token.isEmpty || username == null || username.isEmpty) {
         if (!mounted) return;
-        setState(() {
-          user = json.decode(userRes.body);
-          if (booksRes.statusCode == 200) books = json.decode(booksRes.body);
-          if (articlesRes.statusCode == 200) articles = json.decode(articlesRes.body);
-          isLoading = false;
-        });
+        setState(() => isLoading = false);
+        return;
       }
+
+      final profileResponse = await http.get(
+        Uri.parse('${AppConstants.baseUrl}/profile/me'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (profileResponse.statusCode != 200) {
+        throw Exception('Failed to load profile');
+      }
+
+      final userRes = jsonDecode(profileResponse.body) as Map<String, dynamic>;
+
+      // ✅ جلب الكتب
+      final booksRes = await supabase
+          .from('books')
+          .select()
+          .order('created_at', ascending: false);
+
+      // ✅ جلب المقالات
+      final articlesRes = await supabase
+          .from('articles')
+          .select()
+          .order('created_at', ascending: false);
+
+      if (!mounted) return;
+      setState(() {
+        user = userRes;
+        books = booksRes;
+        articles = articlesRes;
+        isLoading = false;
+      });
     } catch (e) {
       if (!mounted) return;
       setState(() => isLoading = false);
@@ -84,19 +102,24 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
           ),
           TextButton(
             onPressed: () async {
-              final token = await getToken();
-              if (token == null) return;
+              final token = await SessionManager.getToken();
+              final username = await SessionManager.getUsername();
+              if (token == null || token.isEmpty || username == null || username.isEmpty) {
+                return;
+              }
+
               await http.put(
-                Uri.parse("$baseUrl/profile/me"),
+                Uri.parse('${AppConstants.baseUrl}/profile/me'),
                 headers: {
-                  "Authorization": "Bearer $token",
-                  "Content-Type": "application/json",
+                  'Content-Type': 'application/json',
+                  'Authorization': 'Bearer $token',
                 },
                 body: jsonEncode({
-                  "bio": bioController.text,
-                  "profile_image": imageController.text,
+                  'bio': bioController.text,
+                  'profile_image': imageController.text,
                 }),
               );
+
               if (!mounted) return;
               Navigator.pop(context);
               loadProfile();
@@ -108,6 +131,8 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
       ),
     );
   }
+
+  // ===== باقي الكود بدون تغيير =====
 
   Widget _dialogField(TextEditingController controller, String hint,
       {int maxLines = 1}) {
@@ -133,7 +158,8 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
     if (isLoading) {
       return const Scaffold(
         backgroundColor: Color(0xFF071739),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF6C94C6))),
+        body: Center(
+            child: CircularProgressIndicator(color: Color(0xFF6C94C6))),
       );
     }
 
@@ -148,7 +174,6 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // HEADER
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Row(
@@ -177,15 +202,13 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                   const Spacer(),
                   GestureDetector(
                     onTap: showEditDialog,
-                    child: const Icon(Icons.edit, color: Color(0xFFE3C39D)),
+                    child:
+                        const Icon(Icons.edit, color: Color(0xFFE3C39D)),
                   ),
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
-
-            // صورة + إحصائيات
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Row(
@@ -197,7 +220,8 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                         : null,
                     backgroundColor: const Color(0xFF4A6FA5),
                     child: profileImage.isEmpty
-                        ? const Icon(Icons.person, size: 50, color: Colors.white)
+                        ? const Icon(Icons.person,
+                            size: 50, color: Colors.white)
                         : null,
                   ),
                   const SizedBox(width: 20),
@@ -241,29 +265,20 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                 ],
               ),
             ),
-
             const SizedBox(height: 12),
-
-            // Bio
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  "${username}\n${university}\n${bio}",
+                  "$username\n$university\n$bio",
                   style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    height: 1.5,
-                  ),
+                      color: Colors.white, fontSize: 14, height: 1.5),
                 ),
               ),
             ),
-
             const SizedBox(height: 12),
             const Divider(color: Colors.white24),
-
-            // Tabs
             Row(
               children: [
                 _tab("Posts", 0),
@@ -272,8 +287,6 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
               ],
             ),
             const Divider(color: Colors.white24, height: 1),
-
-            // المحتوى
             Expanded(
               child: selectedTab == 0
                   ? _buildPostsList()
@@ -297,19 +310,21 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                color: isSelected ? const Color(0xFFE3C39D) : Colors.transparent,
+                color: isSelected
+                    ? const Color(0xFFE3C39D)
+                    : Colors.transparent,
                 width: 2,
               ),
             ),
           ),
           child: Center(
-            child: Text(
-              label,
-              style: GoogleFonts.agbalumo(
-                color: isSelected ? const Color(0xFFE3C39D) : Colors.white54,
-                fontSize: 16,
-              ),
-            ),
+            child: Text(label,
+                style: GoogleFonts.agbalumo(
+                  color: isSelected
+                      ? const Color(0xFFE3C39D)
+                      : Colors.white54,
+                  fontSize: 16,
+                )),
           ),
         ),
       ),
@@ -317,10 +332,15 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
   }
 
   Widget _buildPostsList() {
+    if (posts.isEmpty) {
+      return const Center(
+          child: Text("No posts", style: TextStyle(color: Colors.white54)));
+    }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: 2,
+      itemCount: posts.length,
       itemBuilder: (context, index) {
+        final post = posts[index];
         final profileImage = user?['profile_image'] ?? '';
         final username = user?['username'] ?? '';
         return Container(
@@ -348,21 +368,22 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                 ],
               ),
               const SizedBox(height: 8),
-              const Text(
-                "Sizce yapay zekâ gelecekte programcıların yerini alacak mı?\nBu konuda görüşünüz nedir?",
-                style: TextStyle(fontSize: 13, color: Colors.black87),
+              Text(
+                post['content'] ?? '',
+                style:
+                    const TextStyle(fontSize: 13, color: Colors.black87),
               ),
               const SizedBox(height: 8),
               Row(
                 children: [
                   const Icon(Icons.favorite_border, size: 18),
                   const SizedBox(width: 4),
-                  const Text("123"),
+                  Text('${post['likes_count'] ?? 0}'),
                   const SizedBox(width: 12),
-                  const Icon(Icons.chat_bubble_outline, size: 18,
-                      color: Color(0xFF5B7FA6)),
+                  const Icon(Icons.chat_bubble_outline,
+                      size: 18, color: Color(0xFF5B7FA6)),
                   const SizedBox(width: 4),
-                  const Text("10"),
+                  Text('${post['comments_count'] ?? 0}'),
                   const Spacer(),
                   const Icon(Icons.bookmark_border, size: 20),
                 ],
@@ -391,17 +412,21 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
             borderRadius: BorderRadius.circular(16),
           ),
           child: ListTile(
-            leading: book['image_url'] != null && book['image_url'].isNotEmpty
+            leading: book['image_url'] != null &&
+                    book['image_url'].isNotEmpty
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: Image.network(book['image_url'],
-                        width: 50, height: 60, fit: BoxFit.cover,
+                        width: 50,
+                        height: 60,
+                        fit: BoxFit.cover,
                         errorBuilder: (c, e, s) =>
                             const Icon(Icons.book, size: 40)),
                   )
                 : const Icon(Icons.book, size: 40),
             title: Text(book['title'] ?? '',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 13)),
             subtitle: Text(book['author'] ?? '',
                 style: const TextStyle(fontSize: 12)),
           ),
@@ -413,7 +438,8 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
   Widget _buildArticlesList() {
     if (articles.isEmpty) {
       return const Center(
-          child: Text("No articles", style: TextStyle(color: Colors.white54)));
+          child:
+              Text("No articles", style: TextStyle(color: Colors.white54)));
     }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
@@ -432,13 +458,16 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: Image.network(article['image_url'],
-                        width: 50, height: 60, fit: BoxFit.cover,
+                        width: 50,
+                        height: 60,
+                        fit: BoxFit.cover,
                         errorBuilder: (c, e, s) =>
                             const Icon(Icons.article, size: 40)),
                   )
                 : const Icon(Icons.article, size: 40),
             title: Text(article['title'] ?? '',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 13)),
             subtitle: Text(article['author_name'] ?? '',
                 style: const TextStyle(fontSize: 12)),
           ),

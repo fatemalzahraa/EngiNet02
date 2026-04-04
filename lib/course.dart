@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'course_details.dart';
 
 class CourseScreen extends StatefulWidget {
@@ -12,12 +11,13 @@ class CourseScreen extends StatefulWidget {
 }
 
 class _CourseScreenState extends State<CourseScreen> {
+  final supabase = Supabase.instance.client;
+
   List<dynamic> allCourses = [];
   List<dynamic> filteredCourses = [];
   bool isLoading = true;
   bool showSearch = false;
   final TextEditingController _searchController = TextEditingController();
-  final String baseUrl = "https://enginet02.onrender.com";
 
   @override
   void initState() {
@@ -27,17 +27,16 @@ class _CourseScreenState extends State<CourseScreen> {
 
   Future<void> loadCourses() async {
     try {
-      final response = await http.get(Uri.parse("$baseUrl/courses/"));
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        setState(() {
-          allCourses = data;
-          filteredCourses = data;
-          isLoading = false;
-        });
-      } else {
-        setState(() => isLoading = false);
-      }
+      final data = await supabase
+          .from('courses')
+          .select()
+          .order('created_at', ascending: false);
+
+      setState(() {
+        allCourses = data;
+        filteredCourses = data;
+        isLoading = false;
+      });
     } catch (e) {
       setState(() => isLoading = false);
       debugPrint("Error: $e");
@@ -113,15 +112,18 @@ class _CourseScreenState extends State<CourseScreen> {
             // COURSES LIST
             Expanded(
               child: isLoading
-                  ? const Center(child: CircularProgressIndicator(color: Color(0xFF6C94C6)))
+                  ? const Center(
+                      child: CircularProgressIndicator(color: Color(0xFF6C94C6)))
                   : filteredCourses.isEmpty
-                      ? const Center(child: Text("No courses found", style: TextStyle(color: Colors.white)))
+                      ? const Center(
+                          child: Text("No courses found",
+                              style: TextStyle(color: Colors.white)))
                       : ListView.builder(
                           padding: const EdgeInsets.symmetric(horizontal: 16),
                           itemCount: filteredCourses.length,
                           itemBuilder: (context, index) {
-                          final item = filteredCourses[index];
-return _buildCourseCard(item);
+                            final item = filteredCourses[index];
+                            return _buildCourseCard(item);
                           },
                         ),
             ),
@@ -131,7 +133,7 @@ return _buildCourseCard(item);
     );
   }
 
- Widget _buildCourseCard(dynamic item) {
+  Widget _buildCourseCard(dynamic item) {
     final title = item['title'] ?? '';
     final imageUrl = item['image_url'] ?? '';
     final instructorName = item['instructor_name'] ?? '';
@@ -140,12 +142,12 @@ return _buildCourseCard(item);
 
     return GestureDetector(
       onTap: () {
-        var materialPageRoute = MaterialPageRoute(
-           builder: (context) => CourseDetailScreen(courseId: (item['id'] as num).toInt()),
-          );
         Navigator.push(
           context,
-          materialPageRoute,
+          MaterialPageRoute(
+            builder: (context) =>
+                CourseDetailScreen(courseId: item['id'].toString()),
+          ),
         );
       },
       child: Container(
@@ -172,18 +174,19 @@ return _buildCourseCard(item);
                         width: 130,
                         height: 130,
                         color: const Color(0xFF7D93B0),
-                        child: const Icon(Icons.play_circle, size: 50, color: Colors.white54),
+                        child: const Icon(Icons.play_circle,
+                            size: 50, color: Colors.white54),
                       ),
                     )
                   : Container(
                       width: 130,
                       height: 130,
                       color: const Color(0xFF2A4A6F),
-                      child: const Icon(Icons.play_circle, size: 50, color: Colors.white54),
+                      child: const Icon(Icons.play_circle,
+                          size: 50, color: Colors.white54),
                     ),
             ),
 
-         
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -210,7 +213,8 @@ return _buildCourseCard(item);
                               : null,
                           backgroundColor: const Color(0xFF2A4A6F),
                           child: instructorImage.isEmpty
-                              ? const Icon(Icons.person, size: 14, color: Colors.white)
+                              ? const Icon(Icons.person,
+                                  size: 14, color: Colors.white)
                               : null,
                         ),
                         const SizedBox(width: 6),
@@ -233,7 +237,8 @@ return _buildCourseCard(item);
                         const SizedBox(width: 4),
                         Text(
                           rating.toStringAsFixed(1),
-                          style: const TextStyle(color: Colors.white, fontSize: 13),
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 13),
                         ),
                       ],
                     ),

@@ -1,3 +1,4 @@
+import 'package:enginet/core/constants.dart';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -16,8 +17,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final _confirmPasswordController = TextEditingController();
   bool isLoading = false;
 
-  final String baseUrl = "https://enginet02.onrender.com";
-
+  
   Future<void> resetPassword() async {
     final email = _emailController.text.trim();
     final newPassword = _newPasswordController.text.trim();
@@ -55,7 +55,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     final response = await http.post(
-      Uri.parse("$baseUrl/reset-password"),
+      Uri.parse("${AppConstants.baseUrl}/reset-password"),
       headers: {"Content-Type": "application/json"},
       body: jsonEncode({
         "email": email,

@@ -46,9 +46,7 @@ dependencies:
   firebase_storage: ^13.0.4
   google_fonts: ^6.3.2
   convex_bottom_bar: ^3.2.0
-  
 
-google_font: ^6.2.1
 dev_dependencies:
   flutter_test:
     sdk: flutter

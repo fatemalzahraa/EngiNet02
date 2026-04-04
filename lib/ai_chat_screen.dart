@@ -43,19 +43,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
     _scrollToBottom();
 
     try {
-      final apiMessages = _messages
-          .where((m) => m["role"] != "error")
-          .map((m) => {
-                "role": m["role"] == "assistant" ? "model" : "user",
-                "parts": [{"text": m["content"]!}]
-              })
-          .toList();
-
-      // أضف الـ system prompt كأول رسالة
-      apiMessages.insert(0, {
-        "role": "user",
-        "parts": [{"text": _systemPrompt}]
-      });
+      // API Messages are formatted directly in the body
 
       final response = await http.post(
   Uri.parse("https://api.groq.com/openai/v1/chat/completions"),

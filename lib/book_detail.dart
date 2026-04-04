@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class BookDetailScreen extends StatefulWidget {
-  final int bookId;
+  final String bookId; // ✅ UUID بدل int
   const BookDetailScreen({super.key, required this.bookId});
 
   @override
@@ -13,31 +12,83 @@ class BookDetailScreen extends StatefulWidget {
 }
 
 class _BookDetailScreenState extends State<BookDetailScreen> {
+  final supabase = Supabase.instance.client;
+
   Map<String, dynamic>? book;
   bool isLoading = true;
   bool isBookmarked = false;
-  final String baseUrl = "https://enginet02.onrender.com";
 
   @override
   void initState() {
     super.initState();
     loadBook();
+    checkBookmark();
   }
 
   Future<void> loadBook() async {
     try {
-      final response = await http.get(Uri.parse("$baseUrl/books/${widget.bookId}"));
-      if (response.statusCode == 200) {
-        setState(() {
-          book = Map<String, dynamic>.from(json.decode(response.body));
-          isLoading = false;
-        });
-      } else {
-        setState(() => isLoading = false);
-      }
+      // ✅ جلب الكتاب من Supabase
+      final res = await supabase
+          .from('books')
+          .select()
+          .eq('id', widget.bookId)
+          .single();
+
+      if (!mounted) return;
+      setState(() {
+        book = res;
+        isLoading = false;
+      });
     } catch (e) {
       debugPrint("❌ Error: $e");
+      if (!mounted) return;
       setState(() => isLoading = false);
+    }
+  }
+
+  // ✅ التحقق إذا كان الكتاب محفوظاً للمستخدم
+  Future<void> checkBookmark() async {
+    try {
+      final currentUser = supabase.auth.currentUser;
+      if (currentUser == null) return;
+
+      final res = await supabase
+          .from('bookmarks')
+          .select()
+          .eq('user_id', currentUser.id)
+          .eq('book_id', widget.bookId)
+          .maybeSingle();
+
+      if (!mounted) return;
+      setState(() => isBookmarked = res != null);
+    } catch (e) {
+      // تجاهل
+    }
+  }
+
+  // ✅ إضافة أو إزالة البوكمارك
+  Future<void> toggleBookmark() async {
+    try {
+      final currentUser = supabase.auth.currentUser;
+      if (currentUser == null) return;
+
+      if (isBookmarked) {
+        await supabase
+            .from('bookmarks')
+            .delete()
+            .eq('user_id', currentUser.id)
+            .eq('book_id', widget.bookId);
+      } else {
+        await supabase.from('bookmarks').insert({
+          'user_id': currentUser.id,
+          'book_id': widget.bookId,
+        });
+      }
+
+      if (!mounted) return;
+      setState(() => isBookmarked = !isBookmarked);
+    } catch (e) {
+      debugPrint("❌ Bookmark error: $e");
     }
   }
 
@@ -55,7 +106,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (isLoading) {
       return const Scaffold(
         backgroundColor: Color(0xFF071739),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF6C94C6))),
+        body: Center(
+            child: CircularProgressIndicator(color: Color(0xFF6C94C6))),
       );
     }
 
@@ -64,7 +116,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         backgroundColor: const Color(0xFF071739),
         appBar: AppBar(backgroundColor: const Color(0xFF071739)),
         body: const Center(
-          child: Text("Book not found", style: TextStyle(color: Colors.white)),
+          child:
+              Text("Book not found", style: TextStyle(color: Colors.white)),
         ),
       );
     }
@@ -74,7 +127,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     final imageUrl = book!['image_url']?.toString() ?? '';
     final fileUrl = book!['file_url']?.toString() ?? '';
     final description = book!['description']?.toString() ?? '';
-    final rating = double.tryParse(book!['rating']?.toString() ?? '4.5') ?? 4.5;
+    final rating =
+        double.tryParse(book!['rating']?.toString() ?? '4.5') ?? 4.5;
     final likes = book!['likes'] ?? 0;
 
     return Scaffold(
@@ -84,7 +138,8 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
           children: [
             // HEADER
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   GestureDetector(
@@ -111,244 +166,237 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               ),
             ),
 
-            // CARD 
+            // CARD
             Expanded(
               child: Center(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-                  child: Container(
-                    width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD8C09A),
-                    borderRadius: BorderRadius.circular(24),
-                  ),
-                  padding: const EdgeInsets.all(8),
+                  padding: const EdgeInsets.symmetric(
+                      vertical: 16, horizontal: 12),
                   child: Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFFAF3E8),
-                      borderRadius: BorderRadius.circular(18),
+                      color: const Color(0xFFD8C09A),
+                      borderRadius: BorderRadius.circular(24),
                     ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.max,
-                        children: [
-                         
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 22,
-                                backgroundImage: NetworkImage(
-                                    "https://i.pravatar.cc/150?img=1"),
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                author,
-                                style: GoogleFonts.agbalumo(
-                                  fontSize: 16,
-                                  color: Colors.black87,
+                    padding: const EdgeInsets.all(8),
+                    child: Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFAF3E8),
+                        borderRadius: BorderRadius.circular(18),
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.max,
+                          children: [
+                            // المؤلف
+                            Row(
+                              children: [
+                                const CircleAvatar(
+                                  radius: 22,
+                                  backgroundImage: NetworkImage(
+                                      "https://i.pravatar.cc/150?img=1"),
                                 ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 12),
-
-                          //
-                          Text(
-                            title,
-                            style: const TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.black,
+                                const SizedBox(width: 10),
+                                Text(
+                                  author,
+                                  style: GoogleFonts.agbalumo(
+                                    fontSize: 16,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
 
-                          const SizedBox(height: 14),
+                            const SizedBox(height: 12),
 
-                          // 
-                          Center(
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(10),
-                              child: imageUrl.isNotEmpty
-                                  ? Image.network(
-                                      imageUrl,
-                                      height: 200,
-                                      width: 160,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (c, e, s) => Container(
+                            Text(
+                              title,
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.black,
+                              ),
+                            ),
+
+                            const SizedBox(height: 14),
+
+                            // غلاف الكتاب
+                            Center(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: imageUrl.isNotEmpty
+                                    ? Image.network(
+                                        imageUrl,
+                                        height: 200,
+                                        width: 160,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (c, e, s) => Container(
+                                          height: 200,
+                                          width: 160,
+                                          color: const Color(0xFFE0D5C5),
+                                          child: const Icon(Icons.book,
+                                              size: 60, color: Colors.brown),
+                                        ),
+                                      )
+                                    : Container(
                                         height: 200,
                                         width: 160,
                                         color: const Color(0xFFE0D5C5),
                                         child: const Icon(Icons.book,
                                             size: 60, color: Colors.brown),
                                       ),
-                                    )
-                                  : Container(
-                                      height: 200,
-                                      width: 160,
-                                      color: const Color(0xFFE0D5C5),
-                                      child: const Icon(Icons.book,
-                                          size: 60, color: Colors.brown),
-                                    ),
-                            ),
-                          ),
-
-                          const SizedBox(height: 8),
-
-                          // 
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              ...List.generate(
-                                5,
-                                (i) => Icon(
-                                  i < rating.floor()
-                                      ? Icons.star
-                                      : Icons.star_border,
-                                  color: Colors.orange,
-                                  size: 18,
-                                ),
                               ),
-                              const SizedBox(width: 4),
-                              Text(
-                                rating.toStringAsFixed(1),
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ],
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          // 
-                          Text(
-                            description,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.black87,
-                              height: 1.5,
                             ),
-                          ),
 
-                          const SizedBox(height: 20),
+                            const SizedBox(height: 8),
 
-                          // Read و Download
-                          Row(
-                            children: [
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: () => openUrl(fileUrl),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 14),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF6C94C6),
-                                      borderRadius: BorderRadius.circular(30),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        const Icon(Icons.menu_book,
-                                            color: Colors.white, size: 20),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          "Read",
-                                          style: GoogleFonts.agbalumo(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                      ],
+                            // التقييم
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                ...List.generate(
+                                  5,
+                                  (i) => Icon(
+                                    i < rating.floor()
+                                        ? Icons.star
+                                        : Icons.star_border,
+                                    color: Colors.orange,
+                                    size: 18,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  rating.toStringAsFixed(1),
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            ),
+
+                            const SizedBox(height: 10),
+
+                            Text(
+                              description,
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.black87,
+                                height: 1.5,
+                              ),
+                            ),
+
+                            const SizedBox(height: 20),
+
+                            // Read و Download
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => openUrl(fileUrl),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF6C94C6),
+                                        borderRadius:
+                                            BorderRadius.circular(30),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.menu_book,
+                                              color: Colors.white, size: 20),
+                                          const SizedBox(width: 8),
+                                          Text("Read",
+                                              style: GoogleFonts.agbalumo(
+                                                  color: Colors.white,
+                                                  fontSize: 16)),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: GestureDetector(
-                                  onTap: () => openUrl(fileUrl),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 14),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFF6C94C6),
-                                      borderRadius: BorderRadius.circular(30),
-                                    ),
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        const Icon(Icons.download,
-                                            color: Colors.white, size: 20),
-                                        const SizedBox(width: 8),
-                                        Text(
-                                          "Download",
-                                          style: GoogleFonts.agbalumo(
-                                            color: Colors.white,
-                                            fontSize: 16,
-                                          ),
-                                        ),
-                                      ],
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: GestureDetector(
+                                    onTap: () => openUrl(fileUrl),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          vertical: 14),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF6C94C6),
+                                        borderRadius:
+                                            BorderRadius.circular(30),
+                                      ),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.center,
+                                        children: [
+                                          const Icon(Icons.download,
+                                              color: Colors.white, size: 20),
+                                          const SizedBox(width: 8),
+                                          Text("Download",
+                                              style: GoogleFonts.agbalumo(
+                                                  color: Colors.white,
+                                                  fontSize: 16)),
+                                        ],
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
 
-                          const SizedBox(height: 16),
+                            const SizedBox(height: 16),
 
-                          //  Bookmark
-                          Row(
-                            children: [
-                              ...List.generate(
-                                5,
-                                (i) => Icon(
-                                  i < rating.floor()
-                                      ? Icons.star
-                                      : Icons.star_border,
-                                  color: Colors.orange,
-                                  size: 16,
+                            // Bookmark
+                            Row(
+                              children: [
+                                ...List.generate(
+                                  5,
+                                  (i) => Icon(
+                                    i < rating.floor()
+                                        ? Icons.star
+                                        : Icons.star_border,
+                                    color: Colors.orange,
+                                    size: 16,
+                                  ),
                                 ),
-                              ),
-                              const SizedBox(width: 8),
-                              const Icon(Icons.chat_bubble,
-                                  color: Color(0xFF5B7FA6), size: 18),
-                              const SizedBox(width: 4),
-                              Text(
-                                "$likes",
-                                style:
-                                    const TextStyle(color: Colors.black87),
-                              ),
-                              const Spacer(),
-                              GestureDetector(
-                                onTap: () => setState(
-                                    () => isBookmarked = !isBookmarked),
-                                child: Icon(
-                                  isBookmarked
-                                      ? Icons.bookmark
-                                      : Icons.bookmark_border,
-                                  color: const Color(0xFF071739),
-                                  size: 28,
+                                const SizedBox(width: 8),
+                                const Icon(Icons.chat_bubble,
+                                    color: Color(0xFF5B7FA6), size: 18),
+                                const SizedBox(width: 4),
+                                Text("$likes",
+                                    style: const TextStyle(
+                                        color: Colors.black87)),
+                                const Spacer(),
+                                // ✅ Bookmark حقيقي من Supabase
+                                GestureDetector(
+                                  onTap: toggleBookmark,
+                                  child: Icon(
+                                    isBookmarked
+                                        ? Icons.bookmark
+                                        : Icons.bookmark_border,
+                                    color: const Color(0xFF071739),
+                                    size: 28,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        ],
+                              ],
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
           ],
         ),
       ),

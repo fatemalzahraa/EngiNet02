@@ -1,17 +1,19 @@
 import 'package:enginet/article.dart';
 import 'package:enginet/book.dart';
+import 'package:enginet/core/session_manager.dart';
 import 'package:enginet/course.dart';
 import 'package:enginet/engineer_profile.dart';
 import 'package:enginet/student_profile.dart';
 import 'package:enginet/home_screen.dart';
+import 'package:enginet/core/constants.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:convex_bottom_bar/convex_bottom_bar.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class IndexPage extends StatefulWidget {
   final String title;
-
   const IndexPage({super.key, required this.title});
 
   @override
@@ -20,8 +22,10 @@ class IndexPage extends StatefulWidget {
 
 class _IndexPageState extends State<IndexPage> {
   int _currentIndex = 0;
-  bool _isBottomNav = true;
   String _role = 'student';
+  String _username = '';
+  String _profileImage = '';
+  bool _profileLoaded = false;
 
   @override
   void initState() {
@@ -30,62 +34,101 @@ class _IndexPageState extends State<IndexPage> {
   }
 
   Future<void> _loadRole() async {
-    final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _role = prefs.getString('role') ?? 'student';
-    });
+    try {
+      final token = await SessionManager.getToken();
+      final role = await SessionManager.getRole();
+      final username = await SessionManager.getUsername();
+      String profileImage = '';
+
+      if (token != null && token.isNotEmpty) {
+        final response = await http.get(
+          Uri.parse('${AppConstants.baseUrl}/profile/me'),
+          headers: {'Authorization': 'Bearer $token'},
+        );
+
+        if (response.statusCode == 200) {
+          final profile = jsonDecode(response.body) as Map<String, dynamic>;
+          profileImage = profile['profile_image']?.toString() ?? '';
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _role = role ?? 'student';
+        _username = username ?? '';
+        _profileImage = profileImage;
+        _profileLoaded = true;
+      });
+    } catch (e) {
+      debugPrint("Error loading role: $e");
+      if (!mounted) return;
+      setState(() => _profileLoaded = true);
+    }
   }
 
-  Widget get _profileScreen =>
-      _role == 'engineer' ? const EngineerProfileScreen() : const StudentProfileScreen();
+  Widget get _profileScreen => _role == 'engineer'
+      ? const EngineerProfileScreen()
+      : const StudentProfileScreen();
 
-  void _changeItem(int value) {
+  void _changeBottomNav(int value) {
     if (value == 2) {
       _showAddOptions();
     } else {
-      setState(() {
-        _isBottomNav = true;
-        _currentIndex = value;
-      });
+      // BottomNav index → page index
+      // 0=Home, 1=Book, 2=(add), 3=Article, 4=Profile
+      final pageMap = {0: 0, 1: 2, 3: 3, 4: 4};
+      final pageIndex = pageMap[value] ?? 0;
+      setState(() => _currentIndex = pageIndex);
     }
   }
 
   void _showAddOptions() {
     showModalBottomSheet(
       context: context,
+      backgroundColor: const Color(0xFF0D2240),
+      shape: const RoundedRectangleBorder(
+          borderRadius:
+              BorderRadius.vertical(top: Radius.circular(20))),
       builder: (context) {
-        return Container(
+        return Padding(
           padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              Text("Add Content",
+                  style: GoogleFonts.agbalumo(
+                      color: const Color(0xFFE3C39D), fontSize: 20)),
+              const SizedBox(height: 12),
               ListTile(
-                leading: const Icon(Icons.question_answer),
-                title: const Text('Soru sor'),
+                leading: const Icon(Icons.question_answer,
+                    color: Colors.white),
+                title: const Text('Ask a Question',
+                    style: TextStyle(color: Colors.white)),
                 onTap: () {
                   Navigator.pop(context);
+                  Navigator.pushNamed(context, '/questions');
                 },
               ),
               ListTile(
-                leading: const Icon(Icons.book),
-                title: const Text('Kitab Ekle'),
-                onTap: () {
-                  Navigator.pop(context);
-                },
+                leading:
+                    const Icon(Icons.book, color: Colors.white),
+                title: const Text('Add Book',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(context),
               ),
               ListTile(
-                leading: const Icon(Icons.note_add),
-                title: const Text('Makale Ekle'),
-                onTap: () {
-                  Navigator.pop(context);
-                },
+                leading: const Icon(Icons.note_add,
+                    color: Colors.white),
+                title: const Text('Add Article',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(context),
               ),
               ListTile(
-                leading: const Icon(Icons.video_library),
-                title: const Text('Kurs Ekle'),
-                onTap: () {
-                  Navigator.pop(context);
-                },
+                leading: const Icon(Icons.video_library,
+                    color: Colors.white),
+                title: const Text('Add Course',
+                    style: TextStyle(color: Colors.white)),
+                onTap: () => Navigator.pop(context),
               ),
             ],
           ),
@@ -94,27 +137,24 @@ class _IndexPageState extends State<IndexPage> {
     );
   }
 
+  // الصفحات
   List<Widget> get _pages => [
-        const HomeScreen(),
-        _profileScreen,
-        const BookScreen(),
-        const ArticleScreen(),
-        const CourseScreen(),
+        const HomeScreen(),       // 0
+        const BookScreen(),       // 1
+        const CourseScreen(),     // 2
+        const ArticleScreen(),    // 3
+        _profileScreen,           // 4
       ];
 
-  List<Widget> get _pagesNav => [
-        const HomeScreen(),
-        const BookScreen(),
-        const SizedBox(),
-        const ArticleScreen(),
-        _profileScreen,
-      ];
+  void _onDrawerItemTapped(int index) {
+    setState(() => _currentIndex = index);
+    Navigator.pop(context);
+  }
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _isBottomNav = false;
-      _currentIndex = index;
-    });
+  Future<void> _logout() async {
+    await SessionManager.clearSession();
+    if (!mounted) return;
+    Navigator.of(context).pushReplacementNamed('/login');
   }
 
   @override
@@ -122,35 +162,37 @@ class _IndexPageState extends State<IndexPage> {
     return Scaffold(
       backgroundColor: const Color(0xFF071739),
       appBar: AppBar(
-  backgroundColor: const Color(0xFF071739),
-  centerTitle: true,
-  title: Text(
-    widget.title,
-    style: GoogleFonts.agbalumo(
-      color: const Color(0xFFE3C39D),
-      fontSize: 40,
-      fontWeight: FontWeight.bold,
-    ),
-  ),
-  leading: Builder(
-    builder: (context) {
-      return IconButton(
-        icon: const Icon(Icons.menu, color: Color(0xFFE3C39D)),
-        onPressed: () => Scaffold.of(context).openDrawer(),
-      );
-    },
-  ),
-  actions: [
-    IconButton(
-      icon: const Icon(Icons.notifications, color: Color(0xFFE3C39D)),
-      onPressed: () => Navigator.pushNamed(context, '/notifications'),
-    ),
-  ],
-),
+        backgroundColor: const Color(0xFF071739),
+        centerTitle: true,
+        title: Text(
+          widget.title,
+          style: GoogleFonts.agbalumo(
+            color: const Color(0xFFE3C39D),
+            fontSize: 40,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu, color: Color(0xFFE3C39D)),
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon:
+                const Icon(Icons.notifications, color: Color(0xFFE3C39D)),
+            onPressed: () =>
+                Navigator.pushNamed(context, '/notifications'),
+          ),
+        ],
+      ),
+
       body: IndexedStack(
         index: _currentIndex,
-        children: _isBottomNav ? _pagesNav : _pages,
+        children: _pages,
       ),
+
       drawer: Drawer(
         child: Container(
           color: const Color(0xFFE3C39D),
@@ -158,12 +200,28 @@ class _IndexPageState extends State<IndexPage> {
             padding: EdgeInsets.zero,
             children: [
               DrawerHeader(
-                decoration: const BoxDecoration(color: Color(0xFFA68868)),
+                decoration:
+                    const BoxDecoration(color: Color(0xFFA68868)),
                 child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Image.asset('images/user1.png', width: 100, height: 100),
-                    const SizedBox(height: 10),
-                    const Text('User Name'),
+                    CircleAvatar(
+                      radius: 45,
+                      backgroundImage: _profileImage.isNotEmpty
+                          ? NetworkImage(_profileImage)
+                          : null,
+                      backgroundColor: const Color(0xFF4A6FA5),
+                      child: _profileImage.isEmpty
+                          ? const Icon(Icons.person,
+                              size: 45, color: Colors.white)
+                          : null,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _username.isNotEmpty ? _username : 'User',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 16),
+                    ),
                   ],
                 ),
               ),
@@ -171,87 +229,75 @@ class _IndexPageState extends State<IndexPage> {
                 leading: const Icon(Icons.home),
                 title: const Text('Home'),
                 selected: _currentIndex == 0,
-                onTap: () {
-                  _onItemTapped(0);
-                  Navigator.pop(context);
-                },
+                onTap: () => _onDrawerItemTapped(0),
               ),
               ListTile(
                 leading: const Icon(Icons.account_box_rounded),
                 title: const Text('Profile'),
-                selected: _currentIndex == 1,
+                selected: _currentIndex == 4,
+                onTap: () => _onDrawerItemTapped(4),
+              ),
+              ListTile(
+                leading: const Icon(Icons.question_answer),
+                title: const Text('Questions'),
                 onTap: () {
-                  _onItemTapped(1);
                   Navigator.pop(context);
+                  Navigator.pushNamed(context, '/questions');
                 },
               ),
               ListTile(
-  leading: const Icon(Icons.question_answer),
-  title: const Text('Questions'),
-  onTap: () {
-    Navigator.pop(context);
-    Navigator.pushNamed(context, '/questions');
-  },
-),
-              ListTile(
                 leading: const Icon(Icons.book),
-                title: const Text('Kitaplar'),
-                selected: _currentIndex == 2,
-                onTap: () {
-                  _onItemTapped(2);
-                  Navigator.pop(context);
-                },
+                title: const Text('Books'),
+                selected: _currentIndex == 1,
+                onTap: () => _onDrawerItemTapped(1),
               ),
               ListTile(
                 leading: const Icon(Icons.article_rounded),
-                title: const Text('Makaleler'),
+                title: const Text('Articles'),
                 selected: _currentIndex == 3,
-                onTap: () {
-                  _onItemTapped(3);
-                  Navigator.pop(context);
-                },
+                onTap: () => _onDrawerItemTapped(3),
               ),
               ListTile(
-                leading: const Icon(Icons.video_collection_rounded),
-                title: const Text('Kurslar'),
-                selected: _currentIndex == 4,
-                onTap: () {
-                  _onItemTapped(4);
-                  Navigator.pop(context);
-                },
+                leading: const Icon(Icons.video_library),
+                title: const Text('Courses'),
+                selected: _currentIndex == 2,
+                onTap: () => _onDrawerItemTapped(2),
               ),
               ListTile(
-  leading: const Icon(Icons.smart_toy),
-  title: const Text('AI Chat'),
-  onTap: () {
-    Navigator.pop(context);
-    Navigator.pushNamed(context, '/ai-chat');
-  },
-),
+                leading: const Icon(Icons.smart_toy),
+                title: const Text('AI Chat'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.pushNamed(context, '/ai-chat');
+                },
+              ),
+              const Divider(),
               ListTile(
-                leading: const Icon(Icons.logout_rounded),
-                title: const Text('Logout'),
-                onTap: () async {
-                  final prefs = await SharedPreferences.getInstance();
-                  await prefs.clear();
-                  if (!context.mounted) return;
-                  Navigator.of(context).pushReplacementNamed('/login');
+                leading: const Icon(Icons.logout_rounded,
+                    color: Colors.red),
+                title: const Text('Logout',
+                    style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _logout();
                 },
               ),
             ],
           ),
         ),
       ),
+
       bottomNavigationBar: ConvexAppBar(
-        initialActiveIndex: _currentIndex,
-        onTap: _changeItem,
+        initialActiveIndex: 0,
+        onTap: _changeBottomNav,
         backgroundColor: const Color(0xFF3C4F71),
         items: const [
           TabItem(icon: Icon(Icons.home), title: 'Home'),
-          TabItem(icon: Icon(Icons.book), title: 'Book'),
+          TabItem(icon: Icon(Icons.book), title: 'Books'),
           TabItem(icon: Icon(Icons.add), title: ''),
-          TabItem(icon: Icon(Icons.article), title: 'Article'),
-          TabItem(icon: Icon(Icons.account_circle), title: 'Profile'),
+          TabItem(icon: Icon(Icons.article), title: 'Articles'),
+          TabItem(
+              icon: Icon(Icons.account_circle), title: 'Profile'),
         ],
       ),
     );

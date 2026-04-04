@@ -1,27 +1,31 @@
-from fastapi import FastAPI, HTTPException, Depends
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-from fastapi.middleware.cors import CORSMiddleware
-from books_router import router as books_router
+import os
+import smtplib
+from datetime import datetime, timedelta, timezone
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+
 import bcrypt
-from datetime import datetime, timedelta
-from jose import jwt, JWTError
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from jose import JWTError, jwt
+from pydantic import BaseModel
+
+from articles_router import router as articles_router
+from books_router import router as books_router
+from courses_router import router as course_router
 from database import get_db
 from models import User
-from articles_router import router as articles_router
-from profile_router import router as profile_router
 from post_router import router as post_router
-from courses_router import router as course_router
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+from profile_router import router as profile_router
 
 # ===================== CONFIG =====================
-SECRET_KEY = "enginet_super_secret_key_2025"
+SECRET_KEY = os.getenv("SECRET_KEY", "enginet_super_secret_key_2025")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
-GMAIL_USER = "appenginet2026@gmail.com"
-GMAIL_PASSWORD = "omhoqaqptlanznmd"
+GMAIL_USER = os.getenv("GMAIL_USER", "")
+GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD", "")
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
@@ -42,7 +46,7 @@ app.add_middleware(
 # ===================== HELPERS =====================
 def create_access_token(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -121,6 +125,9 @@ def get_me(current_user: dict = Depends(get_current_user)):
 # ===================== FORGOT PASSWORD =====================
 @app.post("/forgot-password")
 def forgot_password(email: str):
+    if not GMAIL_USER or not GMAIL_PASSWORD:
+        raise HTTPException(status_code=500, detail="Email service is not configured")
+
     db = get_db()
     cursor = db.cursor()
     cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
@@ -158,9 +165,6 @@ EngiNet Team
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
 
-# ===================== RESET PASSWORD =====================
-from pydantic import BaseModel
-
 class ResetPasswordRequest(BaseModel):
     email: str
     new_password: str
@@ -197,14 +201,12 @@ def get_engineers():
     return engineers
 
 # ===================== QUESTIONS =====================
-from pydantic import BaseModel as PydanticBase
-
-class QuestionRequest(PydanticBase):
+class QuestionRequest(BaseModel):
     title: str
     content: str
     category: str = ""
 
-class AnswerRequest(PydanticBase):
+class AnswerRequest(BaseModel):
     content: str
 
 @app.post("/questions")

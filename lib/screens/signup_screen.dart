@@ -1,9 +1,10 @@
 import 'dart:convert';
+
+import 'package:enginet/core/constants.dart';
+import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
-
-
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -13,85 +14,121 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
+  final _usernameController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
-  final _userController = TextEditingController();
 
-  String _selectedRole = 'student'; 
+  String _selectedRole = 'student';
+  bool _isLoading = false;
+  bool _obscurePassword = true;
+  bool _obscureConfirm = true;
 
-  Future<void> signUp() async {
-    if (!passwordConfirmed()) {
-      showErrorDialog('Passwords do not match');
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    _confirmPasswordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _signup() async {
+    final username = _usernameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
+    final confirmPassword = _confirmPasswordController.text.trim();
+
+    // ---- Validation ----
+    if (username.isEmpty || email.isEmpty || password.isEmpty) {
+      _showSnackBar("Please fill all fields", isError: true);
       return;
     }
 
-    final username = _userController.text.trim();
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
+    if (password != confirmPassword) {
+      _showSnackBar("Passwords do not match", isError: true);
+      return;
+    }
+
+    if (password.length < 6) {
+      _showSnackBar("Password must be at least 6 characters", isError: true);
+      return;
+    }
+
+    setState(() => _isLoading = true);
 
     try {
-      final response = await http.post(
-        Uri.parse('https://enginet02.onrender.com/register'), 
-        headers: {'Content-Type': 'application/json'},
+      final registerResponse = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/register'),
+        headers: const {'Content-Type': 'application/json'},
         body: jsonEncode({
           'username': username,
           'email': email,
           'password': password,
-          'role': _selectedRole.toLowerCase(),
+          'role': _selectedRole,
         }),
       );
-      if (!mounted) return;
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if (!mounted) return;
-  Navigator.pushReplacementNamed(context, '/login');
+      final registerData =
+          jsonDecode(registerResponse.body) as Map<String, dynamic>;
 
-      } else {
-        try {
-    final data = jsonDecode(response.body);
-    final detail = data['detail'];
-    showErrorDialog(detail?.toString() ?? 'Registration failed');
-  } catch (_) {
-    showErrorDialog('Registration failed');
-  }
+      if (registerResponse.statusCode >= 400) {
+        _showSnackBar(
+          (registerData['detail'] ?? 'Registration failed. Try again.')
+              .toString(),
+          isError: true,
+        );
+        return;
       }
-    } catch (e) {
+
+      final loginResponse = await http.post(
+        Uri.parse('${AppConstants.baseUrl}/token'),
+        headers: const {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: {
+          'username': email,
+          'password': password,
+        },
+      );
+
+      final loginData = jsonDecode(loginResponse.body) as Map<String, dynamic>;
+
+      if (loginResponse.statusCode != 200) {
+        _showSnackBar(
+          'Account created, but automatic login failed. Please sign in.',
+        );
+        if (!mounted) return;
+        Navigator.pushReplacementNamed(context, '/login');
+        return;
+      }
+
+      await SessionManager.saveSession(
+        token: loginData['access_token']?.toString() ?? '',
+        role: loginData['role']?.toString() ?? _selectedRole,
+        username: loginData['username']?.toString() ?? username,
+        email: email,
+      );
+
       if (!mounted) return;
-      showErrorDialog('Something went wrong: $e');
+      _showSnackBar("Account created successfully! ✅");
+      Navigator.pushReplacementNamed(context, '/home');
+    } catch (e) {
+      debugPrint("Signup error: $e");
+      _showSnackBar("Unable to connect to server. Try again.", isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  bool passwordConfirmed() =>
-      _passwordController.text.trim() == _confirmPasswordController.text.trim();
-
-  void openLoginScreen() {
-    Navigator.of(context).pushReplacementNamed('/login');
-  }
-
-  void showErrorDialog(String message) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Error'),
+  void _showSnackBar(String message, {bool isError = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
         content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('OK'),
-          ),
-        ],
+        backgroundColor: isError ? Colors.red : Colors.green,
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _emailController.dispose();
-    _passwordController.dispose();
-    _confirmPasswordController.dispose();
-    _userController.dispose();
-    super.dispose();
   }
 
   @override
@@ -101,73 +138,143 @@ class _SignupScreenState extends State<SignupScreen> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 25),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Image.asset('images/enginet_logo.png', height: 150),
-                const SizedBox(height: 20),
-                Text('Sign Up',
-                    style: GoogleFonts.robotoCondensed(
-                        fontSize: 40,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFFA68868))),
-                Text('Welcome To EngiNet!',
-                    style: GoogleFonts.robotoCondensed(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFFA68868))),
-                const SizedBox(height: 50),
+                // ---- Logo ----
+                Image.asset('images/enginet_logo.png', height: 100),
+                const SizedBox(height: 16),
 
-                // Username
-                inputField(_userController, 'User Name'),
-
-                const SizedBox(height: 20),
-                // Email
-                inputField(_emailController, 'Email'),
-
-                const SizedBox(height: 20),
-                // Password
-                inputField(_passwordController, 'Password', obscureText: true),
-
-                const SizedBox(height: 20),
-                // Confirm Password
-                inputField(_confirmPasswordController, 'Confirm Password',
-                    obscureText: true),
-
-                const SizedBox(height: 20),
-                // Role dropdown
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 25),
-                  child: DropdownButtonFormField<String>(
-                    initialValue: _selectedRole,
-                    items: ['student', 'engineer']
-                        .map((role) => DropdownMenuItem(
-                              value: role,
-                              child: Text(role),
-                            ))
-                        .toList(),
-                    onChanged: (val) {
-                      setState(() {
-                        _selectedRole = val!;
-                      });
-                    },
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: const Color(0xFFE3C39D),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(34),
-                        borderSide: BorderSide.none,
-                      ),
-                    ),
+                Text(
+                  'Create Account',
+                  style: GoogleFonts.agbalumo(
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFFE3C39D),
                   ),
                 ),
-                const SizedBox(height: 15),
+                Text(
+                  'Join the EngiNet community',
+                  style: GoogleFonts.robotoCondensed(
+                    fontSize: 15,
+                    color: const Color(0xFFA68868),
+                  ),
+                ),
+                const SizedBox(height: 32),
 
-                // Sign Up button
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 25),
+                // ---- Username ----
+                _buildField(
+                  controller: _usernameController,
+                  hint: 'Username',
+                  icon: Icons.person_outline,
+                ),
+                const SizedBox(height: 14),
+
+                // ---- Email ----
+                _buildField(
+                  controller: _emailController,
+                  hint: 'Email',
+                  icon: Icons.email_outlined,
+                  keyboardType: TextInputType.emailAddress,
+                ),
+                const SizedBox(height: 14),
+
+                // ---- Password ----
+                _buildField(
+                  controller: _passwordController,
+                  hint: 'Password',
+                  icon: Icons.lock_outline,
+                  obscureText: _obscurePassword,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // ---- Confirm Password ----
+                _buildField(
+                  controller: _confirmPasswordController,
+                  hint: 'Confirm Password',
+                  icon: Icons.lock_outline,
+                  obscureText: _obscureConfirm,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscureConfirm
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () =>
+                        setState(() => _obscureConfirm = !_obscureConfirm),
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // ---- Role Selector ----
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE3C39D),
+                    borderRadius: BorderRadius.circular(34),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.badge_outlined, color: Colors.black45),
+                      const SizedBox(width: 10),
+                      Text(
+                        'I am a:',
+                        style: GoogleFonts.robotoCondensed(
+                          color: Colors.black54,
+                          fontSize: 15,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: _selectedRole,
+                            dropdownColor: const Color(0xFFE3C39D),
+                            style: GoogleFonts.robotoCondensed(
+                              color: Colors.black87,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 15,
+                            ),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'student',
+                                child: Text('Student'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'engineer',
+                                child: Text('Engineer'),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() => _selectedRole = value);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 28),
+
+                // ---- Signup Button ----
+                SizedBox(
+                  width: double.infinity,
                   child: GestureDetector(
-                    onTap: signUp,
+                    onTap: _isLoading ? null : _signup,
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -175,33 +282,47 @@ class _SignupScreenState extends State<SignupScreen> {
                         borderRadius: BorderRadius.circular(34),
                       ),
                       child: Center(
-                        child: Text('Sign Up',
-                            style: GoogleFonts.robotoCondensed(
-                                color: const Color(0xFFCDD5D8),
-                                fontWeight: FontWeight.bold,
-                                fontSize: 24)),
+                        child: _isLoading
+                            ? const CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2)
+                            : Text(
+                                'Create Account',
+                                style: GoogleFonts.robotoCondensed(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 20,
+                                ),
+                              ),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 25),
+                const SizedBox(height: 20),
 
+                // ---- Login Link ----
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text("Already a member?  ",
-                        style: GoogleFonts.robotoCondensed(
-                            color: const Color(0xFFA68868),
-                            fontWeight: FontWeight.bold)),
+                    Text(
+                      "Already have an account? ",
+                      style: GoogleFonts.robotoCondensed(
+                          color: Colors.white54, fontSize: 15),
+                    ),
                     GestureDetector(
-                      onTap: openLoginScreen,
-                      child: Text('Sign In Now',
-                          style: GoogleFonts.robotoCondensed(
-                              color: const Color(0xFFCDD5D8),
-                              fontWeight: FontWeight.bold)),
+                      onTap: () =>
+                          Navigator.pushReplacementNamed(context, '/login'),
+                      child: Text(
+                        'Sign In',
+                        style: GoogleFonts.robotoCondensed(
+                          color: const Color(0xFFE3C39D),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
                     ),
                   ],
                 ),
+                const SizedBox(height: 20),
               ],
             ),
           ),
@@ -210,25 +331,30 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
-  Widget inputField(TextEditingController controller, String hintText,
-      {bool obscureText = false}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 25),
-      child: Container(
-        decoration: BoxDecoration(
-          color: const Color(0xFFE3C39D),
-          borderRadius: BorderRadius.circular(34),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: TextField(
-            controller: controller,
-            obscureText: obscureText,
-            decoration: InputDecoration(
-              border: InputBorder.none,
-              hintText: hintText,
-            ),
-          ),
+  Widget _buildField({
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+    bool obscureText = false,
+    TextInputType keyboardType = TextInputType.text,
+    Widget? suffixIcon,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFE3C39D),
+        borderRadius: BorderRadius.circular(34),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: TextField(
+        controller: controller,
+        obscureText: obscureText,
+        keyboardType: keyboardType,
+        decoration: InputDecoration(
+          border: InputBorder.none,
+          hintText: hint,
+          hintStyle: const TextStyle(color: Colors.black45),
+          prefixIcon: Icon(icon, color: Colors.black45),
+          suffixIcon: suffixIcon,
         ),
       ),
     );

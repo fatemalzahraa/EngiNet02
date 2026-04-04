@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ArticleDetailScreen extends StatefulWidget {
-  final int articleId;
+  final String articleId; // ✅ UUID بدل int
   const ArticleDetailScreen({super.key, required this.articleId});
 
   @override
@@ -12,9 +11,10 @@ class ArticleDetailScreen extends StatefulWidget {
 }
 
 class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
+  final supabase = Supabase.instance.client;
+
   Map<String, dynamic>? article;
   bool isLoading = true;
-  final String baseUrl = "https://enginet02.onrender.com";
 
   @override
   void initState() {
@@ -24,18 +24,21 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
 
   Future<void> loadArticle() async {
     try {
-      final response = await http.get(
-          Uri.parse("$baseUrl/articles/${widget.articleId}"));
-      if (response.statusCode == 200) {
-        setState(() {
-          article = Map<String, dynamic>.from(json.decode(response.body));
-          isLoading = false;
-        });
-      } else {
-        setState(() => isLoading = false);
-      }
+      // ✅ جلب المقال من Supabase
+      final res = await supabase
+          .from('articles')
+          .select()
+          .eq('id', widget.articleId)
+          .single();
+
+      if (!mounted) return;
+      setState(() {
+        article = res;
+        isLoading = false;
+      });
     } catch (e) {
       debugPrint("❌ Error: $e");
+      if (!mounted) return;
       setState(() => isLoading = false);
     }
   }
@@ -55,8 +58,8 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
         backgroundColor: const Color(0xFF071739),
         appBar: AppBar(backgroundColor: const Color(0xFF071739)),
         body: const Center(
-          child:
-              Text("Article not found", style: TextStyle(color: Colors.white)),
+          child: Text("Article not found",
+              style: TextStyle(color: Colors.white)),
         ),
       );
     }
@@ -66,7 +69,9 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     final imageUrl = article!['image_url']?.toString() ?? '';
     final authorName = article!['author_name']?.toString() ?? '';
     final authorImage = article!['author_image']?.toString() ?? '';
-    final rating = double.tryParse(article!['rating']?.toString() ?? '0') ?? 0.0;
+    final rating =
+        double.tryParse(article!['rating']?.toString() ?? '0') ?? 0.0;
+    final commentsCount = article!['comments_count'] ?? 0; // ✅ من Supabase
 
     return Scaffold(
       backgroundColor: const Color(0xFF071739),
@@ -75,7 +80,8 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
           children: [
             // زر Back
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
                   GestureDetector(
@@ -87,14 +93,15 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                         color: Color(0xFFE3C39D),
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.arrow_back, color: Colors.black),
+                      child:
+                          const Icon(Icons.arrow_back, color: Colors.black),
                     ),
                   ),
                 ],
               ),
             ),
 
-            // CARD 
+            // CARD
             Expanded(
               child: Center(
                 child: SingleChildScrollView(
@@ -102,14 +109,12 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                       vertical: 8, horizontal: 12),
                   child: Container(
                     width: double.infinity,
-                   
                     decoration: BoxDecoration(
                       color: const Color(0xFF7D93B0),
                       borderRadius: BorderRadius.circular(24),
                     ),
                     padding: const EdgeInsets.all(8),
                     child: Container(
-                     
                       decoration: BoxDecoration(
                         color: const Color(0xFFF0F4F8),
                         borderRadius: BorderRadius.circular(18),
@@ -117,9 +122,10 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          
+                          // الكاتب
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                            padding:
+                                const EdgeInsets.fromLTRB(16, 16, 16, 0),
                             child: Row(
                               children: [
                                 CircleAvatar(
@@ -145,10 +151,11 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                             ),
                           ),
 
-                         
+                          // صورة المقال
                           if (imageUrl.isNotEmpty)
                             Padding(
-                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                              padding:
+                                  const EdgeInsets.fromLTRB(16, 12, 16, 0),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
                                 child: Image.network(
@@ -166,9 +173,10 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                               ),
                             ),
 
-                         
+                          // العنوان والتقييم
                           Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                            padding:
+                                const EdgeInsets.fromLTRB(16, 12, 16, 0),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -205,16 +213,17 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                                     const Icon(Icons.chat_bubble,
                                         color: Color(0xFF5B7FA6), size: 18),
                                     const SizedBox(width: 4),
-                                    const Text("10",
-                                        style:
-                                            TextStyle(color: Colors.black87)),
+                                    // ✅ عدد التعليقات من Supabase
+                                    Text("$commentsCount",
+                                        style: const TextStyle(
+                                            color: Colors.black87)),
                                   ],
                                 ),
                               ],
                             ),
                           ),
 
-                          
+                          // المحتوى
                           Padding(
                             padding: const EdgeInsets.all(16),
                             child: Text(
