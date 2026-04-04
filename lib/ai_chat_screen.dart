@@ -16,8 +16,14 @@ class _AIChatScreenState extends State<AIChatScreen> {
   final List<Map<String, String>> _messages = [];
   bool _isLoading = false;
 
- 
-  static const String _apiKey = "YOUR_API_KEY";
+  // ✅ المفتاح يُمرَّر وقت البناء عبر:
+  //    flutter run --dart-define=GROQ_API_KEY=your_key_here
+  // أو في pubspec.yaml أو CI/CD environment variables
+  // لا تكتب المفتاح مباشرة هنا أبداً
+  static const String _apiKey = String.fromEnvironment(
+    'GROQ_API_KEY',
+    defaultValue: '',
+  );
 
   static const String _systemPrompt = """
 أنت مساعد ذكاء اصطناعي متخصص في مجال الهندسة والبرمجة لمنصة EngiNet.
@@ -35,6 +41,17 @@ class _AIChatScreenState extends State<AIChatScreen> {
     final text = _controller.text.trim();
     if (text.isEmpty || _isLoading) return;
 
+    // ✅ تحقق أن المفتاح موجود قبل الإرسال
+    if (_apiKey.isEmpty) {
+      setState(() {
+        _messages.add({
+          "role": "error",
+          "content": "❌ لم يتم تكوين مفتاح API. يرجى التواصل مع المطور."
+        });
+      });
+      return;
+    }
+
     setState(() {
       _messages.add({"role": "user", "content": text});
       _isLoading = true;
@@ -43,43 +60,41 @@ class _AIChatScreenState extends State<AIChatScreen> {
     _scrollToBottom();
 
     try {
-      // API Messages are formatted directly in the body
-
       final response = await http.post(
-  Uri.parse("https://api.groq.com/openai/v1/chat/completions"),
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer $_apiKey"
-  },
-  body: jsonEncode({
-    "model": "llama-3.3-70b-versatile",
-    "max_tokens": 1024,
-    "messages": [
-      {"role": "system", "content": _systemPrompt},
-      ..._messages
-          .where((m) => m["role"] != "error")
-          .map((m) => {"role": m["role"]!, "content": m["content"]!}),
-    ],
-  }),
-);
+        Uri.parse("https://api.groq.com/openai/v1/chat/completions"),
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": "Bearer $_apiKey"
+        },
+        body: jsonEncode({
+          "model": "llama-3.3-70b-versatile",
+          "max_tokens": 1024,
+          "messages": [
+            {"role": "system", "content": _systemPrompt},
+            ..._messages
+                .where((m) => m["role"] != "error")
+                .map((m) => {"role": m["role"]!, "content": m["content"]!}),
+          ],
+        }),
+      );
 
-if (response.statusCode == 200) {
-  final data = jsonDecode(response.body);
-  final reply = data["choices"][0]["message"]["content"].toString();
-  setState(() {
-    _messages.add({"role": "assistant", "content": reply});
-    _isLoading = false;
-  });
-} else {
-  final error = jsonDecode(response.body);
-  setState(() {
-    _messages.add({
-      "role": "error",
-      "content": "❌ خطأ: ${error['error']?['message'] ?? 'حدث خطأ غير متوقع'}"
-    });
-    _isLoading = false;
-  });
-}
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final reply = data["choices"][0]["message"]["content"].toString();
+        setState(() {
+          _messages.add({"role": "assistant", "content": reply});
+          _isLoading = false;
+        });
+      } else {
+        final error = jsonDecode(response.body);
+        setState(() {
+          _messages.add({
+            "role": "error",
+            "content": "❌ خطأ: ${error['error']?['message'] ?? 'حدث خطأ غير متوقع'}"
+          });
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       setState(() {
         _messages.add({
@@ -165,17 +180,11 @@ if (response.statusCode == 200) {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                "EngiNet AI",
-                style: GoogleFonts.agbalumo(
-                  fontSize: 22,
-                  color: const Color(0xFFE3C39D),
-                ),
-              ),
-              const Text(
-                "Powered by Gemini",
-                style: TextStyle(color: Colors.white54, fontSize: 12),
-              ),
+              Text("EngiNet AI",
+                  style: GoogleFonts.agbalumo(
+                      fontSize: 22, color: const Color(0xFFE3C39D))),
+              const Text("Powered by Groq",
+                  style: TextStyle(color: Colors.white54, fontSize: 12)),
             ],
           ),
           const Spacer(),
@@ -200,27 +209,19 @@ if (response.statusCode == 200) {
             decoration: BoxDecoration(
               gradient: const LinearGradient(
                 colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(24),
             ),
             child: const Icon(Icons.smart_toy, color: Colors.white, size: 50),
           ),
           const SizedBox(height: 20),
-          Text(
-            "مرحباً! أنا EngiNet AI",
-            style: GoogleFonts.agbalumo(
-              color: const Color(0xFFE3C39D),
-              fontSize: 22,
-            ),
-          ),
+          Text("مرحباً! أنا EngiNet AI",
+              style: GoogleFonts.agbalumo(
+                  color: const Color(0xFFE3C39D), fontSize: 22)),
           const SizedBox(height: 8),
-          const Text(
-            "اسألني عن الهندسة، البرمجة،\nالكورسات، أو أي شيء تقني!",
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.white54, fontSize: 14, height: 1.5),
-          ),
+          const Text("اسألني عن الهندسة، البرمجة،\nالكورسات، أو أي شيء تقني!",
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white54, fontSize: 14, height: 1.5)),
           const SizedBox(height: 30),
           _buildSuggestedQuestion("ما هي أفضل لغة برمجة للمبتدئين؟"),
           _buildSuggestedQuestion("اشرح لي مفهوم OOP ببساطة"),
@@ -250,11 +251,8 @@ if (response.statusCode == 200) {
                 color: Color(0xFFE3C39D), size: 16),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(
-                question,
-                style:
-                    const TextStyle(color: Colors.white70, fontSize: 13),
-              ),
+              child: Text(question,
+                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
             ),
           ],
         ),
@@ -277,21 +275,18 @@ if (response.statusCode == 200) {
             Container(
               width: 34,
               height: 34,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
-                ),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                    colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
                 shape: BoxShape.circle,
               ),
-              child:
-                  const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+              child: const Icon(Icons.smart_toy, color: Colors.white, size: 18),
             ),
             const SizedBox(width: 8),
           ],
           Flexible(
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: isError
                     ? const Color(0xFF5C1A1A)
@@ -304,9 +299,6 @@ if (response.statusCode == 200) {
                   bottomLeft: Radius.circular(isUser ? 16 : 4),
                   bottomRight: Radius.circular(isUser ? 4 : 16),
                 ),
-                border: !isUser && !isError
-                    ? Border.all(color: const Color(0xFF2A4A6F))
-                    : null,
               ),
               child: Text(
                 msg["content"] ?? '',
@@ -340,19 +332,16 @@ if (response.statusCode == 200) {
           Container(
             width: 34,
             height: 34,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
-              ),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                  colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
               shape: BoxShape.circle,
             ),
-            child:
-                const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+            child: const Icon(Icons.smart_toy, color: Colors.white, size: 18),
           ),
           const SizedBox(width: 8),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: const Color(0xFF1E3A5F),
               borderRadius: const BorderRadius.only(
@@ -361,7 +350,6 @@ if (response.statusCode == 200) {
                 bottomRight: Radius.circular(16),
                 bottomLeft: Radius.circular(4),
               ),
-              border: Border.all(color: const Color(0xFF2A4A6F)),
             ),
             child: const Row(
               mainAxisSize: MainAxisSize.min,
@@ -417,11 +405,9 @@ if (response.statusCode == 200) {
             child: Container(
               width: 46,
               height: 46,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
                   colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
                 ),
                 shape: BoxShape.circle,
               ),
@@ -457,9 +443,7 @@ class _DotAnimationState extends State<_DotAnimation>
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
-    );
+        vsync: this, duration: const Duration(milliseconds: 600));
     Future.delayed(Duration(milliseconds: widget.delay), () {
       if (mounted) _ctrl.repeat(reverse: true);
     });
@@ -480,9 +464,7 @@ class _DotAnimationState extends State<_DotAnimation>
         width: 7,
         height: 7,
         decoration: const BoxDecoration(
-          color: Color(0xFF6C94C6),
-          shape: BoxShape.circle,
-        ),
+            color: Color(0xFF6C94C6), shape: BoxShape.circle),
       ),
     );
   }

@@ -1,25 +1,11 @@
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import OAuth2PasswordBearer
-from database import get_db
-from jose import jwt, JWTError
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
+from auth import get_current_user
+from database import get_db
+
 router = APIRouter(prefix="/posts", tags=["Posts"])
-
-SECRET_KEY = "enginet_super_secret_key_2025"
-ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return email
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
 
 def add_points(cursor, user_id: int, points: int):
     cursor.execute(
@@ -35,11 +21,11 @@ class PostCreate(BaseModel):
 
 # GET SMART FEED
 @router.get("/feed")
-def get_smart_feed(email: str = Depends(get_current_user)):
+def get_smart_feed(current_user: dict = Depends(get_current_user)):
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -113,11 +99,11 @@ def get_all_posts():
 
 # CREATE POST (+1 نقطة)
 @router.post("/")
-def create_post(post: PostCreate, email: str = Depends(get_current_user)):
+def create_post(post: PostCreate, current_user: dict = Depends(get_current_user)):
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("SELECT id, role FROM users WHERE email = %s", (email,))
+        cursor.execute("SELECT id, role FROM users WHERE email = %s", (current_user["email"],))
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -158,11 +144,11 @@ def like_post(post_id: int):
 
 # DELETE POST
 @router.delete("/{post_id}")
-def delete_post(post_id: int, email: str = Depends(get_current_user)):
+def delete_post(post_id: int, current_user: dict = Depends(get_current_user)):
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+        cursor.execute("SELECT id, role FROM users WHERE email = %s", (current_user["email"],))
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -171,7 +157,7 @@ def delete_post(post_id: int, email: str = Depends(get_current_user)):
         post = cursor.fetchone()
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
-        if post["user_id"] != user["id"]:
+        if post["user_id"] != user["id"] and user["role"] != "admin":
             raise HTTPException(status_code=403, detail="Not authorized to delete this post")
 
         cursor.execute("DELETE FROM posts WHERE id = %s", (post_id,))
@@ -193,11 +179,11 @@ def get_interests():
 
 # SET USER INTERESTS
 @router.post("/interests/set")
-def set_user_interests(interest_ids: list[int], email: str = Depends(get_current_user)):
+def set_user_interests(interest_ids: list[int], current_user: dict = Depends(get_current_user)):
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")

@@ -1,31 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import OAuth2PasswordBearer
 from database import get_db
-from jose import jwt, JWTError
 from pydantic import BaseModel
 from typing import Optional
 
+from dependencies import get_current_user, require_role, add_points
+
 router = APIRouter(prefix="/books", tags=["Books"])
 
-SECRET_KEY = "enginet_super_secret_key_2025"
-ALGORITHM = "HS256"
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        if email is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return email
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-def add_points(cursor, user_id: int, points: int):
-    cursor.execute(
-        "UPDATE users SET points = points + %s WHERE id = %s",
-        (points, user_id)
-    )
 
 class BookCreate(BaseModel):
     title: str
@@ -37,78 +18,106 @@ class BookCreate(BaseModel):
     publish_year: Optional[int] = 2024
     image_url: Optional[str] = ""
 
+
+# GET ALL BOOKS - عام
 @router.get("/")
 def get_all_books(search: Optional[str] = None, category: Optional[str] = None):
     db = get_db()
-    cursor = db.cursor()
-    query = "SELECT * FROM books WHERE 1=1"
-    params = []
-    if search:
-        query += " AND (title LIKE %s OR author LIKE %s)"
-        params.extend([f"%{search}%", f"%{search}%"])
-    if category:
-        query += " AND category LIKE %s"
-        params.append(f"%{category}%")
-    query += " ORDER BY likes DESC"
-    cursor.execute(query, params)
-    books = cursor.fetchall()
-    db.close()
-    return books
+    try:
+        cursor = db.cursor()
+        query = "SELECT * FROM books WHERE 1=1"
+        params = []
+        if search:
+            query += " AND (title LIKE %s OR author LIKE %s)"
+            params.extend([f"%{search}%", f"%{search}%"])
+        if category:
+            query += " AND category LIKE %s"
+            params.append(f"%{category}%")
+        query += " ORDER BY likes DESC"
+        cursor.execute(query, params)
+        return cursor.fetchall()
+    finally:
+        db.close()
 
+
+# GET BOOK BY ID - عام
 @router.get("/{book_id}")
 def get_book(book_id: int):
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT * FROM books WHERE id = %s", (book_id,))
-    book = cursor.fetchone()
-    db.close()
-    if not book:
-        raise HTTPException(status_code=404, detail="Book not found")
-    return book
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM books WHERE id = %s", (book_id,))
+        book = cursor.fetchone()
+        if not book:
+            raise HTTPException(status_code=404, detail="Book not found")
+        return book
+    finally:
+        db.close()
 
-# ADD BOOK (+10 نقاط)
+
+# ADD BOOK (+10 نقاط) - يتطلب تسجيل دخول
 @router.post("/")
-def add_book(book: BookCreate, email: str = Depends(get_current_user)):
+def add_book(
+    book: BookCreate,
+    current_user: dict = Depends(get_current_user)
+):
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT id FROM users WHERE email = %s", (email,))
-    user = cursor.fetchone()
-    if not user:
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cursor.execute("""
+            INSERT INTO books (title, author, category, description, file_url, language, publish_year, image_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            RETURNING id
+        """, (
+            book.title, book.author, book.category, book.description,
+            book.file_url, book.language, book.publish_year, book.image_url
+        ))
+        new_id = cursor.fetchone()["id"]
+        add_points(cursor, user["id"], 10)
+        db.commit()
+        return {"message": "Book added successfully", "book_id": new_id}
+    finally:
         db.close()
-        raise HTTPException(status_code=404, detail="User not found")
 
-    cursor.execute("""
-        INSERT INTO books (title, author, category, description, file_url, language, publish_year, image_url)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        RETURNING id
-    """, (book.title, book.author, book.category, book.description,
-          book.file_url, book.language, book.publish_year, book.image_url))
-    new_id = cursor.fetchone()["id"]
-    add_points(cursor, user["id"], 10)  # +10 نشر كتاب
-    db.commit()
-    db.close()
-    return {"message": "Book added successfully", "book_id": new_id}
 
+# LIKE BOOK - يتطلب تسجيل دخول (منع التلاعب)
 @router.post("/{book_id}/like")
-def like_book(book_id: int):
+def like_book(
+    book_id: int,
+    current_user: dict = Depends(get_current_user)
+):
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("UPDATE books SET likes = likes + 1 WHERE id = %s", (book_id,))
-    if cursor.rowcount == 0:
+    try:
+        cursor = db.cursor()
+        cursor.execute("UPDATE books SET likes = likes + 1 WHERE id = %s", (book_id,))
+        if cursor.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Book not found")
+        db.commit()
+        return {"message": "Book liked!"}
+    finally:
         db.close()
-        raise HTTPException(status_code=404, detail="Book not found")
-    db.commit()
-    db.close()
-    return {"message": "Book liked!"}
 
+
+# DELETE BOOK - admin أو engineer فقط
 @router.delete("/{book_id}")
-def delete_book(book_id: int):
+def delete_book(
+    book_id: int,
+    current_user: dict = Depends(require_role("admin", "engineer"))
+):
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("DELETE FROM books WHERE id = %s", (book_id,))
-    if cursor.rowcount == 0:
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM books WHERE id = %s", (book_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Book not found")
+
+        cursor.execute("DELETE FROM books WHERE id = %s", (book_id,))
+        db.commit()
+        return {"message": "Book deleted successfully"}
+    finally:
         db.close()
-        raise HTTPException(status_code=404, detail="Book not found")
-    db.commit()
-    db.close()
-    return {"message": "Book deleted successfully"}

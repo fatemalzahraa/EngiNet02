@@ -7,8 +7,7 @@ from email.mime.text import MIMEText
 import bcrypt
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from jose import JWTError, jwt
+from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 from articles_router import router as articles_router
@@ -19,15 +18,18 @@ from models import User
 from post_router import router as post_router
 from profile_router import router as profile_router
 
-# ===================== CONFIG =====================
-SECRET_KEY = os.getenv("SECRET_KEY", "enginet_super_secret_key_2025")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
+# استيراد من الملف المركزي
+from dependencies import (
+    SECRET_KEY,
+    ALGORITHM,
+    get_current_user,
+    add_points,
+)
 
+# ===================== CONFIG =====================
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 GMAIL_USER = os.getenv("GMAIL_USER", "")
 GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD", "")
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 app = FastAPI(title="EngiNet API", version="1.0")
 app.include_router(books_router)
@@ -35,57 +37,45 @@ app.include_router(articles_router)
 app.include_router(course_router)
 app.include_router(profile_router)
 app.include_router(post_router)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=os.getenv("ALLOWED_ORIGINS", "*").split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+
 # ===================== HELPERS =====================
-def create_access_token(data: dict):
+def create_access_token(data: dict) -> str:
+    from jose import jwt
     to_encode = data.copy()
     expire = datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def get_current_user(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        role: str = payload.get("role")
-        if email is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return {"email": email, "role": role}
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-
-def add_points(cursor, user_id: int, points: int):
-    cursor.execute(
-        "UPDATE users SET points = points + %s WHERE id = %s",
-        (points, user_id)
-    )
 
 # ===================== REGISTER =====================
 @app.post("/register")
 def register(user: User):
     db = get_db()
-    cursor = db.cursor()
-    hashed_password = bcrypt.hashpw(
-        user.password.encode("utf-8"),
-        bcrypt.gensalt()
-    ).decode("utf-8")
     try:
-        cursor.execute("""
-            INSERT INTO users (username, email, password, role)
-            VALUES (%s, %s, %s, %s)
-        """, (user.username, user.email, hashed_password, user.role))
-        db.commit()
-    except Exception:
+        cursor = db.cursor()
+        hashed_password = bcrypt.hashpw(
+            user.password.encode("utf-8"),
+            bcrypt.gensalt()
+        ).decode("utf-8")
+        try:
+            cursor.execute("""
+                INSERT INTO users (username, email, password, role)
+                VALUES (%s, %s, %s, %s)
+            """, (user.username, user.email, hashed_password, user.role))
+            db.commit()
+        except Exception:
+            raise HTTPException(status_code=400, detail="Username or email already exists")
+    finally:
         db.close()
-        raise HTTPException(status_code=400, detail="Username or email already exists")
-    db.close()
 
     token = create_access_token({"sub": user.email, "role": user.role})
     return {
@@ -94,14 +84,17 @@ def register(user: User):
         "token_type": "bearer"
     }
 
+
 # ===================== LOGIN =====================
 @app.post("/token")
 def login(form_data: OAuth2PasswordRequestForm = Depends()):
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = %s", (form_data.username,))
-    user = cursor.fetchone()
-    db.close()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = %s", (form_data.username,))
+        user = cursor.fetchone()
+    finally:
+        db.close()
 
     if not user:
         raise HTTPException(status_code=400, detail="Incorrect email or password")
@@ -117,10 +110,12 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
         "username": user["username"]
     }
 
+
 # ===================== GET CURRENT USER =====================
 @app.get("/me")
 def get_me(current_user: dict = Depends(get_current_user)):
     return current_user
+
 
 # ===================== FORGOT PASSWORD =====================
 @app.post("/forgot-password")
@@ -129,76 +124,83 @@ def forgot_password(email: str):
         raise HTTPException(status_code=500, detail="Email service is not configured")
 
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
-    user = cursor.fetchone()
-    db.close()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = %s", (email,))
+        user = cursor.fetchone()
+    finally:
+        db.close()
 
     if not user:
         raise HTTPException(status_code=404, detail="Email not found")
 
     msg = MIMEMultipart()
-    msg['Subject'] = "EngiNet - Password Reset Request"
-    msg['From'] = GMAIL_USER
-    msg['To'] = email
-
-    body = f"""
-Hello {user['username']},
+    msg["Subject"] = "EngiNet - Password Reset Request"
+    msg["From"] = GMAIL_USER
+    msg["To"] = email
+    body = f"""Hello {user['username']},
 
 We received a request to reset your EngiNet password.
 
 Your registered email: {email}
 
 If you did not request this, please ignore this email.
-Your account remains secure.
 
 Best regards,
-EngiNet Team
-    """
-    msg.attach(MIMEText(body, 'plain'))
+EngiNet Team"""
+    msg.attach(MIMEText(body, "plain"))
 
     try:
-        with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(GMAIL_USER, GMAIL_PASSWORD)
             server.send_message(msg)
         return {"message": "Email sent successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
 
+
 class ResetPasswordRequest(BaseModel):
     email: str
     new_password: str
 
+
 @app.post("/reset-password")
 def reset_password(data: ResetPasswordRequest):
+    if len(data.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = %s", (data.email,))
-    user = cursor.fetchone()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = %s", (data.email,))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="Email not found")
 
-    if not user:
+        hashed = bcrypt.hashpw(data.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+        cursor.execute("UPDATE users SET password = %s WHERE email = %s", (hashed, data.email))
+        db.commit()
+    finally:
         db.close()
-        raise HTTPException(status_code=404, detail="Email not found")
 
-    hashed = bcrypt.hashpw(data.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-    cursor.execute("UPDATE users SET password = %s WHERE email = %s", (hashed, data.email))
-    db.commit()
-    db.close()
     return {"message": "Password updated successfully"}
+
 
 # ===================== GET ENGINEERS =====================
 @app.get("/users/engineers")
 def get_engineers():
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("""
-        SELECT id, username, profile_image, points, university
-        FROM users WHERE role = 'engineer'
-        ORDER BY points DESC
-    """)
-    engineers = cursor.fetchall()
-    db.close()
-    return engineers
+    try:
+        cursor = db.cursor()
+        cursor.execute("""
+            SELECT id, username, profile_image, points, university
+            FROM users WHERE role = 'engineer'
+            ORDER BY points DESC
+        """)
+        return cursor.fetchall()
+    finally:
+        db.close()
+
 
 # ===================== QUESTIONS =====================
 class QuestionRequest(BaseModel):
@@ -206,73 +208,36 @@ class QuestionRequest(BaseModel):
     content: str
     category: str = ""
 
+
 class AnswerRequest(BaseModel):
     content: str
+
 
 @app.post("/questions")
 def create_question(q: QuestionRequest, current_user: dict = Depends(get_current_user)):
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-    user = cursor.fetchone()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    if not user:
+        cursor.execute("""
+            INSERT INTO questions (user_id, title, content, category)
+            VALUES (%s, %s, %s, %s)
+        """, (user["id"], q.title, q.content, q.category))
+        db.commit()
+        return {"message": "Question posted successfully"}
+    finally:
         db.close()
-        raise HTTPException(status_code=404, detail="User not found")
 
-    cursor.execute("""
-        INSERT INTO questions (user_id, title, content, category)
-        VALUES (%s, %s, %s, %s)
-    """, (user["id"], q.title, q.content, q.category))
-
-    db.commit()
-    db.close()
-    return {"message": "Question posted successfully"}
 
 @app.get("/questions")
 def get_questions():
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("""
-        SELECT q.id, q.title, q.content, q.category, q.likes, q.created_at,
-               u.username, u.profile_image
-        FROM questions q
-        JOIN users u ON q.user_id = u.id
-        ORDER BY q.created_at DESC
-    """)
-    questions = cursor.fetchall()
-    db.close()
-    return questions
-
-# GET SMART QUESTIONS FEED
-@app.get("/questions/feed")
-def get_smart_questions(current_user: dict = Depends(get_current_user)):
-    db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-    user = cursor.fetchone()
-    if not user:
-        db.close()
-        raise HTTPException(status_code=404, detail="User not found")
-
-    cursor.execute("""
-        SELECT i.name FROM interests i
-        JOIN user_interests ui ON ui.interest_id = i.id
-        WHERE ui.user_id = %s
-    """, (user["id"],))
-    interests = [row["name"] for row in cursor.fetchall()]
-
-    if interests:
-        placeholders = ",".join(["%s"] * len(interests))
-        cursor.execute(f"""
-            SELECT q.id, q.title, q.content, q.category, q.likes, q.created_at,
-                   u.username, u.profile_image,
-                   CASE WHEN q.category = ANY(ARRAY[{placeholders}]::text[]) THEN 1 ELSE 0 END AS relevance
-            FROM questions q
-            JOIN users u ON q.user_id = u.id
-            ORDER BY relevance DESC, q.created_at DESC
-        """, interests)
-    else:
+    try:
+        cursor = db.cursor()
         cursor.execute("""
             SELECT q.id, q.title, q.content, q.category, q.likes, q.created_at,
                    u.username, u.profile_image
@@ -280,111 +245,124 @@ def get_smart_questions(current_user: dict = Depends(get_current_user)):
             JOIN users u ON q.user_id = u.id
             ORDER BY q.created_at DESC
         """)
+        return cursor.fetchall()
+    finally:
+        db.close()
 
-    questions = cursor.fetchall()
-    db.close()
-    result = [dict(q) for q in questions]
-    for q in result:
-        q.pop("relevance", None)
-    return result
 
 @app.post("/questions/{question_id}/answers")
-def post_answer(question_id: int, a: AnswerRequest, current_user: dict = Depends(get_current_user)):
+def post_answer(
+    question_id: int,
+    a: AnswerRequest,
+    current_user: dict = Depends(get_current_user)
+):
     db = get_db()
-    cursor = db.cursor()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
 
-    cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-    user = cursor.fetchone()
-
-    cursor.execute("""
-        INSERT INTO answers (question_id, user_id, content)
-        VALUES (%s, %s, %s)
-    """, (question_id, user["id"], a.content))
-
-    cursor.execute("SELECT user_id FROM questions WHERE id = %s", (question_id,))
-    question = cursor.fetchone()
-
-    if question and question["user_id"] != user["id"]:
         cursor.execute("""
-            INSERT INTO notifications (user_id, message)
-            VALUES (%s, %s)
-        """, (question["user_id"], f"👨‍💻 {current_user['email']} answered your question!"))
+            INSERT INTO answers (question_id, user_id, content)
+            VALUES (%s, %s, %s)
+        """, (question_id, user["id"], a.content))
 
-    db.commit()
-    db.close()
-    return {"message": "Answer posted successfully"}
+        cursor.execute("SELECT user_id FROM questions WHERE id = %s", (question_id,))
+        question = cursor.fetchone()
+        if question and question["user_id"] != user["id"]:
+            cursor.execute("""
+                INSERT INTO notifications (user_id, message)
+                VALUES (%s, %s)
+            """, (question["user_id"], f"👨‍💻 {current_user['email']} answered your question!"))
+
+        db.commit()
+        return {"message": "Answer posted successfully"}
+    finally:
+        db.close()
+
 
 @app.get("/questions/{question_id}/answers")
 def get_answers(question_id: int):
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("""
-        SELECT a.id, a.content, a.likes, a.is_accepted, a.created_at,
-               u.username, u.profile_image
-        FROM answers a
-        JOIN users u ON a.user_id = u.id
-        WHERE a.question_id = %s
-        ORDER BY a.created_at ASC
-    """, (question_id,))
-    answers = cursor.fetchall()
-    db.close()
-    return answers
+    try:
+        cursor = db.cursor()
+        cursor.execute("""
+            SELECT a.id, a.content, a.likes, a.is_accepted, a.created_at,
+                   u.username, u.profile_image
+            FROM answers a
+            JOIN users u ON a.user_id = u.id
+            WHERE a.question_id = %s
+            ORDER BY a.created_at ASC
+        """, (question_id,))
+        return cursor.fetchall()
+    finally:
+        db.close()
 
-# قبول إجابة (+3 نقاط)
+
 @app.post("/questions/{question_id}/answers/{answer_id}/accept")
-def accept_answer(question_id: int, answer_id: int, current_user: dict = Depends(get_current_user)):
+def accept_answer(
+    question_id: int,
+    answer_id: int,
+    current_user: dict = Depends(get_current_user)
+):
     db = get_db()
-    cursor = db.cursor()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
 
-    cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-    user = cursor.fetchone()
+        cursor.execute("SELECT user_id FROM questions WHERE id = %s", (question_id,))
+        question = cursor.fetchone()
+        if not question or question["user_id"] != user["id"]:
+            raise HTTPException(status_code=403, detail="Only question owner can accept answers")
 
-    cursor.execute("SELECT user_id FROM questions WHERE id = %s", (question_id,))
-    question = cursor.fetchone()
-    if not question or question["user_id"] != user["id"]:
+        cursor.execute(
+            "UPDATE answers SET is_accepted = true WHERE id = %s RETURNING user_id",
+            (answer_id,)
+        )
+        answer = cursor.fetchone()
+        if not answer:
+            raise HTTPException(status_code=404, detail="Answer not found")
+
+        add_points(cursor, answer["user_id"], 3)
+        cursor.execute("""
+            INSERT INTO notifications (user_id, message) VALUES (%s, %s)
+        """, (answer["user_id"], "✅ Your answer was accepted!"))
+        db.commit()
+        return {"message": "Answer accepted"}
+    finally:
         db.close()
-        raise HTTPException(status_code=403, detail="Only question owner can accept answers")
 
-    cursor.execute("UPDATE answers SET is_accepted = true WHERE id = %s RETURNING user_id", (answer_id,))
-    answer = cursor.fetchone()
-    if not answer:
-        db.close()
-        raise HTTPException(status_code=404, detail="Answer not found")
-
-    add_points(cursor, answer["user_id"], 3)  # +3 إجابة مقبولة
-
-    cursor.execute("""
-        INSERT INTO notifications (user_id, message)
-        VALUES (%s, %s)
-    """, (answer["user_id"], "✅ Your answer was accepted!"))
-
-    db.commit()
-    db.close()
-    return {"message": "Answer accepted"}
 
 # ===================== NOTIFICATIONS =====================
 @app.get("/notifications")
 def get_notifications(current_user: dict = Depends(get_current_user)):
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-    user = cursor.fetchone()
-    cursor.execute("""
-        SELECT id, message, is_read, created_at
-        FROM notifications WHERE user_id = %s
-        ORDER BY created_at DESC
-    """, (user["id"],))
-    notifs = cursor.fetchall()
-    db.close()
-    return notifs
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+        cursor.execute("""
+            SELECT id, message, is_read, created_at
+            FROM notifications WHERE user_id = %s
+            ORDER BY created_at DESC
+        """, (user["id"],))
+        return cursor.fetchall()
+    finally:
+        db.close()
+
 
 @app.post("/notifications/read")
 def mark_notifications_read(current_user: dict = Depends(get_current_user)):
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-    user = cursor.fetchone()
-    cursor.execute("UPDATE notifications SET is_read = true WHERE user_id = %s", (user["id"],))
-    db.commit()
-    db.close()
-    return {"message": "All notifications marked as read"}
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+        cursor.execute("UPDATE notifications SET is_read = true WHERE user_id = %s", (user["id"],))
+        db.commit()
+        return {"message": "All notifications marked as read"}
+    finally:
+        db.close()
