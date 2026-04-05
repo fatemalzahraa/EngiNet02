@@ -129,7 +129,7 @@ def get_me(current_user: dict = Depends(get_current_user)):
     return current_user
 
 
-# ── Forgot Password (sends OTP) ───────────────────────────
+# ── Forgot Password ───────────────────────────────────────
 @app.post("/forgot-password")
 def forgot_password(email: str):
     db = get_db()
@@ -141,10 +141,9 @@ def forgot_password(email: str):
         db.close()
 
     if not user:
-        # Return success anyway to avoid email enumeration
         return {"message": "If this email exists, a reset code has been sent"}
 
-    code = str(secrets.randbelow(900000) + 100000)  # 6-digit OTP
+    code = str(secrets.randbelow(900000) + 100000)
     _otp_store[email] = {
         "code": code,
         "expires": datetime.now(timezone.utc) + timedelta(minutes=15),
@@ -156,7 +155,7 @@ Your EngiNet password reset code is:
 
   {code}
 
-This code expires in 15 minutes. If you didn't request this, ignore this email.
+This code expires in 15 minutes.
 
 — EngiNet Team"""
 
@@ -183,7 +182,7 @@ def verify_otp(data: VerifyOTPRequest):
     return {"message": "Code verified", "valid": True}
 
 
-# ── Reset Password (requires valid OTP) ───────────────────
+# ── Reset Password ────────────────────────────────────────
 class ResetPasswordRequest(BaseModel):
     email: str
     code: str
@@ -195,7 +194,6 @@ def reset_password(data: ResetPasswordRequest):
     if len(data.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
-    # Validate OTP first
     entry = _otp_store.get(data.email)
     if not entry:
         raise HTTPException(status_code=400, detail="No reset code found — request a new one")
@@ -237,12 +235,14 @@ def get_engineers():
 
 
 # ── Questions ─────────────────────────────────────────────
+# Schema: id, title, content, username, profile_image, category, likes, created_at
 class QuestionRequest(BaseModel):
     title: str
     content: str
     category: str = ""
 
 
+# Schema: id, question_id, username, content, is_accepted, likes, created_at
 class AnswerRequest(BaseModel):
     content: str
 
@@ -252,7 +252,6 @@ def create_question(q: QuestionRequest, current_user: dict = Depends(get_current
     db = get_db()
     try:
         cursor = db.cursor()
-        # Get username and profile_image to store directly (Supabase schema has no user_id)
         cursor.execute(
             "SELECT username, profile_image FROM users WHERE email = %s",
             (current_user["email"],),
@@ -261,10 +260,8 @@ def create_question(q: QuestionRequest, current_user: dict = Depends(get_current
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         cursor.execute(
-            """
-            INSERT INTO questions (username, profile_image, title, content, category)
-            VALUES (%s,%s,%s,%s,%s)
-            """,
+            "INSERT INTO questions (username, profile_image, title, content, category) "
+            "VALUES (%s,%s,%s,%s,%s)",
             (user["username"], user["profile_image"], q.title, q.content, q.category),
         )
         db.commit()
@@ -279,12 +276,8 @@ def get_questions():
     try:
         cursor = db.cursor()
         cursor.execute(
-            """
-            SELECT id, title, content, category, likes, created_at,
-                   username, profile_image
-            FROM questions
-            ORDER BY created_at DESC
-            """
+            "SELECT id, title, content, category, likes, created_at, username, profile_image "
+            "FROM questions ORDER BY created_at DESC"
         )
         return cursor.fetchall()
     finally:
@@ -301,7 +294,7 @@ def post_answer(
     try:
         cursor = db.cursor()
         cursor.execute(
-            "SELECT username, profile_image FROM users WHERE email = %s",
+            "SELECT username FROM users WHERE email = %s",
             (current_user["email"],),
         )
         user = cursor.fetchone()
@@ -309,11 +302,8 @@ def post_answer(
             raise HTTPException(status_code=404, detail="User not found")
 
         cursor.execute(
-            """
-            INSERT INTO answers (question_id, username, profile_image, content)
-            VALUES (%s,%s,%s,%s)
-            """,
-            (question_id, user["username"], user["profile_image"], a.content),
+            "INSERT INTO answers (question_id, username, content) VALUES (%s,%s,%s)",
+            (question_id, user["username"], a.content),
         )
         db.commit()
         return {"message": "Answer posted successfully"}
@@ -327,13 +317,8 @@ def get_answers(question_id: int):
     try:
         cursor = db.cursor()
         cursor.execute(
-            """
-            SELECT id, content, likes, is_accepted, created_at,
-                   username, profile_image
-            FROM answers
-            WHERE question_id = %s
-            ORDER BY created_at ASC
-            """,
+            "SELECT id, content, likes, is_accepted, created_at, username "
+            "FROM answers WHERE question_id = %s ORDER BY created_at ASC",
             (question_id,),
         )
         return cursor.fetchall()
@@ -355,14 +340,13 @@ def accept_answer(
         )
         user = cursor.fetchone()
 
-        # Check ownership via username
         cursor.execute("SELECT username FROM questions WHERE id = %s", (question_id,))
         question = cursor.fetchone()
         if not question or question["username"] != user["username"]:
             raise HTTPException(status_code=403, detail="Only question owner can accept answers")
 
         cursor.execute(
-            "UPDATE answers SET is_accepted = true WHERE id = %s RETURNING username",
+            "UPDATE answers SET is_accepted = true WHERE id = %s RETURNING id",
             (answer_id,),
         )
         answer = cursor.fetchone()
@@ -376,6 +360,7 @@ def accept_answer(
 
 
 # ── Notifications ─────────────────────────────────────────
+# Schema: id, user_id, message, is_read, created_at
 @app.get("/notifications")
 def get_notifications(current_user: dict = Depends(get_current_user)):
     db = get_db()
@@ -383,6 +368,8 @@ def get_notifications(current_user: dict = Depends(get_current_user)):
         cursor = db.cursor()
         cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
         user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
         cursor.execute(
             "SELECT id, message, is_read, created_at FROM notifications "
             "WHERE user_id = %s ORDER BY created_at DESC",
@@ -400,6 +387,8 @@ def mark_notifications_read(current_user: dict = Depends(get_current_user)):
         cursor = db.cursor()
         cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
         user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
         cursor.execute(
             "UPDATE notifications SET is_read = true WHERE user_id = %s", (user["id"],)
         )
