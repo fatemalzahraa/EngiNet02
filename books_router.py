@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from database import get_db
 from pydantic import BaseModel
 from typing import Optional
-
 from dependencies import get_current_user, require_role, add_points
 
 router = APIRouter(prefix="/books", tags=["Books"])
@@ -19,7 +18,6 @@ class BookCreate(BaseModel):
     image_url: Optional[str] = ""
 
 
-# GET ALL BOOKS - عام
 @router.get("/")
 def get_all_books(search: Optional[str] = None, category: Optional[str] = None):
     db = get_db()
@@ -28,10 +26,10 @@ def get_all_books(search: Optional[str] = None, category: Optional[str] = None):
         query = "SELECT * FROM books WHERE 1=1"
         params = []
         if search:
-            query += " AND (title LIKE %s OR author LIKE %s)"
+            query += " AND (title ILIKE %s OR author ILIKE %s)"
             params.extend([f"%{search}%", f"%{search}%"])
         if category:
-            query += " AND category LIKE %s"
+            query += " AND category ILIKE %s"
             params.append(f"%{category}%")
         query += " ORDER BY likes DESC"
         cursor.execute(query, params)
@@ -40,7 +38,6 @@ def get_all_books(search: Optional[str] = None, category: Optional[str] = None):
         db.close()
 
 
-# GET BOOK BY ID - عام
 @router.get("/{book_id}")
 def get_book(book_id: int):
     db = get_db()
@@ -55,12 +52,8 @@ def get_book(book_id: int):
         db.close()
 
 
-# ADD BOOK (+10 نقاط) - يتطلب تسجيل دخول
 @router.post("/")
-def add_book(
-    book: BookCreate,
-    current_user: dict = Depends(get_current_user)
-):
+def add_book(book: BookCreate, current_user: dict = Depends(get_current_user)):
     db = get_db()
     try:
         cursor = db.cursor()
@@ -69,14 +62,18 @@ def add_book(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        cursor.execute("""
-            INSERT INTO books (title, author, category, description, file_url, language, publish_year, image_url)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        cursor.execute(
+            """
+            INSERT INTO books (title, author, category, description, file_url,
+                               language, publish_year, image_url)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
             RETURNING id
-        """, (
-            book.title, book.author, book.category, book.description,
-            book.file_url, book.language, book.publish_year, book.image_url
-        ))
+            """,
+            (
+                book.title, book.author, book.category, book.description,
+                book.file_url, book.language, book.publish_year, book.image_url,
+            ),
+        )
         new_id = cursor.fetchone()["id"]
         add_points(cursor, user["id"], 10)
         db.commit()
@@ -85,12 +82,9 @@ def add_book(
         db.close()
 
 
-# LIKE BOOK - يتطلب تسجيل دخول (منع التلاعب)
+# Fixed: requires authentication to prevent bot-liking
 @router.post("/{book_id}/like")
-def like_book(
-    book_id: int,
-    current_user: dict = Depends(get_current_user)
-):
+def like_book(book_id: int, current_user: dict = Depends(get_current_user)):
     db = get_db()
     try:
         cursor = db.cursor()
@@ -103,11 +97,10 @@ def like_book(
         db.close()
 
 
-# DELETE BOOK - admin أو engineer فقط
 @router.delete("/{book_id}")
 def delete_book(
     book_id: int,
-    current_user: dict = Depends(require_role("admin", "engineer"))
+    current_user: dict = Depends(require_role("admin", "engineer")),
 ):
     db = get_db()
     try:
@@ -115,7 +108,6 @@ def delete_book(
         cursor.execute("SELECT id FROM books WHERE id = %s", (book_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Book not found")
-
         cursor.execute("DELETE FROM books WHERE id = %s", (book_id,))
         db.commit()
         return {"message": "Book deleted successfully"}

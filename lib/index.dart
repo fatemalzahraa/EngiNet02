@@ -45,7 +45,6 @@ class _IndexPageState extends State<IndexPage> {
           Uri.parse('${AppConstants.baseUrl}/profile/me'),
           headers: {'Authorization': 'Bearer $token'},
         );
-
         if (response.statusCode == 200) {
           final profile = jsonDecode(response.body) as Map<String, dynamic>;
           profileImage = profile['profile_image']?.toString() ?? '';
@@ -60,26 +59,35 @@ class _IndexPageState extends State<IndexPage> {
         _profileLoaded = true;
       });
     } catch (e) {
-      debugPrint("Error loading role: $e");
+      debugPrint('❌ Error loading role: $e');
       if (!mounted) return;
       setState(() => _profileLoaded = true);
     }
   }
 
-  Widget get _profileScreen => _role == 'engineer'
-      ? const EngineerProfileScreen()
-      : const StudentProfileScreen();
+  Widget get _profileScreen =>
+      _role == 'engineer' ? const EngineerProfileScreen() : const StudentProfileScreen();
 
+  // Pages indexed 0-4 matching _currentIndex
+  // 0=Home, 1=Books, 2=Courses, 3=Articles, 4=Profile
+  List<Widget> get _pages => [
+        const HomeScreen(),
+        const BookScreen(),
+        const CourseScreen(),
+        const ArticleScreen(),
+        _profileScreen,
+      ];
+
+  // Fixed: correct mapping from ConvexAppBar index to _pages index
+  // ConvexAppBar: 0=Home, 1=Books, 2=Add(modal), 3=Articles, 4=Profile
   void _changeBottomNav(int value) {
     if (value == 2) {
       _showAddOptions();
-    } else {
-      // BottomNav index → page index
-      // 0=Home, 1=Book, 2=(add), 3=Article, 4=Profile
-      final pageMap = {0: 0, 1: 2, 3: 3, 4: 4};
-      final pageIndex = pageMap[value] ?? 0;
-      setState(() => _currentIndex = pageIndex);
+      return;
     }
+    // Map nav index → page index
+    const pageMap = {0: 0, 1: 1, 3: 3, 4: 4};
+    setState(() => _currentIndex = pageMap[value] ?? 0);
   }
 
   void _showAddOptions() {
@@ -87,64 +95,44 @@ class _IndexPageState extends State<IndexPage> {
       context: context,
       backgroundColor: const Color(0xFF0D2240),
       shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text("Add Content",
-                  style: GoogleFonts.agbalumo(
-                      color: const Color(0xFFE3C39D), fontSize: 20)),
-              const SizedBox(height: 12),
-              ListTile(
-                leading: const Icon(Icons.question_answer,
-                    color: Colors.white),
-                title: const Text('Ask a Question',
-                    style: TextStyle(color: Colors.white)),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.pushNamed(context, '/questions');
-                },
-              ),
-              ListTile(
-                leading:
-                    const Icon(Icons.book, color: Colors.white),
-                title: const Text('Add Book',
-                    style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.pop(context),
-              ),
-              ListTile(
-                leading: const Icon(Icons.note_add,
-                    color: Colors.white),
-                title: const Text('Add Article',
-                    style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.pop(context),
-              ),
-              ListTile(
-                leading: const Icon(Icons.video_library,
-                    color: Colors.white),
-                title: const Text('Add Course',
-                    style: TextStyle(color: Colors.white)),
-                onTap: () => Navigator.pop(context),
-              ),
-            ],
-          ),
-        );
-      },
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('Add Content',
+                style:
+                    GoogleFonts.agbalumo(color: const Color(0xFFE3C39D), fontSize: 20)),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.question_answer, color: Colors.white),
+              title: const Text('Ask a Question', style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/questions');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.book, color: Colors.white),
+              title: const Text('Add Book', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.note_add, color: Colors.white),
+              title: const Text('Add Article', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(context),
+            ),
+            ListTile(
+              leading: const Icon(Icons.video_library, color: Colors.white),
+              title: const Text('Add Course', style: TextStyle(color: Colors.white)),
+              onTap: () => Navigator.pop(context),
+            ),
+          ],
+        ),
+      ),
     );
   }
-
-  // الصفحات
-  List<Widget> get _pages => [
-        const HomeScreen(),       // 0
-        const BookScreen(),       // 1
-        const CourseScreen(),     // 2
-        const ArticleScreen(),    // 3
-        _profileScreen,           // 4
-      ];
 
   void _onDrawerItemTapped(int index) {
     setState(() => _currentIndex = index);
@@ -164,14 +152,9 @@ class _IndexPageState extends State<IndexPage> {
       appBar: AppBar(
         backgroundColor: const Color(0xFF071739),
         centerTitle: true,
-        title: Text(
-          widget.title,
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 40,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        title: Text(widget.title,
+            style: GoogleFonts.agbalumo(
+                color: const Color(0xFFE3C39D), fontSize: 40, fontWeight: FontWeight.bold)),
         leading: Builder(
           builder: (context) => IconButton(
             icon: const Icon(Icons.menu, color: Color(0xFFE3C39D)),
@@ -180,18 +163,13 @@ class _IndexPageState extends State<IndexPage> {
         ),
         actions: [
           IconButton(
-            icon:
-                const Icon(Icons.notifications, color: Color(0xFFE3C39D)),
-            onPressed: () =>
-                Navigator.pushNamed(context, '/notifications'),
+            icon: const Icon(Icons.notifications, color: Color(0xFFE3C39D)),
+            onPressed: () => Navigator.pushNamed(context, '/notifications'),
           ),
         ],
       ),
 
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _pages,
-      ),
+      body: IndexedStack(index: _currentIndex, children: _pages),
 
       drawer: Drawer(
         child: Container(
@@ -200,28 +178,22 @@ class _IndexPageState extends State<IndexPage> {
             padding: EdgeInsets.zero,
             children: [
               DrawerHeader(
-                decoration:
-                    const BoxDecoration(color: Color(0xFFA68868)),
+                decoration: const BoxDecoration(color: Color(0xFFA68868)),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     CircleAvatar(
                       radius: 45,
-                      backgroundImage: _profileImage.isNotEmpty
-                          ? NetworkImage(_profileImage)
-                          : null,
+                      backgroundImage:
+                          _profileImage.isNotEmpty ? NetworkImage(_profileImage) : null,
                       backgroundColor: const Color(0xFF4A6FA5),
                       child: _profileImage.isEmpty
-                          ? const Icon(Icons.person,
-                              size: 45, color: Colors.white)
+                          ? const Icon(Icons.person, size: 45, color: Colors.white)
                           : null,
                     ),
                     const SizedBox(height: 8),
-                    Text(
-                      _username.isNotEmpty ? _username : 'User',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16),
-                    ),
+                    Text(_username.isNotEmpty ? _username : 'User',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   ],
                 ),
               ),
@@ -273,10 +245,8 @@ class _IndexPageState extends State<IndexPage> {
               ),
               const Divider(),
               ListTile(
-                leading: const Icon(Icons.logout_rounded,
-                    color: Colors.red),
-                title: const Text('Logout',
-                    style: TextStyle(color: Colors.red)),
+                leading: const Icon(Icons.logout_rounded, color: Colors.red),
+                title: const Text('Logout', style: TextStyle(color: Colors.red)),
                 onTap: () {
                   Navigator.pop(context);
                   _logout();
@@ -287,17 +257,17 @@ class _IndexPageState extends State<IndexPage> {
         ),
       ),
 
+      // Fixed: correct nav items order matches _changeBottomNav mapping
       bottomNavigationBar: ConvexAppBar(
         initialActiveIndex: 0,
         onTap: _changeBottomNav,
         backgroundColor: const Color(0xFF3C4F71),
         items: const [
-          TabItem(icon: Icon(Icons.home), title: 'Home'),
-          TabItem(icon: Icon(Icons.book), title: 'Books'),
-          TabItem(icon: Icon(Icons.add), title: ''),
-          TabItem(icon: Icon(Icons.article), title: 'Articles'),
-          TabItem(
-              icon: Icon(Icons.account_circle), title: 'Profile'),
+          TabItem(icon: Icon(Icons.home), title: 'Home'),        // → page 0
+          TabItem(icon: Icon(Icons.book), title: 'Books'),       // → page 1
+          TabItem(icon: Icon(Icons.add), title: ''),             // → modal
+          TabItem(icon: Icon(Icons.article), title: 'Articles'), // → page 3
+          TabItem(icon: Icon(Icons.account_circle), title: 'Profile'), // → page 4
         ],
       ),
     );

@@ -3,26 +3,21 @@ from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
 
-# ===================== CONFIG =====================
-# المفتاح السري يُقرأ من environment variable فقط
-# لتشغيل المشروع: export SECRET_KEY="your_strong_random_key_here"
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
 if not SECRET_KEY:
     raise RuntimeError(
         "SECRET_KEY environment variable is not set. "
-        "Run: export SECRET_KEY='your_strong_random_key_here'"
+        "Run: export SECRET_KEY= 26fc342f482aa68d67f53134a6a10f87128364af26f1cf22b42f5a74e73d2344"
     )
 
 ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    """
-    تحقق من JWT token وأرجع بيانات المستخدم.
-    يُستخدم كـ Depends في جميع الـ routers.
-    """
+    """Verify JWT token and return user data. Used as Depends in all routers."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
@@ -36,8 +31,8 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
 def require_role(*allowed_roles: str):
     """
-    Dependency للتحقق من صلاحية المستخدم.
-    مثال: Depends(require_role("engineer", "admin"))
+    Role-based access control dependency.
+    Usage: Depends(require_role("engineer", "admin"))
     """
     def _check(current_user: dict = Depends(get_current_user)):
         if current_user["role"] not in allowed_roles:
@@ -50,9 +45,7 @@ def require_role(*allowed_roles: str):
 
 
 def add_points(cursor, user_id: int, points: int) -> None:
-    """
-    أضف نقاط للمستخدم. تُستخدم في جميع الـ routers.
-    """
+    """Add points to a user. Used across all routers."""
     cursor.execute(
         "UPDATE users SET points = points + %s WHERE id = %s",
         (points, user_id)

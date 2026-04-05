@@ -2,16 +2,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from auth import get_current_user
+# Fixed: import from central dependencies (not from auth.py)
+from dependencies import get_current_user, add_points
 from database import get_db
 
 router = APIRouter(prefix="/posts", tags=["Posts"])
 
-def add_points(cursor, user_id: int, points: int):
-    cursor.execute(
-        "UPDATE users SET points = points + %s WHERE id = %s",
-        (points, user_id)
-    )
 
 class PostCreate(BaseModel):
     content: str
@@ -19,7 +15,8 @@ class PostCreate(BaseModel):
     linked_course_id: Optional[int] = None
     category: Optional[str] = ""
 
-# GET SMART FEED
+
+# ── Smart feed ────────────────────────────────────────────
 @router.get("/feed")
 def get_smart_feed(current_user: dict = Depends(get_current_user)):
     db = get_db()
@@ -30,29 +27,37 @@ def get_smart_feed(current_user: dict = Depends(get_current_user)):
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT i.name FROM interests i
             JOIN user_interests ui ON ui.interest_id = i.id
             WHERE ui.user_id = %s
-        """, (user["id"],))
+            """,
+            (user["id"],),
+        )
         interests = [row["name"] for row in cursor.fetchall()]
 
         if interests:
             placeholders = ",".join(["%s"] * len(interests))
-            cursor.execute(f"""
+            cursor.execute(
+                f"""
                 SELECT p.*, u.username, u.profile_image, u.role,
                     CASE WHEN p.category = ANY(ARRAY[{placeholders}]::text[]) THEN 1 ELSE 0 END AS relevance
                 FROM posts p
                 JOIN users u ON p.user_id = u.id
                 ORDER BY relevance DESC, p.created_at DESC
-            """, interests)
+                """,
+                interests,
+            )
         else:
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT p.*, u.username, u.profile_image, u.role
                 FROM posts p
                 JOIN users u ON p.user_id = u.id
                 ORDER BY p.created_at DESC
-            """)
+                """
+            )
 
         posts = cursor.fetchall()
         result = []
@@ -70,18 +75,21 @@ def get_smart_feed(current_user: dict = Depends(get_current_user)):
     finally:
         db.close()
 
-# GET ALL POSTS
+
+# ── Get all posts ─────────────────────────────────────────
 @router.get("/")
 def get_all_posts():
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT p.*, u.username, u.profile_image, u.role
             FROM posts p
             JOIN users u ON p.user_id = u.id
             ORDER BY p.created_at DESC
-        """)
+            """
+        )
         posts = cursor.fetchall()
         result = []
         for p in posts:
@@ -97,7 +105,8 @@ def get_all_posts():
     finally:
         db.close()
 
-# CREATE POST (+1 نقطة)
+
+# ── Create post (+1 point) ────────────────────────────────
 @router.post("/")
 def create_post(post: PostCreate, current_user: dict = Depends(get_current_user)):
     db = get_db()
@@ -108,41 +117,56 @@ def create_post(post: PostCreate, current_user: dict = Depends(get_current_user)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        if user["role"] not in ("engineer", "specialist", "admin"):
-            raise HTTPException(status_code=403, detail="Only specialists can create posts")
+        # Fixed: removed "specialist" — roles are student / engineer / admin
+        if user["role"] not in ("engineer", "admin"):
+            raise HTTPException(status_code=403, detail="Only engineers and admins can create posts")
 
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT INTO posts (user_id, content, image_url, linked_course_id, category)
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (%s,%s,%s,%s,%s)
             RETURNING id
-        """, (user["id"], post.content, post.image_url, post.linked_course_id, post.category))
-
+            """,
+            (user["id"], post.content, post.image_url, post.linked_course_id, post.category),
+        )
         new_id = cursor.fetchone()["id"]
-        add_points(cursor, user["id"], 1)  # +1 نشر بوست
+        add_points(cursor, user["id"], 1)
         db.commit()
         return {"message": "Post created successfully", "post_id": new_id}
     finally:
         db.close()
 
-# LIKE POST (+2 نقاط لصاحب البوست)
+
+# ── Like post (+2 points to owner) ───────────────────────
+# Fixed: now requires authentication to prevent bots
 @router.post("/{post_id}/like")
-def like_post(post_id: int):
+def like_post(post_id: int, current_user: dict = Depends(get_current_user)):
     db = get_db()
     try:
         cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        liker = cursor.fetchone()
+        if not liker:
+            raise HTTPException(status_code=404, detail="User not found")
+
         cursor.execute("SELECT user_id FROM posts WHERE id = %s", (post_id,))
         post = cursor.fetchone()
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
 
+        # Prevent self-liking
+        if post["user_id"] == liker["id"]:
+            raise HTTPException(status_code=400, detail="You cannot like your own post")
+
         cursor.execute("UPDATE posts SET likes = likes + 1 WHERE id = %s", (post_id,))
-        add_points(cursor, post["user_id"], 2)  # +2 لايك
+        add_points(cursor, post["user_id"], 2)
         db.commit()
         return {"message": "Post liked!"}
     finally:
         db.close()
 
-# DELETE POST
+
+# ── Delete post ───────────────────────────────────────────
 @router.delete("/{post_id}")
 def delete_post(post_id: int, current_user: dict = Depends(get_current_user)):
     db = get_db()
@@ -166,7 +190,8 @@ def delete_post(post_id: int, current_user: dict = Depends(get_current_user)):
     finally:
         db.close()
 
-# GET INTERESTS LIST
+
+# ── Interests ─────────────────────────────────────────────
 @router.get("/interests")
 def get_interests():
     db = get_db()
@@ -177,7 +202,7 @@ def get_interests():
     finally:
         db.close()
 
-# SET USER INTERESTS
+
 @router.post("/interests/set")
 def set_user_interests(interest_ids: list[int], current_user: dict = Depends(get_current_user)):
     db = get_db()
@@ -191,8 +216,8 @@ def set_user_interests(interest_ids: list[int], current_user: dict = Depends(get
         cursor.execute("DELETE FROM user_interests WHERE user_id = %s", (user["id"],))
         for interest_id in interest_ids:
             cursor.execute(
-                "INSERT INTO user_interests (user_id, interest_id) VALUES (%s, %s)",
-                (user["id"], interest_id)
+                "INSERT INTO user_interests (user_id, interest_id) VALUES (%s,%s)",
+                (user["id"], interest_id),
             )
         db.commit()
         return {"message": "Interests updated successfully"}

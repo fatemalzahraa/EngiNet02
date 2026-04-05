@@ -2,68 +2,148 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from auth import get_current_user
+# Fixed: import from central dependencies (not from auth.py)
+from dependencies import get_current_user
 from database import get_db
 
 router = APIRouter(prefix="/profile", tags=["Profile"])
+
 
 class UpdateProfile(BaseModel):
     bio: Optional[str] = None
     profile_image: Optional[str] = None
     university: Optional[str] = None
 
-# GET PROFILE
+
+# ── Get my profile ────────────────────────────────────────
 @router.get("/me")
 def get_my_profile(current_user: dict = Depends(get_current_user)):
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT * FROM users WHERE email = %s", (current_user["email"],))
-    user = cursor.fetchone()
-    db.close()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {
-        "id": user["id"],
-        "username": user["username"],
-        "email": user["email"],
-        "role": user["role"],
-        "bio": user["bio"],
-        "profile_image": user["profile_image"],
-        "points": user["points"],
-        "university": user["university"],
-    }
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT * FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {
+            "id": user["id"],
+            "username": user["username"],
+            "email": user["email"],
+            "role": user["role"],
+            "bio": user["bio"],
+            "profile_image": user["profile_image"],
+            "points": user["points"],
+            "university": user["university"],
+        }
+    finally:
+        db.close()
 
-# UPDATE PROFILE
+
+# ── Update my profile ─────────────────────────────────────
 @router.put("/me")
 def update_my_profile(data: UpdateProfile, current_user: dict = Depends(get_current_user)):
     db = get_db()
-    cursor = db.cursor()
-    if data.bio is not None:
-        cursor.execute("UPDATE users SET bio = %s WHERE email = %s", (data.bio, current_user["email"]))
-    if data.profile_image is not None:
-        cursor.execute("UPDATE users SET profile_image = %s WHERE email = %s", (data.profile_image, current_user["email"]))
-    if data.university is not None:
-        cursor.execute("UPDATE users SET university = %s WHERE email = %s", (data.university, current_user["email"]))
-    db.commit()
-    db.close()
-    return {"message": "Profile updated successfully"}
+    try:
+        cursor = db.cursor()
+        fields = []
+        values = []
+        if data.bio is not None:
+            fields.append("bio = %s")
+            values.append(data.bio)
+        if data.profile_image is not None:
+            fields.append("profile_image = %s")
+            values.append(data.profile_image)
+        if data.university is not None:
+            fields.append("university = %s")
+            values.append(data.university)
 
-# GET USER ENROLLED COURSES
+        if fields:
+            values.append(current_user["email"])
+            cursor.execute(
+                f"UPDATE users SET {', '.join(fields)} WHERE email = %s",
+                values,
+            )
+            db.commit()
+        return {"message": "Profile updated successfully"}
+    finally:
+        db.close()
+
+
+# ── Get courses where user has lesson progress ────────────
 @router.get("/my-courses")
 def get_my_courses(current_user: dict = Depends(get_current_user)):
     db = get_db()
-    cursor = db.cursor()
-    cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-    user = cursor.fetchone()
-    if not user:
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        cursor.execute(
+            """
+            SELECT DISTINCT c.* FROM courses c
+            JOIN lessons l ON l.course_id = c.id
+            JOIN lesson_progress lp ON lp.lesson_id = l.id
+            WHERE lp.user_id = %s
+            """,
+            (user["id"],),
+        )
+        return cursor.fetchall()
+    finally:
         db.close()
-        raise HTTPException(status_code=404, detail="User not found")
-    cursor.execute("""
-        SELECT DISTINCT c.* FROM courses c
-        JOIN lessons l ON l.course_id = c.id
-        JOIN lesson_progress lp ON lp.lesson_id = l.id
-        WHERE lp.user_id = %s
-    """, (user["id"],))
-    courses = cursor.fetchall()
-    db.close()
-    return courses
+
+
+# ── Mark lesson as complete / incomplete ──────────────────
+@router.post("/lesson-progress")
+def update_lesson_progress(
+    lesson_id: int,
+    is_completed: bool,
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cursor.execute(
+            """
+            INSERT INTO lesson_progress (user_id, lesson_id, is_completed)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (user_id, lesson_id)
+            DO UPDATE SET is_completed = EXCLUDED.is_completed
+            """,
+            (user["id"], lesson_id, is_completed),
+        )
+        db.commit()
+        return {"message": "Progress updated"}
+    finally:
+        db.close()
+
+
+# ── Get lesson progress for a course ─────────────────────
+@router.get("/lesson-progress/{course_id}")
+def get_lesson_progress(course_id: int, current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cursor.execute(
+            """
+            SELECT lp.lesson_id, lp.is_completed
+            FROM lesson_progress lp
+            JOIN lessons l ON l.id = lp.lesson_id
+            WHERE lp.user_id = %s AND l.course_id = %s
+            """,
+            (user["id"], course_id),
+        )
+        rows = cursor.fetchall()
+        return {row["lesson_id"]: row["is_completed"] for row in rows}
+    finally:
+        db.close()
