@@ -1,6 +1,5 @@
 import os
-import psycopg2
-import psycopg2.extras
+import psycopg
 
 # Supabase PostgreSQL connection string
 # Format: postgresql://postgres.[project-ref]:[password]@aws-0-[region].pooler.supabase.com:6543/postgres
@@ -13,5 +12,5 @@ def get_db():
             "DATABASE_URL is not configured. "
             "Set it to your Supabase PostgreSQL connection string."
         )
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+        conn = psycopg.connect(DATABASE_URL, row_factory=psycopg.rows.dict_row)
     return conn
