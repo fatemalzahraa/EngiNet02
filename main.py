@@ -252,13 +252,20 @@ def create_question(q: QuestionRequest, current_user: dict = Depends(get_current
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        # Get username and profile_image to store directly (Supabase schema has no user_id)
+        cursor.execute(
+            "SELECT username, profile_image FROM users WHERE email = %s",
+            (current_user["email"],),
+        )
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         cursor.execute(
-            "INSERT INTO questions (user_id, title, content, category) VALUES (%s,%s,%s,%s)",
-            (user["id"], q.title, q.content, q.category),
+            """
+            INSERT INTO questions (username, profile_image, title, content, category)
+            VALUES (%s,%s,%s,%s,%s)
+            """,
+            (user["username"], user["profile_image"], q.title, q.content, q.category),
         )
         db.commit()
         return {"message": "Question posted successfully"}
@@ -273,11 +280,10 @@ def get_questions():
         cursor = db.cursor()
         cursor.execute(
             """
-            SELECT q.id, q.title, q.content, q.category, q.likes, q.created_at,
-                   u.username, u.profile_image
-            FROM questions q
-            JOIN users u ON q.user_id = u.id
-            ORDER BY q.created_at DESC
+            SELECT id, title, content, category, likes, created_at,
+                   username, profile_image
+            FROM questions
+            ORDER BY created_at DESC
             """
         )
         return cursor.fetchall()
@@ -294,24 +300,21 @@ def post_answer(
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        cursor.execute(
+            "SELECT username, profile_image FROM users WHERE email = %s",
+            (current_user["email"],),
+        )
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
         cursor.execute(
-            "INSERT INTO answers (question_id, user_id, content) VALUES (%s,%s,%s)",
-            (question_id, user["id"], a.content),
+            """
+            INSERT INTO answers (question_id, username, profile_image, content)
+            VALUES (%s,%s,%s,%s)
+            """,
+            (question_id, user["username"], user["profile_image"], a.content),
         )
-
-        cursor.execute("SELECT user_id FROM questions WHERE id = %s", (question_id,))
-        question = cursor.fetchone()
-        if question and question["user_id"] != user["id"]:
-            cursor.execute(
-                "INSERT INTO notifications (user_id, message) VALUES (%s,%s)",
-                (question["user_id"], f"👨‍💻 {current_user['email']} answered your question!"),
-            )
-
         db.commit()
         return {"message": "Answer posted successfully"}
     finally:
@@ -325,12 +328,11 @@ def get_answers(question_id: int):
         cursor = db.cursor()
         cursor.execute(
             """
-            SELECT a.id, a.content, a.likes, a.is_accepted, a.created_at,
-                   u.username, u.profile_image
-            FROM answers a
-            JOIN users u ON a.user_id = u.id
-            WHERE a.question_id = %s
-            ORDER BY a.created_at ASC
+            SELECT id, content, likes, is_accepted, created_at,
+                   username, profile_image
+            FROM answers
+            WHERE question_id = %s
+            ORDER BY created_at ASC
             """,
             (question_id,),
         )
@@ -348,26 +350,25 @@ def accept_answer(
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        cursor.execute(
+            "SELECT username FROM users WHERE email = %s", (current_user["email"],)
+        )
         user = cursor.fetchone()
-        cursor.execute("SELECT user_id FROM questions WHERE id = %s", (question_id,))
+
+        # Check ownership via username
+        cursor.execute("SELECT username FROM questions WHERE id = %s", (question_id,))
         question = cursor.fetchone()
-        if not question or question["user_id"] != user["id"]:
+        if not question or question["username"] != user["username"]:
             raise HTTPException(status_code=403, detail="Only question owner can accept answers")
 
         cursor.execute(
-            "UPDATE answers SET is_accepted = true WHERE id = %s RETURNING user_id",
+            "UPDATE answers SET is_accepted = true WHERE id = %s RETURNING username",
             (answer_id,),
         )
         answer = cursor.fetchone()
         if not answer:
             raise HTTPException(status_code=404, detail="Answer not found")
 
-        add_points(cursor, answer["user_id"], 3)
-        cursor.execute(
-            "INSERT INTO notifications (user_id, message) VALUES (%s,%s)",
-            (answer["user_id"], "✅ Your answer was accepted!"),
-        )
         db.commit()
         return {"message": "Answer accepted"}
     finally:
