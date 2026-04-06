@@ -1,10 +1,10 @@
 import 'dart:convert';
-
 import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -14,15 +14,17 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final _usernameController = TextEditingController();
-  final _emailController = TextEditingController();
-  final _passwordController = TextEditingController();
+  final _usernameController      = TextEditingController();
+  final _emailController         = TextEditingController();
+  final _passwordController      = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  String _selectedRole = 'student';
-  bool _isLoading = false;
+  String _selectedRole  = 'student';
+  bool _isLoading       = false;
   bool _obscurePassword = true;
-  bool _obscureConfirm = true;
+  bool _obscureConfirm  = true;
+
+  final _supabase = Supabase.instance.client;
 
   @override
   void dispose() {
@@ -34,88 +36,72 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _signup() async {
-    final username = _usernameController.text.trim();
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
+    final username        = _usernameController.text.trim();
+    final email           = _emailController.text.trim();
+    final password        = _passwordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
 
-    // ---- Validation ----
     if (username.isEmpty || email.isEmpty || password.isEmpty) {
-      _showSnackBar("Please fill all fields", isError: true);
+      _showSnackBar('Please fill all fields', isError: true);
       return;
     }
-
     if (password != confirmPassword) {
-      _showSnackBar("Passwords do not match", isError: true);
+      _showSnackBar('Passwords do not match', isError: true);
       return;
     }
-
     if (password.length < 6) {
-      _showSnackBar("Password must be at least 6 characters", isError: true);
+      _showSnackBar('Password must be at least 6 characters', isError: true);
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      final registerResponse = await http.post(
+      // 1. Register via FastAPI backend (creates user with hashed password)
+      final backendRes = await http.post(
         Uri.parse('${AppConstants.baseUrl}/register'),
-        headers: const {'Content-Type': 'application/json'},
+        headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'username': username,
-          'email': email,
+          'email':    email,
           'password': password,
-          'role': _selectedRole,
+          'role':     _selectedRole,
         }),
       );
 
-      final registerData =
-          jsonDecode(registerResponse.body) as Map<String, dynamic>;
-
-      if (registerResponse.statusCode >= 400) {
-        _showSnackBar(
-          (registerData['detail'] ?? 'Registration failed. Try again.')
-              .toString(),
-          isError: true,
-        );
+      if (backendRes.statusCode >= 400) {
+        final body = jsonDecode(backendRes.body);
+        _showSnackBar(body['detail'] ?? 'Registration failed', isError: true);
         return;
       }
 
-      final loginResponse = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/token'),
-        headers: const {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: {
-          'username': email,
-          'password': password,
-        },
-      );
+      final backendData = jsonDecode(backendRes.body) as Map<String, dynamic>;
+      final backendToken = backendData['access_token']?.toString() ?? '';
 
-      final loginData = jsonDecode(loginResponse.body) as Map<String, dynamic>;
-
-      if (loginResponse.statusCode != 200) {
-        _showSnackBar(
-          'Account created, but automatic login failed. Please sign in.',
-        );
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/login');
-        return;
+      // 2. Also register in Supabase Auth so Supabase-based screens work
+      try {
+        await _supabase.auth.signUp(email: email, password: password);
+      } catch (_) {
+        // Non-fatal: Supabase auth is secondary; backend token is the source of truth
       }
 
+      // 3. Save session using the backend JWT
       await SessionManager.saveSession(
-        token: loginData['access_token']?.toString() ?? '',
-        role: loginData['role']?.toString() ?? _selectedRole,
-        username: loginData['username']?.toString() ?? username,
-        email: email,
+        token:    backendToken,
+        role:     _selectedRole,
+        username: username,
+        email:    email,
       );
 
       if (!mounted) return;
-      _showSnackBar("Account created successfully! ✅");
+      _showSnackBar('Account created successfully!');
       Navigator.pushReplacementNamed(context, '/home');
+
+    } on AuthException catch (e) {
+      _showSnackBar(e.message, isError: true);
     } catch (e) {
-      debugPrint("Signup error: $e");
-      _showSnackBar("Unable to connect to server. Try again.", isError: true);
+      debugPrint('Signup error: $e');
+      _showSnackBar('Unable to connect to server. Try again.', isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -142,10 +128,8 @@ class _SignupScreenState extends State<SignupScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // ---- Logo ----
                 Image.asset('images/enginet_logo.png', height: 100),
                 const SizedBox(height: 16),
-
                 Text(
                   'Create Account',
                   style: GoogleFonts.agbalumo(
@@ -162,63 +146,32 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                 ),
                 const SizedBox(height: 32),
-
-                // ---- Username ----
-                _buildField(
-                  controller: _usernameController,
-                  hint: 'Username',
-                  icon: Icons.person_outline,
-                ),
+                _buildField(controller: _usernameController, hint: 'Username', icon: Icons.person_outline),
                 const SizedBox(height: 14),
-
-                // ---- Email ----
-                _buildField(
-                  controller: _emailController,
-                  hint: 'Email',
-                  icon: Icons.email_outlined,
-                  keyboardType: TextInputType.emailAddress,
-                ),
+                _buildField(controller: _emailController, hint: 'Email', icon: Icons.email_outlined, keyboardType: TextInputType.emailAddress),
                 const SizedBox(height: 14),
-
-                // ---- Password ----
                 _buildField(
                   controller: _passwordController,
                   hint: 'Password',
                   icon: Icons.lock_outline,
                   obscureText: _obscurePassword,
                   suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                      color: Colors.grey,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
+                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
                 const SizedBox(height: 14),
-
-                // ---- Confirm Password ----
                 _buildField(
                   controller: _confirmPasswordController,
                   hint: 'Confirm Password',
                   icon: Icons.lock_outline,
                   obscureText: _obscureConfirm,
                   suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscureConfirm
-                          ? Icons.visibility_off
-                          : Icons.visibility,
-                      color: Colors.grey,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscureConfirm = !_obscureConfirm),
+                    icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
+                    onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // ---- Role Selector ----
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   decoration: BoxDecoration(
@@ -229,13 +182,7 @@ class _SignupScreenState extends State<SignupScreen> {
                     children: [
                       const Icon(Icons.badge_outlined, color: Colors.black45),
                       const SizedBox(width: 10),
-                      Text(
-                        'I am a:',
-                        style: GoogleFonts.robotoCondensed(
-                          color: Colors.black54,
-                          fontSize: 15,
-                        ),
-                      ),
+                      Text('I am a:', style: GoogleFonts.robotoCondensed(color: Colors.black54, fontSize: 15)),
                       const SizedBox(width: 12),
                       Expanded(
                         child: DropdownButtonHideUnderline(
@@ -248,19 +195,11 @@ class _SignupScreenState extends State<SignupScreen> {
                               fontSize: 15,
                             ),
                             items: const [
-                              DropdownMenuItem(
-                                value: 'student',
-                                child: Text('Student'),
-                              ),
-                              DropdownMenuItem(
-                                value: 'engineer',
-                                child: Text('Engineer'),
-                              ),
+                              DropdownMenuItem(value: 'student',  child: Text('Student')),
+                              DropdownMenuItem(value: 'engineer', child: Text('Engineer')),
                             ],
                             onChanged: (value) {
-                              if (value != null) {
-                                setState(() => _selectedRole = value);
-                              }
+                              if (value != null) setState(() => _selectedRole = value);
                             },
                           ),
                         ),
@@ -269,8 +208,6 @@ class _SignupScreenState extends State<SignupScreen> {
                   ),
                 ),
                 const SizedBox(height: 28),
-
-                // ---- Signup Button ----
                 SizedBox(
                   width: double.infinity,
                   child: GestureDetector(
@@ -283,42 +220,31 @@ class _SignupScreenState extends State<SignupScreen> {
                       ),
                       child: Center(
                         child: _isLoading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2)
-                            : Text(
-                                'Create Account',
+                            ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                            : Text('Create Account',
                                 style: GoogleFonts.robotoCondensed(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 20,
-                                ),
-                              ),
+                                )),
                       ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 20),
-
-                // ---- Login Link ----
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text(
-                      "Already have an account? ",
-                      style: GoogleFonts.robotoCondensed(
-                          color: Colors.white54, fontSize: 15),
-                    ),
+                    Text("Already have an account? ",
+                        style: GoogleFonts.robotoCondensed(color: Colors.white54, fontSize: 15)),
                     GestureDetector(
-                      onTap: () =>
-                          Navigator.pushReplacementNamed(context, '/login'),
-                      child: Text(
-                        'Sign In',
-                        style: GoogleFonts.robotoCondensed(
-                          color: const Color(0xFFE3C39D),
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                      ),
+                      onTap: () => Navigator.pushReplacementNamed(context, '/login'),
+                      child: Text('Sign In',
+                          style: GoogleFonts.robotoCondensed(
+                            color: const Color(0xFFE3C39D),
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          )),
                     ),
                   ],
                 ),

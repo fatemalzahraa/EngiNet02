@@ -1,5 +1,4 @@
 import 'dart:convert';
-
 import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
@@ -14,10 +13,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController = TextEditingController();
+  final _emailController    = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isLoading = false;
-  bool _obscurePassword = true;
+  bool _isLoading           = false;
+  bool _obscurePassword     = true;
 
   @override
   void dispose() {
@@ -27,56 +26,45 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    final email = _emailController.text.trim();
+    final email    = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
-      _showSnackBar("Please fill all fields", isError: true);
+      _showSnackBar('Please fill all fields', isError: true);
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
+      // Use FastAPI /token endpoint (OAuth2 form)
       final response = await http.post(
         Uri.parse('${AppConstants.baseUrl}/token'),
-        headers: const {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: {
-          'username': email,
-          'password': password,
-        },
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {'username': email, 'password': password},
       );
+
+      if (response.statusCode != 200) {
+        final body = jsonDecode(response.body);
+        _showSnackBar(body['detail'] ?? 'Login failed. Check your credentials.', isError: true);
+        return;
+      }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 
-      if (response.statusCode != 200) {
-        _showSnackBar(
-          (data['detail'] ?? 'Login failed. Check your credentials.')
-              .toString(),
-          isError: true,
-        );
-        return;
-      }
-
-      final token = data['access_token']?.toString() ?? '';
-      if (token.isEmpty) {
-        _showSnackBar('Login failed. Missing token.', isError: true);
-        return;
-      }
-
       await SessionManager.saveSession(
-        token: token,
-        role: data['role']?.toString() ?? 'student',
-        username: data['username']?.toString() ?? '',
-        email: email,
+        token:    data['access_token']?.toString() ?? '',
+        role:     data['role']?.toString()         ?? 'student',
+        username: data['username']?.toString()     ?? '',
+        email:    email,
       );
 
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/home');
+
     } catch (e) {
-      _showSnackBar("Unable to connect to server. Try again.", isError: true);
+      debugPrint('Login error: $e');
+      _showSnackBar('Unable to connect to server. Try again.', isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -103,10 +91,8 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // ---- Logo ----
                 Image.asset('images/enginet_logo.png', height: 120),
                 const SizedBox(height: 20),
-
                 Text(
                   'EngiNet',
                   style: GoogleFonts.agbalumo(
@@ -124,8 +110,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 40),
-
-                // ---- Email ----
                 _buildField(
                   controller: _emailController,
                   hint: 'Email',
@@ -133,8 +117,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   keyboardType: TextInputType.emailAddress,
                 ),
                 const SizedBox(height: 16),
-
-                // ---- Password ----
                 _buildField(
                   controller: _passwordController,
                   hint: 'Password',
@@ -142,23 +124,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   obscureText: _obscurePassword,
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off
-                          : Icons.visibility,
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
                       color: Colors.grey,
                     ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
+                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
                 const SizedBox(height: 10),
-
-                // ---- Forgot Password ----
                 Align(
                   alignment: Alignment.centerRight,
                   child: GestureDetector(
-                    onTap: () =>
-                        Navigator.pushNamed(context, '/reset-password'),
+                    onTap: () => Navigator.pushNamed(context, '/reset-password'),
                     child: Text(
                       'Forgot Password?',
                       style: GoogleFonts.robotoCondensed(
@@ -169,8 +145,6 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-
-                // ---- Login Button ----
                 SizedBox(
                   width: double.infinity,
                   child: GestureDetector(
@@ -183,8 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       child: Center(
                         child: _isLoading
-                            ? const CircularProgressIndicator(
-                                color: Colors.white, strokeWidth: 2)
+                            ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
                             : Text(
                                 'Sign In',
                                 style: GoogleFonts.robotoCondensed(
@@ -198,19 +171,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-
-                // ---- Register Link ----
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
                       "Don't have an account? ",
-                      style: GoogleFonts.robotoCondensed(
-                          color: Colors.white54, fontSize: 15),
+                      style: GoogleFonts.robotoCondensed(color: Colors.white54, fontSize: 15),
                     ),
                     GestureDetector(
-                      onTap: () =>
-                          Navigator.pushReplacementNamed(context, '/register'),
+                      onTap: () => Navigator.pushReplacementNamed(context, '/register'),
                       child: Text(
                         'Sign Up',
                         style: GoogleFonts.robotoCondensed(

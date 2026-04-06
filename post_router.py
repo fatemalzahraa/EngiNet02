@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-# Fixed: import from central dependencies (not from auth.py)
 from dependencies import get_current_user, add_points
 from database import get_db
 
@@ -117,7 +116,6 @@ def create_post(post: PostCreate, current_user: dict = Depends(get_current_user)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Fixed: removed "specialist" — roles are student / engineer / admin
         if user["role"] not in ("engineer", "admin"):
             raise HTTPException(status_code=403, detail="Only engineers and admins can create posts")
 
@@ -137,8 +135,7 @@ def create_post(post: PostCreate, current_user: dict = Depends(get_current_user)
         db.close()
 
 
-# ── Like post (+2 points to owner) ───────────────────────
-# Fixed: now requires authentication to prevent bots
+# ── Like post — prevents duplicate likes and self-likes ───
 @router.post("/{post_id}/like")
 def like_post(post_id: int, current_user: dict = Depends(get_current_user)):
     db = get_db()
@@ -154,14 +151,63 @@ def like_post(post_id: int, current_user: dict = Depends(get_current_user)):
         if not post:
             raise HTTPException(status_code=404, detail="Post not found")
 
-        # Prevent self-liking
         if post["user_id"] == liker["id"]:
             raise HTTPException(status_code=400, detail="You cannot like your own post")
 
+        # Prevent duplicate likes
+        cursor.execute(
+            "SELECT 1 FROM post_likes WHERE post_id = %s AND user_id = %s",
+            (post_id, liker["id"]),
+        )
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="You already liked this post")
+
+        cursor.execute(
+            "INSERT INTO post_likes (post_id, user_id) VALUES (%s, %s)",
+            (post_id, liker["id"]),
+        )
         cursor.execute("UPDATE posts SET likes = likes + 1 WHERE id = %s", (post_id,))
         add_points(cursor, post["user_id"], 2)
         db.commit()
         return {"message": "Post liked!"}
+    finally:
+        db.close()
+
+
+# ── Unlike post ───────────────────────────────────────────
+@router.delete("/{post_id}/like")
+def unlike_post(post_id: int, current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        liker = cursor.fetchone()
+        if not liker:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cursor.execute(
+            "DELETE FROM post_likes WHERE post_id = %s AND user_id = %s RETURNING 1",
+            (post_id, liker["id"]),
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=400, detail="You haven't liked this post")
+
+        cursor.execute(
+            "UPDATE posts SET likes = GREATEST(likes - 1, 0) WHERE id = %s",
+            (post_id,),
+        )
+
+        # Get post owner to deduct points
+        cursor.execute("SELECT user_id FROM posts WHERE id = %s", (post_id,))
+        post = cursor.fetchone()
+        if post:
+            cursor.execute(
+                "UPDATE users SET points = GREATEST(points - 2, 0) WHERE id = %s",
+                (post["user_id"],),
+            )
+
+        db.commit()
+        return {"message": "Post unliked!"}
     finally:
         db.close()
 
@@ -184,6 +230,7 @@ def delete_post(post_id: int, current_user: dict = Depends(get_current_user)):
         if post["user_id"] != user["id"] and user["role"] != "admin":
             raise HTTPException(status_code=403, detail="Not authorized to delete this post")
 
+        cursor.execute("DELETE FROM post_likes WHERE post_id = %s", (post_id,))
         cursor.execute("DELETE FROM posts WHERE id = %s", (post_id,))
         db.commit()
         return {"message": "Post deleted successfully"}

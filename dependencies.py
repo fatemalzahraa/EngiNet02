@@ -6,8 +6,9 @@ from jose import jwt, JWTError
 SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
 if not SECRET_KEY:
     raise RuntimeError(
-        "SECRET_KEY environment variable is not set. "
-        "Run: export SECRET_KEY= 26fc342f482aa68d67f53134a6a10f87128364af26f1cf22b42f5a74e73d2344"
+        "SECRET_KEY environment variable is not set.\n"
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\"\n"
+        "Then set it: export SECRET_KEY=50b5b93a9b3f6c47b82b72bc870f9a969271e2c7c874cfbf0b28381a6ff15fd7"
     )
 
 ALGORITHM = "HS256"

@@ -1,9 +1,7 @@
-import 'dart:convert';
-import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({super.key});
@@ -13,11 +11,10 @@ class StudentProfileScreen extends StatefulWidget {
 }
 
 class _StudentProfileScreenState extends State<StudentProfileScreen> {
+  final _supabase = Supabase.instance.client;
+
   Map<String, dynamic>? user;
-
-  // Fixed: only courses this student has progress in
   List<dynamic> myCourses = [];
-
   bool isLoading = true;
   int selectedTab = 0;
 
@@ -29,36 +26,41 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
   Future<void> loadProfile() async {
     try {
-      final token = await SessionManager.getToken();
-      if (token == null || token.isEmpty) {
+      final email = await SessionManager.getEmail();
+      if (email == null || email.isEmpty) {
         if (!mounted) return;
         setState(() => isLoading = false);
         return;
       }
 
-      final headers = {'Authorization': 'Bearer $token'};
+      final userRes = await _supabase
+          .from('users')
+          .select()
+          .eq('email', email)
+          .single();
 
-      // Parallel requests
-      final results = await Future.wait([
-        http.get(Uri.parse('${AppConstants.baseUrl}/profile/me'), headers: headers),
-        // Fixed: use /profile/my-courses instead of fetching all courses
-        http.get(Uri.parse('${AppConstants.baseUrl}/profile/my-courses'), headers: headers),
-      ]);
+      final userId = userRes['id'];
 
-      final profileRes = results[0];
-      final coursesRes = results[1];
+      final coursesRes = await _supabase
+          .from('lesson_progress')
+          .select('lessons(course_id, courses(*))')
+          .eq('user_id', userId)
+          .eq('is_completed', true);
 
-      if (profileRes.statusCode != 200) throw Exception('Failed to load profile');
-
-      final userRes = jsonDecode(profileRes.body) as Map<String, dynamic>;
-      final coursesData = coursesRes.statusCode == 200
-          ? jsonDecode(coursesRes.body) as List<dynamic>
-          : <dynamic>[];
+      // استخراج الكورسات الفريدة
+      final seenIds = <dynamic>{};
+      final uniqueCourses = <dynamic>[];
+      for (final row in coursesRes) {
+        final course = row['lessons']?['courses'];
+        if (course != null && seenIds.add(course['id'])) {
+          uniqueCourses.add(course);
+        }
+      }
 
       if (!mounted) return;
       setState(() {
         user = userRes;
-        myCourses = coursesData;
+        myCourses = uniqueCourses;
         isLoading = false;
       });
     } catch (e) {
@@ -92,26 +94,15 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               child: const Text('Cancel', style: TextStyle(color: Colors.grey))),
           TextButton(
             onPressed: () async {
-              try {
-                final token = await SessionManager.getToken();
-                if (token == null || token.isEmpty) return;
-                await http.put(
-                  Uri.parse('${AppConstants.baseUrl}/profile/me'),
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': 'Bearer $token',
-                  },
-                  body: jsonEncode({
-                    'bio': bioController.text,
-                    'profile_image': imageController.text,
-                  }),
-                );
-                if (!mounted) return;
-                Navigator.pop(context);
-                loadProfile();
-              } catch (e) {
-                debugPrint('❌ Error updating profile: $e');
-              }
+              final email = await SessionManager.getEmail();
+              if (email == null) return;
+              await _supabase.from('users').update({
+                'bio': bioController.text,
+                'profile_image': imageController.text,
+              }).eq('email', email);
+              if (!mounted) return;
+              Navigator.pop(context);
+              loadProfile();
             },
             child: Text('Save',
                 style: GoogleFonts.agbalumo(color: const Color(0xFFE3C39D))),
@@ -153,7 +144,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header
             Container(
               color: const Color(0xFF8B6F47),
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 60),
@@ -209,7 +199,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _statColumn('Courses', '${myCourses.length}'),
+                    _statColumn('Followers', '${myCourses.length}'),
                     _statColumn('Points', '$points'),
                   ],
                 ),
@@ -242,7 +232,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               child: selectedTab == 0
                   ? _buildCoursesList()
                   : const Center(
-                      child: Text('Coming soon…', style: TextStyle(color: Colors.white54))),
+                      child: Text('Coming soon…',
+                          style: TextStyle(color: Colors.white54))),
             ),
           ],
         ),
@@ -271,13 +262,15 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                  color: isSelected ? const Color(0xFFE3C39D) : Colors.transparent, width: 2),
+                  color: isSelected ? const Color(0xFFE3C39D) : Colors.transparent,
+                  width: 2),
             ),
           ),
           child: Center(
             child: Text(label,
                 style: GoogleFonts.agbalumo(
-                    color: isSelected ? const Color(0xFFE3C39D) : Colors.white54, fontSize: 16)),
+                    color: isSelected ? const Color(0xFFE3C39D) : Colors.white54,
+                    fontSize: 16)),
           ),
         ),
       ),
@@ -289,13 +282,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.school_outlined, color: Colors.white24, size: 60),
-            const SizedBox(height: 16),
-            const Text('No courses started yet',
+          children: const [
+            Icon(Icons.school_outlined, color: Colors.white24, size: 60),
+            SizedBox(height: 16),
+            Text('No courses started yet',
                 style: TextStyle(color: Colors.white54, fontSize: 16)),
-            const SizedBox(height: 8),
-            const Text('Start watching lessons to track your progress',
+            SizedBox(height: 8),
+            Text('Start watching lessons to track your progress',
                 style: TextStyle(color: Colors.white38, fontSize: 13)),
           ],
         ),
@@ -316,12 +309,14 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-              color: const Color(0xFFD8C09A), borderRadius: BorderRadius.circular(16)),
+              color: const Color(0xFFD8C09A),
+              borderRadius: BorderRadius.circular(16)),
           child: Row(
             children: [
               ClipRRect(
                 borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
+                    topLeft: Radius.circular(16),
+                    bottomLeft: Radius.circular(16)),
                 child: imageUrl.isNotEmpty
                     ? Image.network(imageUrl,
                         width: 90, height: 80, fit: BoxFit.cover,
@@ -341,8 +336,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(title,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                          maxLines: 2, overflow: TextOverflow.ellipsis),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 13),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis),
                       const SizedBox(height: 6),
                       Row(
                         children: [
@@ -354,7 +351,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                             backgroundColor: const Color(0xFF4A6FA5),
                           ),
                           const SizedBox(width: 6),
-                          Text(instructor, style: GoogleFonts.agbalumo(fontSize: 12)),
+                          Text(instructor,
+                              style: GoogleFonts.agbalumo(fontSize: 12)),
                           const Spacer(),
                           const Icon(Icons.star, color: Colors.orange, size: 14),
                           Text(rating.toStringAsFixed(1),

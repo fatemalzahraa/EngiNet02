@@ -82,17 +82,61 @@ def add_book(book: BookCreate, current_user: dict = Depends(get_current_user)):
         db.close()
 
 
-# Fixed: requires authentication to prevent bot-liking
 @router.post("/{book_id}/like")
 def like_book(book_id: int, current_user: dict = Depends(get_current_user)):
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("UPDATE books SET likes = likes + 1 WHERE id = %s", (book_id,))
-        if cursor.rowcount == 0:
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cursor.execute("SELECT id FROM books WHERE id = %s", (book_id,))
+        if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Book not found")
+
+        # Prevent duplicate likes
+        cursor.execute(
+            "SELECT 1 FROM book_likes WHERE book_id = %s AND user_id = %s",
+            (book_id, user["id"]),
+        )
+        if cursor.fetchone():
+            raise HTTPException(status_code=400, detail="You already liked this book")
+
+        cursor.execute(
+            "INSERT INTO book_likes (book_id, user_id) VALUES (%s, %s)",
+            (book_id, user["id"]),
+        )
+        cursor.execute("UPDATE books SET likes = likes + 1 WHERE id = %s", (book_id,))
         db.commit()
         return {"message": "Book liked!"}
+    finally:
+        db.close()
+
+
+@router.delete("/{book_id}/like")
+def unlike_book(book_id: int, current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cursor.execute(
+            "DELETE FROM book_likes WHERE book_id = %s AND user_id = %s RETURNING 1",
+            (book_id, user["id"]),
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=400, detail="You haven't liked this book")
+
+        cursor.execute(
+            "UPDATE books SET likes = GREATEST(likes - 1, 0) WHERE id = %s", (book_id,)
+        )
+        db.commit()
+        return {"message": "Book unliked!"}
     finally:
         db.close()
 
@@ -108,6 +152,7 @@ def delete_book(
         cursor.execute("SELECT id FROM books WHERE id = %s", (book_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Book not found")
+        cursor.execute("DELETE FROM book_likes WHERE book_id = %s", (book_id,))
         cursor.execute("DELETE FROM books WHERE id = %s", (book_id,))
         db.commit()
         return {"message": "Book deleted successfully"}

@@ -30,7 +30,11 @@ from dependencies import (
 # ── Config ────────────────────────────────────────────────
 GMAIL_USER = os.getenv("GMAIL_USER", "")
 GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD", "")
-ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost").split(",")
+
+# ALLOWED_ORIGINS: comma-separated in env, e.g.:
+# export ALLOWED_ORIGINS="https://myapp.com,https://www.myapp.com"
+_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
+ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] if _origins_env else ["*"]
 
 app = FastAPI(title="EngiNet API", version="2.0")
 
@@ -47,9 +51,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# In-memory OTP store: { email: { "code": str, "expires": datetime } }
-_otp_store: dict = {}
 
 
 # ── Helpers ───────────────────────────────────────────────
@@ -74,6 +75,16 @@ def send_email(to: str, subject: str, body: str) -> None:
             server.send_message(msg)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to send email: {e}")
+
+
+def _delete_otp(email: str) -> None:
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute("DELETE FROM otp_codes WHERE email = %s", (email,))
+        db.commit()
+    finally:
+        db.close()
 
 
 # ── Register ──────────────────────────────────────────────
@@ -111,6 +122,13 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
     if not user:
         raise HTTPException(status_code=400, detail="Incorrect email or password")
+
+    if not user.get("password"):
+        raise HTTPException(
+            status_code=400,
+            detail="This account uses Supabase Auth. Please log in via the app."
+        )
+
     if not bcrypt.checkpw(form_data.password.encode(), user["password"].encode()):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
 
@@ -144,10 +162,24 @@ def forgot_password(email: str):
         return {"message": "If this email exists, a reset code has been sent"}
 
     code = str(secrets.randbelow(900000) + 100000)
-    _otp_store[email] = {
-        "code": code,
-        "expires": datetime.now(timezone.utc) + timedelta(minutes=15),
-    }
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+
+    # Store OTP in DB — survives server restarts (no in-memory store)
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute(
+            """
+            INSERT INTO otp_codes (email, code, expires_at)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (email) DO UPDATE
+            SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at
+            """,
+            (email, code, expires_at),
+        )
+        db.commit()
+    finally:
+        db.close()
 
     body = f"""Hello {user['username']},
 
@@ -171,14 +203,30 @@ class VerifyOTPRequest(BaseModel):
 
 @app.post("/verify-otp")
 def verify_otp(data: VerifyOTPRequest):
-    entry = _otp_store.get(data.email)
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute(
+            "SELECT code, expires_at FROM otp_codes WHERE email = %s", (data.email,)
+        )
+        entry = cursor.fetchone()
+    finally:
+        db.close()
+
     if not entry:
         raise HTTPException(status_code=400, detail="No reset code found for this email")
-    if datetime.now(timezone.utc) > entry["expires"]:
-        _otp_store.pop(data.email, None)
+
+    expires_at = entry["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if datetime.now(timezone.utc) > expires_at:
+        _delete_otp(data.email)
         raise HTTPException(status_code=400, detail="Reset code has expired")
+
     if entry["code"] != data.code:
         raise HTTPException(status_code=400, detail="Invalid reset code")
+
     return {"message": "Code verified", "valid": True}
 
 
@@ -194,12 +242,27 @@ def reset_password(data: ResetPasswordRequest):
     if len(data.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
-    entry = _otp_store.get(data.email)
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute(
+            "SELECT code, expires_at FROM otp_codes WHERE email = %s", (data.email,)
+        )
+        entry = cursor.fetchone()
+    finally:
+        db.close()
+
     if not entry:
         raise HTTPException(status_code=400, detail="No reset code found — request a new one")
-    if datetime.now(timezone.utc) > entry["expires"]:
-        _otp_store.pop(data.email, None)
+
+    expires_at = entry["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if datetime.now(timezone.utc) > expires_at:
+        _delete_otp(data.email)
         raise HTTPException(status_code=400, detail="Reset code has expired")
+
     if entry["code"] != data.code:
         raise HTTPException(status_code=400, detail="Invalid reset code")
 
@@ -215,7 +278,7 @@ def reset_password(data: ResetPasswordRequest):
     finally:
         db.close()
 
-    _otp_store.pop(data.email, None)
+    _delete_otp(data.email)
     return {"message": "Password updated successfully"}
 
 
@@ -235,14 +298,12 @@ def get_engineers():
 
 
 # ── Questions ─────────────────────────────────────────────
-# Schema: id, title, content, username, profile_image, category, likes, created_at
 class QuestionRequest(BaseModel):
     title: str
     content: str
     category: str = ""
 
 
-# Schema: id, question_id, username, content, is_accepted, likes, created_at
 class AnswerRequest(BaseModel):
     content: str
 
@@ -253,16 +314,19 @@ def create_question(q: QuestionRequest, current_user: dict = Depends(get_current
     try:
         cursor = db.cursor()
         cursor.execute(
-            "SELECT username, profile_image FROM users WHERE email = %s",
+            "SELECT id, username, profile_image FROM users WHERE email = %s",
             (current_user["email"],),
         )
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
+
         cursor.execute(
-            "INSERT INTO questions (username, profile_image, title, content, category) "
-            "VALUES (%s,%s,%s,%s,%s)",
-            (user["username"], user["profile_image"], q.title, q.content, q.category),
+            """
+            INSERT INTO questions (user_id, username, profile_image, title, content, category)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (user["id"], user["username"], user["profile_image"], q.title, q.content, q.category),
         )
         db.commit()
         return {"message": "Question posted successfully"}
@@ -294,16 +358,20 @@ def post_answer(
     try:
         cursor = db.cursor()
         cursor.execute(
-            "SELECT username FROM users WHERE email = %s",
+            "SELECT id, username FROM users WHERE email = %s",
             (current_user["email"],),
         )
         user = cursor.fetchone()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
+        cursor.execute("SELECT id FROM questions WHERE id = %s", (question_id,))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Question not found")
+
         cursor.execute(
-            "INSERT INTO answers (question_id, username, content) VALUES (%s,%s,%s)",
-            (question_id, user["username"], a.content),
+            "INSERT INTO answers (question_id, user_id, username, content) VALUES (%s,%s,%s,%s)",
+            (question_id, user["id"], user["username"], a.content),
         )
         db.commit()
         return {"message": "Answer posted successfully"}
@@ -318,7 +386,7 @@ def get_answers(question_id: int):
         cursor = db.cursor()
         cursor.execute(
             "SELECT id, content, likes, is_accepted, created_at, username "
-            "FROM answers WHERE question_id = %s ORDER BY created_at ASC",
+            "FROM answers WHERE question_id = %s ORDER BY is_accepted DESC, likes DESC, created_at ASC",
             (question_id,),
         )
         return cursor.fetchall()
@@ -339,7 +407,6 @@ def accept_answer(
             "SELECT username FROM users WHERE email = %s", (current_user["email"],)
         )
         user = cursor.fetchone()
-
         cursor.execute("SELECT username FROM questions WHERE id = %s", (question_id,))
         question = cursor.fetchone()
         if not question or question["username"] != user["username"]:
@@ -360,7 +427,6 @@ def accept_answer(
 
 
 # ── Notifications ─────────────────────────────────────────
-# Schema: id, user_id, message, is_read, created_at
 @app.get("/notifications")
 def get_notifications(current_user: dict = Depends(get_current_user)):
     db = get_db()

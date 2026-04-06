@@ -1,10 +1,7 @@
-import 'dart:convert';
-import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:http/http.dart' as http;
 
 class EngineerProfileScreen extends StatefulWidget {
   const EngineerProfileScreen({super.key});
@@ -14,7 +11,7 @@ class EngineerProfileScreen extends StatefulWidget {
 }
 
 class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
-  final supabase = Supabase.instance.client;
+  final _supabase = Supabase.instance.client;
 
   Map<String, dynamic>? user;
   List<dynamic> posts = [];
@@ -31,53 +28,45 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
 
   Future<void> loadProfile() async {
     try {
-      final token = await SessionManager.getToken();
+      final email = await SessionManager.getEmail();
       final username = await SessionManager.getUsername();
-      if (token == null || token.isEmpty || username == null || username.isEmpty) {
+      if (email == null || email.isEmpty) {
         if (!mounted) return;
         setState(() => isLoading = false);
         return;
       }
 
-      // Get current user profile
-      final profileRes = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/profile/me'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-      if (profileRes.statusCode != 200) throw Exception('Failed to load profile');
-      final userRes = jsonDecode(profileRes.body) as Map<String, dynamic>;
-
-      // Fixed: fetch only THIS user's books and articles using author_name
-      final booksRes = await supabase
-          .from('books')
+      final userRes = await _supabase
+          .from('users')
           .select()
-          .order('created_at', ascending: false);
+          .eq('email', email)
+          .single();
 
-      final articlesRes = await supabase
-          .from('articles')
-          .select()
-          .eq('author_name', 'Eng.${username.replaceAll('eng_', '')}')
-          .order('created_at', ascending: false);
+      final userId = userRes['id'];
 
-      // Get this user's posts from the API
-      final postsRes = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/posts/'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-      final allPosts = postsRes.statusCode == 200
-          ? (jsonDecode(postsRes.body) as List<dynamic>)
-          : <dynamic>[];
-      // Filter to only this user's posts
-      final userPosts = allPosts
-          .where((p) => p['username']?.toString() == username)
-          .toList();
+      final results = await Future.wait([
+        _supabase
+            .from('posts')
+            .select()
+            .eq('user_id', userId)
+            .order('created_at', ascending: false),
+        _supabase
+            .from('books')
+            .select()
+            .order('created_at', ascending: false),
+        _supabase
+            .from('articles')
+            .select()
+            .eq('author_name', 'Eng.${username?.replaceAll('eng_', '') ?? ''}')
+            .order('created_at', ascending: false),
+      ]);
 
       if (!mounted) return;
       setState(() {
         user = userRes;
-        books = booksRes;
-        articles = articlesRes;
-        posts = userPosts;
+        posts = results[0] as List;
+        books = results[1] as List;
+        articles = results[2] as List;
         isLoading = false;
       });
     } catch (e) {
@@ -111,16 +100,12 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
               child: const Text('Cancel', style: TextStyle(color: Colors.grey))),
           TextButton(
             onPressed: () async {
-              final token = await SessionManager.getToken();
-              if (token == null || token.isEmpty) return;
-              await http.put(
-                Uri.parse('${AppConstants.baseUrl}/profile/me'),
-                headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'},
-                body: jsonEncode({
-                  'bio': bioController.text,
-                  'profile_image': imageController.text,
-                }),
-              );
+              final email = await SessionManager.getEmail();
+              if (email == null) return;
+              await _supabase.from('users').update({
+                'bio': bioController.text,
+                'profile_image': imageController.text,
+              }).eq('email', email);
               if (!mounted) return;
               Navigator.pop(context);
               loadProfile();
@@ -166,7 +151,6 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
               child: Row(
@@ -229,7 +213,8 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   '$username${university.isNotEmpty ? '\n$university' : ''}${bio.isNotEmpty ? '\n$bio' : ''}',
-                  style: const TextStyle(color: Colors.white, fontSize: 14, height: 1.5),
+                  style: const TextStyle(
+                      color: Colors.white, fontSize: 14, height: 1.5),
                 ),
               ),
             ),
@@ -279,13 +264,15 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                  color: isSelected ? const Color(0xFFE3C39D) : Colors.transparent, width: 2),
+                  color: isSelected ? const Color(0xFFE3C39D) : Colors.transparent,
+                  width: 2),
             ),
           ),
           child: Center(
             child: Text(label,
                 style: GoogleFonts.agbalumo(
-                    color: isSelected ? const Color(0xFFE3C39D) : Colors.white54, fontSize: 16)),
+                    color: isSelected ? const Color(0xFFE3C39D) : Colors.white54,
+                    fontSize: 16)),
           ),
         ),
       ),
@@ -294,7 +281,8 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
 
   Widget _buildPostsList() {
     if (posts.isEmpty) {
-      return const Center(child: Text('No posts yet', style: TextStyle(color: Colors.white54)));
+      return const Center(
+          child: Text('No posts yet', style: TextStyle(color: Colors.white54)));
     }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
@@ -306,7 +294,8 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-              color: const Color(0xFFD8C09A), borderRadius: BorderRadius.circular(16)),
+              color: const Color(0xFFD8C09A),
+              borderRadius: BorderRadius.circular(16)),
           padding: const EdgeInsets.all(12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -315,8 +304,9 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                 children: [
                   CircleAvatar(
                     radius: 18,
-                    backgroundImage:
-                        profileImage.isNotEmpty ? NetworkImage(profileImage) : null,
+                    backgroundImage: profileImage.isNotEmpty
+                        ? NetworkImage(profileImage)
+                        : null,
                     backgroundColor: const Color(0xFF4A6FA5),
                   ),
                   const SizedBox(width: 8),
@@ -343,7 +333,8 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
 
   Widget _buildBooksList() {
     if (books.isEmpty) {
-      return const Center(child: Text('No books', style: TextStyle(color: Colors.white54)));
+      return const Center(
+          child: Text('No books', style: TextStyle(color: Colors.white54)));
     }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
@@ -353,17 +344,20 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-              color: const Color(0xFFD8C09A), borderRadius: BorderRadius.circular(16)),
+              color: const Color(0xFFD8C09A),
+              borderRadius: BorderRadius.circular(16)),
           child: ListTile(
             leading: book['image_url'] != null && book['image_url'].isNotEmpty
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: Image.network(book['image_url'],
                         width: 50, height: 60, fit: BoxFit.cover,
-                        errorBuilder: (c, e, s) => const Icon(Icons.book, size: 40)))
+                        errorBuilder: (c, e, s) =>
+                            const Icon(Icons.book, size: 40)))
                 : const Icon(Icons.book, size: 40),
             title: Text(book['title'] ?? '',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 13)),
             subtitle: Text(book['author'] ?? '',
                 style: const TextStyle(fontSize: 12)),
           ),
@@ -374,7 +368,8 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
 
   Widget _buildArticlesList() {
     if (articles.isEmpty) {
-      return const Center(child: Text('No articles', style: TextStyle(color: Colors.white54)));
+      return const Center(
+          child: Text('No articles', style: TextStyle(color: Colors.white54)));
     }
     return ListView.builder(
       padding: const EdgeInsets.all(16),
@@ -384,17 +379,21 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
         return Container(
           margin: const EdgeInsets.only(bottom: 12),
           decoration: BoxDecoration(
-              color: const Color(0xFFD8C09A), borderRadius: BorderRadius.circular(16)),
+              color: const Color(0xFFD8C09A),
+              borderRadius: BorderRadius.circular(16)),
           child: ListTile(
-            leading: article['image_url'] != null && article['image_url'].isNotEmpty
+            leading: article['image_url'] != null &&
+                    article['image_url'].isNotEmpty
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: Image.network(article['image_url'],
                         width: 50, height: 60, fit: BoxFit.cover,
-                        errorBuilder: (c, e, s) => const Icon(Icons.article, size: 40)))
+                        errorBuilder: (c, e, s) =>
+                            const Icon(Icons.article, size: 40)))
                 : const Icon(Icons.article, size: 40),
             title: Text(article['title'] ?? '',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 13)),
             subtitle: Text(article['author_name'] ?? '',
                 style: const TextStyle(fontSize: 12)),
           ),
