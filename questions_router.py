@@ -19,17 +19,34 @@ class AnswerCreate(BaseModel):
 
 
 @router.get("")
-def get_questions():
+def get_questions(current_user: dict = Depends(get_current_user)):
     db = get_db()
     try:
         cursor = db.cursor()
+
+        cursor.execute(
+            "SELECT id FROM users WHERE email = %s",
+            (current_user["email"],),
+        )
+        user = cursor.fetchone()
+        user_id = user["id"] if user else 0
+
         cursor.execute("""
             SELECT q.*, u.username, u.profile_image,
-              COALESCE((SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id), 0) AS answers_count
+              COALESCE((SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id), 0) AS answers_count,
+              EXISTS(
+                SELECT 1 FROM question_likes l
+                WHERE l.question_id = q.id AND l.user_id = %s
+              ) AS is_liked,
+              EXISTS(
+                SELECT 1 FROM saved_questions s
+                WHERE s.question_id = q.id AND s.user_id = %s
+              ) AS is_saved
             FROM questions q
             LEFT JOIN users u ON u.id = q.user_id
             ORDER BY q.created_at DESC
-        """)
+        """, (user_id, user_id))
+
         return cursor.fetchall()
     finally:
         db.close()
