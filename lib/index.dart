@@ -1,3 +1,4 @@
+import 'package:enginet/add_post.dart' show AddPostScreen;
 import 'package:enginet/article.dart';
 import 'package:enginet/book.dart';
 import 'package:enginet/core/session_manager.dart';
@@ -11,6 +12,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:convex_bottom_bar/convex_bottom_bar.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'add_course_screen.dart';
 
 class IndexPage extends StatefulWidget {
   final String title;
@@ -26,12 +29,91 @@ class _IndexPageState extends State<IndexPage> {
   String _username = '';
   String _profileImage = '';
   bool _profileLoaded = false;
+  final _supabase = Supabase.instance.client;
+int _unreadCount = 0;
+RealtimeChannel? _notificationsChannel;
+int? _currentUserId;
+
+@override
+void dispose() {
+  if (_notificationsChannel != null) {
+    _supabase.removeChannel(_notificationsChannel!);
+  }
+  super.dispose();
+}
 
   @override
   void initState() {
     super.initState();
     _loadRole();
+    _initNotificationsRealtime();
+    _loadUnreadCount();
   }
+
+  Future<void> _initNotificationsRealtime() async {
+  try {
+    final email = await SessionManager.getEmail();
+    if (email == null || email.isEmpty) return;
+
+    final user = await _supabase
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .single();
+
+    _currentUserId = user['id'] as int;
+
+    await _loadUnreadCount();
+
+    _notificationsChannel = _supabase.channel('notifications-$_currentUserId')
+      ..onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'notifications',
+        callback: (payload) {
+          final newRow = payload.newRecord;
+          final oldRow = payload.oldRecord;
+
+          if (newRow['user_id'] == _currentUserId ||
+              oldRow['user_id'] == _currentUserId) {
+            _loadUnreadCount();
+          }
+        },
+      )
+      ..subscribe();
+  } catch (e) {
+    debugPrint('Realtime notifications error: $e');
+  }
+}
+
+
+  Future<void> _loadUnreadCount() async {
+  try {
+    final email = await SessionManager.getEmail();
+    if (email == null) return;
+
+    final user = await _supabase
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .single();
+
+    final userId = user['id'];
+
+    final res = await _supabase
+        .from('notifications')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('is_read', 0);
+
+    if (!mounted) return;
+    setState(() {
+      _unreadCount = (res as List).length;
+    });
+  } catch (e) {
+    debugPrint('Error loading unread count: $e');
+  }
+}
 
   Future<void> _loadRole() async {
     try {
@@ -91,49 +173,81 @@ class _IndexPageState extends State<IndexPage> {
   }
 
   void _showAddOptions() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF0D2240),
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Add Content',
-                style:
-                    GoogleFonts.agbalumo(color: const Color(0xFFE3C39D), fontSize: 20)),
-            const SizedBox(height: 12),
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: const Color(0xFF0D2240),
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (context) => Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Add Content',
+              style: GoogleFonts.agbalumo(
+                  color: const Color(0xFFE3C39D), fontSize: 20)),
+          const SizedBox(height: 12),
+          // سؤال — للكل
+          ListTile(
+            leading: const Icon(Icons.question_answer, color: Colors.white),
+            title: const Text('Ask a Question',
+                style: TextStyle(color: Colors.white)),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.pushNamed(context, '/questions');
+            },
+          ),
+          // باقي الخيارات للمهندس بس
+          if (_role == 'engineer') ...[
             ListTile(
-              leading: const Icon(Icons.question_answer, color: Colors.white),
-              title: const Text('Ask a Question', style: TextStyle(color: Colors.white)),
+              leading: const Icon(Icons.post_add, color: Colors.white),
+              title: const Text('Add Post',
+                  style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.pop(context);
-                Navigator.pushNamed(context, '/questions');
+  Navigator.push(context, MaterialPageRoute(
+    builder: (_) => const AddPostScreen(),
+  ));
               },
             ),
             ListTile(
               leading: const Icon(Icons.book, color: Colors.white),
-              title: const Text('Add Book', style: TextStyle(color: Colors.white)),
-              onTap: () => Navigator.pop(context),
+              title: const Text('Add Book',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/add-book');
+              },
             ),
             ListTile(
               leading: const Icon(Icons.note_add, color: Colors.white),
-              title: const Text('Add Article', style: TextStyle(color: Colors.white)),
-              onTap: () => Navigator.pop(context),
+              title: const Text('Add Article',
+                  style: TextStyle(color: Colors.white)),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/add-article');
+              },
             ),
             ListTile(
-              leading: const Icon(Icons.video_library, color: Colors.white),
-              title: const Text('Add Course', style: TextStyle(color: Colors.white)),
-              onTap: () => Navigator.pop(context),
-            ),
-          ],
-        ),
+  leading: const Icon(Icons.school, color: Colors.white),
+  title: const Text('Add Course',
+      style: TextStyle(color: Colors.white)),
+  onTap: () {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const AddCourseScreen(),
       ),
     );
-  }
-
+  },
+),
+          ],
+        ],
+      ),
+    ),
+  );
+}
   void _onDrawerItemTapped(int index) {
     setState(() => _currentIndex = index);
     Navigator.pop(context);
@@ -163,8 +277,40 @@ class _IndexPageState extends State<IndexPage> {
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.notifications, color: Color(0xFFE3C39D)),
-            onPressed: () => Navigator.pushNamed(context, '/notifications'),
+            onPressed: () async {
+    await Navigator.pushNamed(context, '/notifications');
+    _loadUnreadCount(); // تحديث بعد الرجوع
+  },
+  icon: Stack(
+    children: [
+      const Icon(Icons.notifications, color: Color(0xFFE3C39D)),
+      if (_unreadCount > 0)
+        Positioned(
+          right: 0,
+          top: 0,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: const BoxDecoration(
+              color: Colors.red,
+              shape: BoxShape.circle,
+            ),
+            constraints: const BoxConstraints(
+              minWidth: 16,
+              minHeight: 16,
+            ),
+            child: Text(
+              '$_unreadCount',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+    ],
+  ),
           ),
         ],
       ),

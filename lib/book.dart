@@ -1,7 +1,10 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shimmer/shimmer.dart' show Shimmer;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'book_detail.dart';
+import 'package:enginet/core/session_manager.dart';
 
 class BookScreen extends StatefulWidget {
   const BookScreen({super.key});
@@ -12,6 +15,7 @@ class BookScreen extends StatefulWidget {
 
 class _BookScreenState extends State<BookScreen> {
   final supabase = Supabase.instance.client;
+  String? currentUsername;
 
   List<dynamic> allBooks = [];
   List<dynamic> filteredBooks = [];
@@ -21,6 +25,7 @@ class _BookScreenState extends State<BookScreen> {
   @override
   void initState() {
     super.initState();
+    _loadUser();
     loadBooks();
   }
 
@@ -29,6 +34,55 @@ class _BookScreenState extends State<BookScreen> {
     _searchController.dispose();
     super.dispose();
   }
+  Future<void> _loadUser() async {
+  currentUsername = await SessionManager.getUsername();
+  if (mounted) setState(() {});
+}
+
+  Future<void> _deleteBook(String id) async {
+  await supabase.from('books').delete().eq('id', id);
+  loadBooks();
+}
+
+void _editBook(dynamic book) {
+  final titleController =
+      TextEditingController(text: book['title'] ?? '');
+  final descController =
+      TextEditingController(text: book['description'] ?? '');
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Edit Book'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(controller: titleController),
+          const SizedBox(height: 10),
+          TextField(controller: descController, maxLines: 3),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () async {
+            await supabase.from('books').update({
+              'title': titleController.text.trim(),
+              'description': descController.text.trim(),
+            }).eq('id', book['id']);
+
+            Navigator.pop(context);
+            loadBooks();
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+}
 
   Future<void> loadBooks() async {
     try {
@@ -123,7 +177,9 @@ class _BookScreenState extends State<BookScreen> {
                                   book['image_url']?.toString() ?? '';
                               final title =
                                   book['title']?.toString() ?? '';
-                              final likes = book['likes'] ?? 0;
+                             final likes = book['likes'] ?? 0;
+                             final isOwner = book['author_username']?.toString() == currentUsername;
+                              
 
                               // ✅ آمن مع UUID و int
                               final bookId =
@@ -142,61 +198,75 @@ class _BookScreenState extends State<BookScreen> {
                                   );
                                 },
                                 child: Container(
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFD8C6AF),
-                                    borderRadius:
-                                        BorderRadius.circular(20),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Expanded(
-                                        child: ClipRRect(
-                                          borderRadius:
-                                              const BorderRadius.only(
-                                            topLeft:
-                                                Radius.circular(20),
-                                            topRight:
-                                                Radius.circular(20),
-                                          ),
-                                          child: imageUrl.isNotEmpty
-                                              ? Image.network(
-                                                  imageUrl,
-                                                  fit: BoxFit.cover,
-                                                  width: double.infinity,
-                                                  errorBuilder: (context,
-                                                          error,
-                                                          stackTrace) =>
-                                                      const Icon(
-                                                          Icons.book,
-                                                          size: 60),
-                                                )
-                                              : const Icon(Icons.book,
-                                                  size: 60),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      Padding(
-                                        padding:
-                                            const EdgeInsets.symmetric(
-                                                horizontal: 8),
-                                        child: Text(
-                                          title,
-                                          textAlign: TextAlign.center,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                              fontWeight: FontWeight.bold),
-                                        ),
-                                      ),
-                                      const SizedBox(height: 6),
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                            bottom: 8),
-                                        child: Text("⭐ $likes"),
-                                      ),
-                                    ],
-                                  ),
-                                ),
+  decoration: BoxDecoration(
+    color: const Color(0xFFD8C6AF),
+    borderRadius: BorderRadius.circular(20),
+  ),
+  child: Column(
+    children: [
+      // 🔴 الصورة + زر ⋮ فوقها
+      Expanded(
+  child: Stack(
+    children: [
+      ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
+        child: imageUrl.isNotEmpty
+            ? CachedNetworkImage(
+                imageUrl: imageUrl,
+                fit: BoxFit.cover,
+                width: double.infinity,
+              )
+            : const Icon(Icons.book, size: 60),
+      ),
+
+     if (isOwner)
+      Positioned(
+        top: 8,
+        right: 8,
+        child: PopupMenuButton<String>(
+          icon: const Icon(Icons.more_vert, color: Colors.black),
+          onSelected: (value) {
+            if (value == 'delete') {
+              _deleteBook(bookId);
+            } else if (value == 'edit') {
+              _editBook(book);
+            }
+          },
+          itemBuilder: (context) => const [
+            PopupMenuItem(value: 'edit', child: Text('Edit')),
+            PopupMenuItem(value: 'delete', child: Text('Delete')),
+          ],
+        ),
+      ),
+    ],
+  ),
+),
+
+      const SizedBox(height: 8),
+
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        child: Text(
+          title,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+      ),
+
+      const SizedBox(height: 6),
+
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text("⭐ $likes"),
+      ),
+    ],
+  ),
+),
                               );
                             },
                           ),

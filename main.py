@@ -4,6 +4,7 @@ import smtplib
 from datetime import datetime, timedelta, timezone
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from fastapi import HTTPException
 
 import bcrypt
 from fastapi import Depends, FastAPI, HTTPException
@@ -153,46 +154,39 @@ def forgot_password(email: str):
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("SELECT id, username FROM users WHERE email = %s", (email,))
+
+        cursor.execute("SELECT id, email FROM users WHERE email = %s", (email,))
         user = cursor.fetchone()
-    finally:
-        db.close()
 
-    if not user:
-        return {"message": "If this email exists, a reset code has been sent"}
+        if not user:
+            return {"message": "If this email exists, a reset link has been sent"}
 
-    code = str(secrets.randbelow(900000) + 100000)
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=15)
+        token = secrets.token_urlsafe(32)
+        expires_at = datetime.utcnow() + timedelta(minutes=30)
 
-    # Store OTP in DB — survives server restarts (no in-memory store)
-    db = get_db()
-    try:
-        cursor = db.cursor()
         cursor.execute(
             """
-            INSERT INTO otp_codes (email, code, expires_at)
+            INSERT INTO password_reset_tokens (user_id, token, expires_at)
             VALUES (%s, %s, %s)
-            ON CONFLICT (email) DO UPDATE
-            SET code = EXCLUDED.code, expires_at = EXCLUDED.expires_at
             """,
-            (email, code, expires_at),
+            (user["id"], token, expires_at)
         )
         db.commit()
+
+        reset_link = f"https://your-domain.com/reset-password?token={token}"
+
+        send_email(
+            to=user["email"],
+            subject="Reset your password",
+            body=f"Click the link to reset your password:\n{reset_link}"
+        )
+
+        print("RESET LINK:", reset_link)
+
+        return {"message": "If this email exists, a reset link has been sent"}
+
     finally:
         db.close()
-
-    body = f"""Hello {user['username']},
-
-Your EngiNet password reset code is:
-
-  {code}
-
-This code expires in 15 minutes.
-
-— EngiNet Team"""
-
-    send_email(email, "EngiNet - Password Reset Code", body)
-    return {"message": "If this email exists, a reset code has been sent"}
 
 
 # ── Verify OTP ────────────────────────────────────────────
@@ -232,54 +226,55 @@ def verify_otp(data: VerifyOTPRequest):
 
 # ── Reset Password ────────────────────────────────────────
 class ResetPasswordRequest(BaseModel):
-    email: str
-    code: str
+    token: str
     new_password: str
 
 
-@app.post("/reset-password")
-def reset_password(data: ResetPasswordRequest):
+@app.post("/reset-password-link")
+def reset_password_link(data: ResetPasswordRequest):
     if len(data.new_password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
 
     db = get_db()
     try:
         cursor = db.cursor()
+
         cursor.execute(
-            "SELECT code, expires_at FROM otp_codes WHERE email = %s", (data.email,)
+            """
+            SELECT prt.id, prt.user_id
+            FROM password_reset_tokens prt
+            WHERE prt.token = %s
+              AND prt.used = 0
+              AND prt.expires_at > NOW()
+            """,
+            (data.token,)
         )
-        entry = cursor.fetchone()
-    finally:
-        db.close()
+        reset_token = cursor.fetchone()
 
-    if not entry:
-        raise HTTPException(status_code=400, detail="No reset code found — request a new one")
+        if not reset_token:
+            raise HTTPException(status_code=400, detail="Invalid or expired reset link")
 
-    expires_at = entry["expires_at"]
-    if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
+        hashed_password = bcrypt.hashpw(
+            data.new_password.encode(),
+            bcrypt.gensalt()
+        ).decode()
 
-    if datetime.now(timezone.utc) > expires_at:
-        _delete_otp(data.email)
-        raise HTTPException(status_code=400, detail="Reset code has expired")
+        cursor.execute(
+            "UPDATE users SET password = %s WHERE id = %s",
+            (hashed_password, reset_token["user_id"])
+        )
 
-    if entry["code"] != data.code:
-        raise HTTPException(status_code=400, detail="Invalid reset code")
+        cursor.execute(
+            "UPDATE password_reset_tokens SET used = 1 WHERE id = %s",
+            (reset_token["id"],)
+        )
 
-    db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (data.email,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Email not found")
-        hashed = bcrypt.hashpw(data.new_password.encode(), bcrypt.gensalt()).decode()
-        cursor.execute("UPDATE users SET password = %s WHERE email = %s", (hashed, data.email))
         db.commit()
+
+        return {"message": "Password updated successfully"}
+
     finally:
         db.close()
-
-    _delete_otp(data.email)
-    return {"message": "Password updated successfully"}
 
 
 # ── Engineers ─────────────────────────────────────────────

@@ -1,5 +1,7 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'course_details.dart';
 
@@ -165,19 +167,23 @@ class _CourseScreenState extends State<CourseScreen> {
                 bottomLeft: Radius.circular(16),
               ),
               child: imageUrl.isNotEmpty
-                  ? Image.network(
-                      imageUrl,
-                      width: 130,
-                      height: 130,
-                      fit: BoxFit.cover,
-                      errorBuilder: (c, e, s) => Container(
-                        width: 130,
-                        height: 130,
-                        color: const Color(0xFF7D93B0),
-                        child: const Icon(Icons.play_circle,
-                            size: 50, color: Colors.white54),
-                      ),
-                    )
+                  ?CachedNetworkImage(
+  imageUrl: imageUrl,
+  width: 130,
+  height: 130,
+  fit: BoxFit.cover,
+  errorWidget: (c, u, e) => Container(
+    width: 130,
+    height: 130,
+    color: const Color(0xFF7D93B0),
+    child: const Icon(Icons.play_circle, size: 50, color: Colors.white54),
+  ),
+  placeholder: (c, u) => Shimmer.fromColors(
+    baseColor: const Color(0xFF1A2F55),
+    highlightColor: const Color(0xFF2A4A7F),
+    child: Container(width: 130, height: 130, color: Colors.white),
+  ),
+)
                   : Container(
                       width: 130,
                       height: 130,

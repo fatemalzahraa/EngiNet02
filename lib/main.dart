@@ -10,6 +10,9 @@ import 'reset_password_screen.dart';
 import 'student_profile.dart';
 import 'engineer_profile.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:enginet/add_article.dart';
+import 'package:enginet/add_book.dart';
 
 const _supabaseUrl = String.fromEnvironment(
   'SUPABASE_URL',
@@ -19,13 +22,12 @@ const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  if (_supabaseAnonKey.isNotEmpty) {
-    await Supabase.initialize(
-      url: _supabaseUrl,
-      anonKey: _supabaseAnonKey,
-    );
-  }
+  await dotenv.load(fileName: '.env');
+  
+  await Supabase.initialize(
+    url: dotenv.env['SUPABASE_URL']!,
+    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
+  );
 
   runApp(
     _supabaseAnonKey.isEmpty
@@ -53,6 +55,8 @@ class MyApp extends StatelessWidget {
         '/ai-chat': (context) => const AIChatScreen(),
         '/questions': (context) => const QuestionsScreen(),
         '/notifications': (context) => const NotificationsScreen(),
+        '/add-book': (context) => const AddBookScreen(),
+        '/add-article': (context) => const AddArticleScreen(),
       },
     );
   }

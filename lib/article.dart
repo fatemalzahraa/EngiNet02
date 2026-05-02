@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'article_detail.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:shimmer/shimmer.dart';
+import 'package:enginet/core/session_manager.dart';
 
 class ArticleScreen extends StatefulWidget {
   const ArticleScreen({super.key});
@@ -12,6 +15,7 @@ class ArticleScreen extends StatefulWidget {
 
 class _ArticleScreenState extends State<ArticleScreen> {
   final supabase = Supabase.instance.client;
+  String? currentUsername;
 
   List<dynamic> allArticles = [];
   List<dynamic> filteredArticles = [];
@@ -22,8 +26,14 @@ class _ArticleScreenState extends State<ArticleScreen> {
   @override
   void initState() {
     super.initState();
+    _loadCurrentUser();
     loadArticles();
+    
   }
+  Future<void> _loadCurrentUser() async {
+  currentUsername = await SessionManager.getUsername();
+  if (mounted) setState(() {});
+}
 
   @override
   void dispose() {
@@ -31,6 +41,49 @@ class _ArticleScreenState extends State<ArticleScreen> {
     super.dispose();
   }
 
+  Future<void> _deleteArticle(String id) async {
+  await supabase.from('articles').delete().eq('id', id);
+  loadArticles(); // تحديث الصفحة
+}
+void _editArticle(dynamic article) {
+  final titleController =
+      TextEditingController(text: article['title'] ?? '');
+  final contentController =
+      TextEditingController(text: article['content'] ?? '');
+
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Edit Article'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(controller: titleController),
+          const SizedBox(height: 10),
+          TextField(controller: contentController, maxLines: 4),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () async {
+            await supabase.from('articles').update({
+              'title': titleController.text.trim(),
+              'content': contentController.text.trim(),
+            }).eq('id', article['id']);
+
+            Navigator.pop(context);
+            loadArticles(); // تحديث
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+}
   Future<void> loadArticles() async {
     try {
       final data = await supabase
@@ -153,6 +206,7 @@ class _ArticleScreenState extends State<ArticleScreen> {
     final imageUrl = item['image_url']?.toString() ?? '';
     final authorName = item['author_name']?.toString() ?? '';
     final authorImage = item['author_image']?.toString() ?? '';
+    final isOwner = authorName == currentUsername;
     final rating =
         double.tryParse(item['rating']?.toString() ?? '0') ?? 0.0;
 
@@ -185,19 +239,22 @@ class _ArticleScreenState extends State<ArticleScreen> {
                 topRight: Radius.circular(16),
               ),
               child: imageUrl.isNotEmpty
-                  ? Image.network(
-                      imageUrl,
-                      height: 200,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (context, error, stackTrace) =>
-                          Container(
-                        height: 200,
-                        color: const Color(0xFF2A4A6F),
-                        child: const Icon(Icons.article,
-                            size: 60, color: Colors.white54),
-                      ),
-                    )
+                  ? CachedNetworkImage(
+        imageUrl: imageUrl,
+        height: 200,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorWidget: (c, u, e) => Container(
+          height: 200,
+          color: const Color(0xFF2A4A6F),
+          child: const Icon(Icons.article, size: 60, color: Colors.white54),
+        ),
+        placeholder: (c, u) => Shimmer.fromColors(
+          baseColor: const Color(0xFF1A2F55),
+          highlightColor: const Color(0xFF2A4A7F),
+          child: Container(height: 200, color: Colors.white),
+        ),
+      )
                   : Container(
                       height: 200,
                       color: const Color(0xFF2A4A6F),
@@ -210,18 +267,39 @@ class _ArticleScreenState extends State<ArticleScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      decoration: TextDecoration.underline,
-                      decorationColor: Colors.white,
-                    ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  Row(
+  children: [
+    Expanded(
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 16,
+          fontWeight: FontWeight.bold,
+          decoration: TextDecoration.underline,
+          decorationColor: Colors.white,
+        ),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+    ),
+    if (isOwner)
+      PopupMenuButton<String>(
+        icon: const Icon(Icons.more_vert, color: Colors.white),
+        onSelected: (value) {
+  if (value == 'delete') {
+    _deleteArticle(articleId);
+  } else if (value == 'edit') {
+    _editArticle(item);
+  }
+},
+        itemBuilder: (context) => const [
+          PopupMenuItem(value: 'edit', child: Text('Edit')),
+          PopupMenuItem(value: 'delete', child: Text('Delete')),
+        ],
+      ),
+  ],
+),
                   const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,

@@ -41,90 +41,127 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     ));
   }
 
-  // ── Step 1: Send OTP ────────────────────────────────────
-  Future<void> _sendOTP() async {
-    final email = _emailCtrl.text.trim();
-    if (email.isEmpty) { _showSnack('Please enter your email', error: true); return; }
+  // ── Step 1: Send Link ────────────────────────────────────
+  Future<void> _sendResetLink() async {
+  final email = _emailCtrl.text.trim();
 
-    setState(() => _isLoading = true);
-    try {
-      final res = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/forgot-password?email=${Uri.encodeComponent(email)}'),
-      );
-      if (res.statusCode == 200) {
-        setState(() => _step = 2);
-        _showSnack('A reset code has been sent to your email');
-      } else {
-        final body = jsonDecode(res.body);
-        _showSnack(body['detail'] ?? 'Something went wrong', error: true);
-      }
-    } catch (_) {
-      _showSnack('Connection error. Check your internet.', error: true);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+  if (email.isEmpty) {
+    _showSnack('Please enter your email', error: true);
+    return;
   }
 
-  // ── Step 2: Verify OTP ──────────────────────────────────
-  Future<void> _verifyOTP() async {
-    final code = _codeCtrl.text.trim();
-    if (code.length != 6) { _showSnack('Enter the 6-digit code', error: true); return; }
+  setState(() => _isLoading = true);
 
-    setState(() => _isLoading = true);
-    try {
-      final res = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/verify-otp'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': _emailCtrl.text.trim(), 'code': code}),
-      );
-      if (res.statusCode == 200) {
-        setState(() => _step = 3);
-      } else {
-        final body = jsonDecode(res.body);
-        _showSnack(body['detail'] ?? 'Invalid code', error: true);
-      }
-    } catch (_) {
-      _showSnack('Connection error. Check your internet.', error: true);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+  try {
+    final res = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/forgot-password?email=$email'),
+    );
+
+    if (res.statusCode == 200) {
+      setState(() => _step = 2);
+     _showSnack('A reset code has been sent to your email');
+    } else {
+  debugPrint('Reset error status: ${res.statusCode}');
+  debugPrint('Reset error body: ${res.body}');
+
+  final body = jsonDecode(res.body);
+  _showSnack(body['detail'] ?? body['message'] ?? 'Something went wrong', error: true);
+}
+  } catch (e) {
+    _showSnack('Connection error', error: true);
+  } finally {
+    setState(() => _isLoading = false);
+  }
+}
+
+// ── Step 2: Verify OTP ─────────────────────────
+Future<void> _verifyOTP() async {
+  final code = _codeCtrl.text.trim();
+
+  if (code.length != 6) {
+    _showSnack('Enter the 6-digit code', error: true);
+    return;
   }
 
-  // ── Step 3: Reset Password ──────────────────────────────
-  Future<void> _resetPassword() async {
-    final newPass = _newPassCtrl.text.trim();
-    final confirm = _confirmPassCtrl.text.trim();
+  setState(() => _isLoading = true);
 
-    if (newPass.isEmpty || confirm.isEmpty) { _showSnack('Fill all fields', error: true); return; }
-    if (newPass != confirm) { _showSnack('Passwords do not match', error: true); return; }
-    if (newPass.length < 6) { _showSnack('Minimum 6 characters', error: true); return; }
+  try {
+    final res = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/verify-otp'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'email': _emailCtrl.text.trim(),
+        'code': code,
+      }),
+    );
 
-    setState(() => _isLoading = true);
-    try {
-      final res = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/reset-password'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': _emailCtrl.text.trim(),
-          'code': _codeCtrl.text.trim(),
-          'new_password': newPass,
-        }),
-      );
-      if (res.statusCode == 200) {
-        _showSnack('✅ Password updated successfully!');
-        await Future.delayed(const Duration(seconds: 2));
-        if (!mounted) return;
-        Navigator.of(context).pushReplacementNamed('/login');
-      } else {
-        final body = jsonDecode(res.body);
-        _showSnack(body['detail'] ?? 'Something went wrong', error: true);
-      }
-    } catch (_) {
-      _showSnack('Connection error. Check your internet.', error: true);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
+    if (res.statusCode == 200) {
+      setState(() => _step = 3);
+    } else {
+      final body = jsonDecode(res.body);
+      _showSnack(body['detail'] ?? 'Invalid code', error: true);
     }
+  } catch (e) {
+    _showSnack('Connection error', error: true);
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
+}
+
+
+// ── Step 3: Reset Password ─────────────────────
+Future<void> _resetPassword() async {
+  final newPass = _newPassCtrl.text.trim();
+  final confirm = _confirmPassCtrl.text.trim();
+
+  if (newPass.isEmpty || confirm.isEmpty) {
+    _showSnack('Fill all fields', error: true);
+    return;
+  }
+
+  if (newPass != confirm) {
+    _showSnack('Passwords do not match', error: true);
+    return;
+  }
+
+  if (newPass.length < 6) {
+    _showSnack('Minimum 6 characters', error: true);
+    return;
+  }
+
+  setState(() => _isLoading = true);
+
+  try {
+    final res = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/reset-password'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'email': _emailCtrl.text.trim(),
+        'code': _codeCtrl.text.trim(),
+        'new_password': newPass,
+      }),
+    );
+
+    if (res.statusCode == 200) {
+      _showSnack('Password updated successfully!');
+      await Future.delayed(const Duration(seconds: 1));
+
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/login');
+    } else {
+      final body = jsonDecode(res.body);
+      _showSnack(body['detail'] ?? 'Something went wrong', error: true);
+    }
+  } catch (e) {
+    _showSnack('Connection error', error: true);
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
+  }
+}
+
+ 
+
+ 
 
   @override
   Widget build(BuildContext context) {
@@ -164,6 +201,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 if (_step == 1) ..._buildStep1(),
                 if (_step == 2) ..._buildStep2(),
                 if (_step == 3) ..._buildStep3(),
+               
 
                 const SizedBox(height: 24),
                 GestureDetector(
@@ -188,34 +226,24 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     const SizedBox(height: 24),
     _field(_emailCtrl, 'Email', keyboardType: TextInputType.emailAddress),
     const SizedBox(height: 20),
-    _actionButton('Send Reset Code', _sendOTP),
+    _actionButton('Send Reset Code', _sendResetLink),
   ];
 
-  List<Widget> _buildStep2() => [
-    Text('Enter the 6-digit code sent to\n${_emailCtrl.text.trim()}',
-        textAlign: TextAlign.center,
-        style: GoogleFonts.robotoCondensed(fontSize: 16, color: const Color(0xFFA68868))),
-    const SizedBox(height: 24),
-    _field(_codeCtrl, '6-Digit Code', keyboardType: TextInputType.number),
-    const SizedBox(height: 12),
-    TextButton(
-      onPressed: _isLoading ? null : _sendOTP,
-      child: Text('Resend code', style: TextStyle(color: Colors.white54, fontSize: 13)),
-    ),
-    _actionButton('Verify Code', _verifyOTP),
-  ];
+List<Widget> _buildStep2() => [
+  Text('Enter the 6-digit code sent to\n${_emailCtrl.text.trim()}'),
+  const SizedBox(height: 24),
+  _field(_codeCtrl, '6-Digit Code', keyboardType: TextInputType.number),
+  const SizedBox(height: 20),
+  _actionButton('Verify Code', _verifyOTP),
+];
+List<Widget> _buildStep3() => [
+  _field(_newPassCtrl, 'New Password', obscureText: true),
+  const SizedBox(height: 12),
+  _field(_confirmPassCtrl, 'Confirm Password', obscureText: true),
+  const SizedBox(height: 20),
+  _actionButton('Update Password', _resetPassword),
+];
 
-  List<Widget> _buildStep3() => [
-    Text('Set your new password',
-        textAlign: TextAlign.center,
-        style: GoogleFonts.robotoCondensed(fontSize: 16, color: const Color(0xFFA68868))),
-    const SizedBox(height: 24),
-    _field(_newPassCtrl, 'New Password', obscureText: true),
-    const SizedBox(height: 12),
-    _field(_confirmPassCtrl, 'Confirm Password', obscureText: true),
-    const SizedBox(height: 20),
-    _actionButton('Update Password', _resetPassword),
-  ];
 
   Widget _field(TextEditingController ctrl, String hint,
       {bool obscureText = false, TextInputType keyboardType = TextInputType.text}) {
