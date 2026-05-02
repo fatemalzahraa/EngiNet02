@@ -1,10 +1,14 @@
+import 'dart:convert';
 import 'dart:io';
 
+import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:video_player/video_player.dart';
 
 class AddCourseScreen extends StatefulWidget {
   const AddCourseScreen({super.key});
@@ -36,10 +40,16 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
     super.dispose();
   }
 
+  Future<int> getVideoDurationSeconds(String path) async {
+    final controller = VideoPlayerController.file(File(path));
+    await controller.initialize();
+    final seconds = controller.value.duration.inSeconds;
+    await controller.dispose();
+    return seconds;
+  }
+
   Future<void> pickCourseImage() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
-    );
+    final result = await FilePicker.platform.pickFiles(type: FileType.image);
 
     if (result != null && result.files.single.path != null) {
       setState(() {
@@ -50,9 +60,7 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
   }
 
   Future<void> pickVideo(int index) async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.video,
-    );
+    final result = await FilePicker.platform.pickFiles(type: FileType.video);
 
     if (result != null && result.files.single.path != null) {
       setState(() {
@@ -63,9 +71,7 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
   }
 
   void addVideoField() {
-    setState(() {
-      videos.add(VideoInput());
-    });
+    setState(() => videos.add(VideoInput()));
   }
 
   void removeVideoField(int index) {
@@ -75,19 +81,6 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
       videos[index].titleController.dispose();
       videos.removeAt(index);
     });
-  }
-
-  Future<String> uploadFile({
-    required String bucket,
-    required File file,
-    required String fileName,
-  }) async {
-    final safeName = fileName.replaceAll(' ', '_');
-    final path = '${DateTime.now().millisecondsSinceEpoch}_$safeName';
-
-    await supabase.storage.from(bucket).upload(path, file);
-
-    return supabase.storage.from(bucket).getPublicUrl(path);
   }
 
   Future<Map<String, dynamic>> getCurrentEngineerData() async {
@@ -145,49 +138,68 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
     try {
       final engineer = await getCurrentEngineerData();
 
-      final imageUrl = await uploadFile(
-        bucket: 'course-images',
-        file: courseImage!,
-        fileName: courseImageName ?? 'course_image.jpg',
+      final token = await SessionManager.getToken();
+      if (token == null || token.isEmpty) {
+        showMessage('Please login first');
+        return;
+      }
+
+      final durations = <int>[];
+      for (final video in videos) {
+        final seconds = await getVideoDurationSeconds(video.videoFile!.path);
+        durations.add(seconds);
+      }
+
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${AppConstants.baseUrl}/courses/create-with-videos'),
       );
 
-      final course = await supabase
-          .from('courses')
-          .insert({
-            'title': title,
-            'description': description,
-            'image_url': imageUrl,
-            'instructor_name': engineer['username'],
-            'instructor_image': engineer['profile_image'],
-            'duration_hours': videos.length,
-            'rating': 0.0,
-          })
-          .select('id')
-          .single();
+      request.headers['Authorization'] = 'Bearer $token';
 
-      final courseId = course['id'];
+      request.fields['title'] = title;
+      request.fields['description'] = description;
+      request.fields['instructor_name'] = engineer['username']?.toString() ?? '';
+      request.fields['instructor_image'] =
+          engineer['profile_image']?.toString() ?? '';
+
+      request.fields['video_titles_json'] = jsonEncode(
+        videos.map((v) => v.titleController.text.trim()).toList(),
+      );
+
+      request.fields['video_durations_json'] = jsonEncode(durations);
+
+      request.files.add(
+        await http.MultipartFile.fromPath(
+          'course_image',
+          courseImage!.path,
+          filename: courseImageName ?? 'course_image.jpg',
+        ),
+      );
 
       for (int i = 0; i < videos.length; i++) {
-        final video = videos[i];
-
-        final videoUrl = await uploadFile(
-          bucket: 'course-videos',
-          file: video.videoFile!,
-          fileName: video.videoName ?? 'video_$i.mp4',
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'videos',
+            videos[i].videoFile!.path,
+            filename: videos[i].videoName ?? 'video_$i.mp4',
+          ),
         );
+      }
 
-        await supabase.from('lessons').insert({
-          'course_id': courseId,
-          'title': video.titleController.text.trim(),
-          'video_url': videoUrl,
-          'order_index': i + 1,
-        });
+      final response = await request.send();
+      final body = await response.stream.bytesToString();
+
+      debugPrint('ADD COURSE STATUS: ${response.statusCode}');
+      debugPrint('ADD COURSE BODY: $body');
+
+      if (response.statusCode != 200) {
+        throw Exception(body);
       }
 
       if (!mounted) return;
 
       showMessage('Course added successfully');
-
       Navigator.pop(context, true);
     } catch (e) {
       debugPrint('Add course error: $e');
@@ -252,7 +264,6 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
                 ],
               ),
             ),
-
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.all(16),
@@ -263,18 +274,14 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
                       style: const TextStyle(color: Colors.white),
                       decoration: inputDecoration('Course title'),
                     ),
-
                     const SizedBox(height: 14),
-
                     TextField(
                       controller: descriptionController,
                       maxLines: 4,
                       style: const TextStyle(color: Colors.white),
                       decoration: inputDecoration('Course description'),
                     ),
-
                     const SizedBox(height: 14),
-
                     GestureDetector(
                       onTap: pickCourseImage,
                       child: Container(
@@ -299,9 +306,7 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
                         ),
                       ),
                     ),
-
                     const SizedBox(height: 22),
-
                     Row(
                       children: [
                         Text(
@@ -326,16 +331,12 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
                         ),
                       ],
                     ),
-
                     const SizedBox(height: 12),
-
                     ...List.generate(
                       videos.length,
                       (index) => buildVideoCard(index),
                     ),
-
                     const SizedBox(height: 20),
-
                     GestureDetector(
                       onTap: isSaving ? null : saveCourse,
                       child: Container(
@@ -405,17 +406,13 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
                 ),
             ],
           ),
-
           const SizedBox(height: 12),
-
           TextField(
             controller: video.titleController,
             style: const TextStyle(color: Colors.white),
             decoration: inputDecoration('Video title'),
           ),
-
           const SizedBox(height: 12),
-
           GestureDetector(
             onTap: () => pickVideo(index),
             child: Container(

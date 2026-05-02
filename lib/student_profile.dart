@@ -167,6 +167,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       setState(() => isLoading = false);
     }
   }
+  
 
   // ─── Edit dialog ──────────────────────────────────────────────────────────
   void showEditDialog() {
