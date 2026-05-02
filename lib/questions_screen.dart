@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/session_manager.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:video_player/video_player.dart';
 
 class QuestionsScreen extends StatefulWidget {
   const QuestionsScreen({super.key});
@@ -16,6 +20,9 @@ class QuestionsScreen extends StatefulWidget {
 class _QuestionsScreenState extends State<QuestionsScreen> {
   List _questions = [];
   bool _isLoading = true;
+  File? selectedMedia;
+  String? selectedMediaName;
+  String? selectedMediaType;
 
   @override
   void initState() {
@@ -46,6 +53,62 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     }
   }
 
+  Future<void> _pickImage() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.image);
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        selectedMedia = File(result.files.single.path!);
+        selectedMediaName = result.files.single.name;
+        selectedMediaType = 'image';
+      });
+    }
+  }
+
+  Future<void> _pickVideo() async {
+    final result = await FilePicker.platform.pickFiles(type: FileType.video);
+    if (result != null && result.files.single.path != null) {
+      setState(() {
+        selectedMedia = File(result.files.single.path!);
+        selectedMediaName = result.files.single.name;
+        selectedMediaType = 'video';
+      });
+    }
+  }
+
+  Future<void> _likeQuestion(Map q) async {
+    final token = await SessionManager.getToken();
+    if (token == null || token.isEmpty) return;
+
+    final res = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/questions/${q['id']}/like'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (res.statusCode == 200) {
+      await _fetchQuestions();
+    }
+  }
+
+  Future<void> _saveQuestion(Map q) async {
+    final token = await SessionManager.getToken();
+    if (token == null || token.isEmpty) return;
+
+    final res = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/questions/${q['id']}/save'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(res.statusCode == 200
+            ? 'Question saved'
+            : 'Could not save question'),
+      ),
+    );
+  }
+
   void _openQuestion(Map q) {
     Navigator.push(
       context,
@@ -57,89 +120,197 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     final titleCtrl = TextEditingController();
     final contentCtrl = TextEditingController();
 
+    selectedMedia = null;
+    selectedMediaName = null;
+    selectedMediaType = null;
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF0D2240),
       shape: const RoundedRectangleBorder(
-          borderRadius:
-              BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, modalSetState) => Padding(
+          padding: EdgeInsets.only(
             bottom: MediaQuery.of(ctx).viewInsets.bottom,
             left: 20,
             right: 20,
-            top: 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text("Ask a Question",
-                style: GoogleFonts.agbalumo(
-                    color: const Color(0xFFE3C39D), fontSize: 22)),
-            const SizedBox(height: 16),
-            _buildField(titleCtrl, "Title"),
-            const SizedBox(height: 10),
-            _buildField(contentCtrl, "Details", maxLines: 4),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF4B6382),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12))),
-                onPressed: () async {
-                  if (titleCtrl.text.trim().isEmpty ||
-                      contentCtrl.text.trim().isEmpty) {
-                    return;
-                  }
+            top: 20,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  "Ask a Question",
+                  style: GoogleFonts.agbalumo(
+                    color: const Color(0xFFE3C39D),
+                    fontSize: 22,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                _buildField(titleCtrl, "Title"),
+                const SizedBox(height: 10),
+                _buildField(contentCtrl, "Description", maxLines: 4),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _mediaButton(
+                        icon: Icons.image,
+                        label: 'Image',
+                        onTap: () async {
+                          await _pickImage();
+                          modalSetState(() {});
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _mediaButton(
+                        icon: Icons.videocam,
+                        label: 'Video',
+                        onTap: () async {
+                          await _pickVideo();
+                          modalSetState(() {});
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                if (selectedMediaName != null) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          selectedMediaName!,
+                          style: const TextStyle(color: Colors.white70),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () {
+                          selectedMedia = null;
+                          selectedMediaName = null;
+                          selectedMediaType = null;
+                          modalSetState(() {});
+                        },
+                        icon: const Icon(Icons.close, color: Colors.white70),
+                      ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF4B6382),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    onPressed: () async {
+                      if (titleCtrl.text.trim().isEmpty ||
+                          contentCtrl.text.trim().isEmpty) {
+                        return;
+                      }
 
-                  try {
-                    final token = await SessionManager.getToken();
-                    if (token == null || token.isEmpty) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text("Please login first")),
-                      );
-                      return;
-                    }
+                      try {
+                        final token = await SessionManager.getToken();
+                        if (token == null || token.isEmpty) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Please login first"),
+                            ),
+                          );
+                          return;
+                        }
 
-                    final response = await http.post(
-                      Uri.parse('${AppConstants.baseUrl}/questions'),
-                      headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer $token',
-                      },
-                      body: jsonEncode({
-                        "title": titleCtrl.text.trim(),
-                        "content": contentCtrl.text.trim(),
-                        "category": "",
-                      }),
-                    );
+                        final request = http.MultipartRequest(
+                          'POST',
+                          Uri.parse('${AppConstants.baseUrl}/questions'),
+                        );
 
-                    if (response.statusCode >= 400) {
-                      throw Exception(response.body);
-                    }
+                        request.headers['Authorization'] = 'Bearer $token';
+                        request.fields['title'] = titleCtrl.text.trim();
+                        request.fields['content'] = contentCtrl.text.trim();
+                        request.fields['category'] = '';
 
-                    if (!mounted) return;
-                    Navigator.pop(ctx);
-                    await _fetchQuestions();
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                            content: Text("✅ Question posted!")));
-                  } catch (e) {
-                    debugPrint("Error posting question: $e");
-                    if (!mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text("❌ Error: $e")));
-                  }
-                },
-                child: const Text("Post",
-                    style: TextStyle(color: Colors.white)),
-              ),
+                        if (selectedMedia != null) {
+                          request.files.add(
+                            await http.MultipartFile.fromPath(
+                              'media',
+                              selectedMedia!.path,
+                              filename: selectedMediaName,
+                            ),
+                          );
+                        }
+
+                        final response = await request.send();
+                        final body = await response.stream.bytesToString();
+
+                        debugPrint('POST QUESTION STATUS: ${response.statusCode}');
+                        debugPrint('POST QUESTION BODY: $body');
+
+                        if (response.statusCode >= 400) {
+                          throw Exception(body);
+                        }
+
+                        if (!mounted) return;
+                        Navigator.pop(ctx);
+                        await _fetchQuestions();
+
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text("✅ Question posted!")),
+                        );
+                      } catch (e) {
+                        debugPrint("Error posting question: $e");
+                        if (!mounted) return;
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text("❌ Error: $e")),
+                        );
+                      }
+                    },
+                    child: const Text(
+                      "Post",
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
             ),
-            const SizedBox(height: 20),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _mediaButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E3A5F),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: const Color(0xFFE3C39D), size: 20),
+            const SizedBox(width: 8),
+            Text(label, style: const TextStyle(color: Colors.white)),
           ],
         ),
       ),
@@ -150,17 +321,19 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
       {int maxLines = 1}) {
     return Container(
       decoration: BoxDecoration(
-          color: const Color(0xFF1E3A5F),
-          borderRadius: BorderRadius.circular(12)),
+        color: const Color(0xFF1E3A5F),
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: TextField(
         controller: ctrl,
         maxLines: maxLines,
         style: const TextStyle(color: Colors.white),
         decoration: InputDecoration(
-            hintText: hint,
-            hintStyle: const TextStyle(color: Colors.white38),
-            contentPadding: const EdgeInsets.all(14),
-            border: InputBorder.none),
+          hintText: hint,
+          hintStyle: const TextStyle(color: Colors.white38),
+          contentPadding: const EdgeInsets.all(14),
+          border: InputBorder.none,
+        ),
       ),
     );
   }
@@ -175,6 +348,46 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     return "${diff.inDays}d ago";
   }
 
+  Widget _questionMedia(Map q) {
+    final mediaUrl = q['media_url']?.toString() ?? '';
+    final mediaType = q['media_type']?.toString() ?? '';
+
+    if (mediaUrl.isEmpty) return const SizedBox.shrink();
+
+    if (mediaType == 'image') {
+      return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: CachedNetworkImage(
+            imageUrl: mediaUrl,
+            height: 160,
+            width: double.infinity,
+            fit: BoxFit.cover,
+          ),
+        ),
+      );
+    }
+
+    if (mediaType == 'video') {
+      return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Container(
+          height: 150,
+          decoration: BoxDecoration(
+            color: const Color(0xFF071739),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Center(
+            child: Icon(Icons.play_circle, color: Color(0xFFE3C39D), size: 55),
+          ),
+        ),
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -187,11 +400,14 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
               child: Row(
                 children: [
-                  Text("Questions",
-                      style: GoogleFonts.agbalumo(
-                          color: const Color(0xFF6C94C6),
-                          fontSize: 28,
-                          fontWeight: FontWeight.bold)),
+                  Text(
+                    "Questions",
+                    style: GoogleFonts.agbalumo(
+                      color: const Color(0xFF6C94C6),
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const Spacer(),
                   const Icon(Icons.search, color: Colors.white54),
                 ],
@@ -201,7 +417,9 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
               child: _isLoading
                   ? const Center(
                       child: CircularProgressIndicator(
-                          color: Color(0xFFE3C39D)))
+                        color: Color(0xFFE3C39D),
+                      ),
+                    )
                   : RefreshIndicator(
                       onRefresh: _fetchQuestions,
                       child: ListView.builder(
@@ -209,29 +427,21 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                         itemCount: _questions.length,
                         itemBuilder: (_, i) {
                           final q = _questions[i];
-                          final profile = q['profiles'];
-                          final username = q['username']?.toString() ??
-                              profile?['username']?.toString() ??
-                              '';
+                          final username = q['username']?.toString() ?? '';
                           final profileImage =
-                              q['profile_image']?.toString() ??
-                                  profile?['profile_image']?.toString() ??
-                                  '';
+                              q['profile_image']?.toString() ?? '';
 
                           return GestureDetector(
                             onTap: () => _openQuestion(q),
                             child: Container(
-                              margin:
-                                  const EdgeInsets.only(bottom: 14),
+                              margin: const EdgeInsets.only(bottom: 14),
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
                                 color: const Color(0xFFE3C39D),
-                                borderRadius:
-                                    BorderRadius.circular(16),
+                                borderRadius: BorderRadius.circular(16),
                               ),
                               child: Column(
-                                crossAxisAlignment:
-                                    CrossAxisAlignment.start,
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Row(
                                     children: [
@@ -239,69 +449,94 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                         radius: 18,
                                         backgroundImage:
                                             profileImage.isNotEmpty
-                                                ? NetworkImage(
-                                                    profileImage)
+                                                ? NetworkImage(profileImage)
                                                 : null,
                                         backgroundColor:
                                             const Color(0xFF4B6382),
                                         child: profileImage.isEmpty
                                             ? const Icon(Icons.person,
-                                                color: Colors.white,
-                                                size: 18)
+                                                color: Colors.white, size: 18)
                                             : null,
                                       ),
                                       const SizedBox(width: 8),
-                                      Text(username,
-                                          style:
-                                              GoogleFonts.robotoCondensed(
-                                                  fontWeight:
-                                                      FontWeight.bold,
-                                                  fontSize: 15,
-                                                  color: const Color(
-                                                      0xFF071739))),
+                                      Text(
+                                        username,
+                                        style: GoogleFonts.robotoCondensed(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 15,
+                                          color: const Color(0xFF071739),
+                                        ),
+                                      ),
                                       const Spacer(),
                                       Text(
-                                        _timeAgo(q['created_at']
-                                            ?.toString()),
+                                        _timeAgo(q['created_at']?.toString()),
                                         style: const TextStyle(
-                                            color: Color(0xFF4A4A4A),
-                                            fontSize: 11),
+                                          color: Color(0xFF4A4A4A),
+                                          fontSize: 11,
+                                        ),
                                       ),
                                     ],
                                   ),
                                   const SizedBox(height: 10),
-                                  Text(q["title"]?.toString() ?? "",
-                                      style: GoogleFonts.robotoCondensed(
-                                          fontSize: 16,
-                                          fontWeight: FontWeight.bold,
-                                          color:
-                                              const Color(0xFF071739))),
+                                  Text(
+                                    q["title"]?.toString() ?? "",
+                                    style: GoogleFonts.robotoCondensed(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: const Color(0xFF071739),
+                                    ),
+                                  ),
                                   const SizedBox(height: 6),
-                                  Text(q["content"]?.toString() ?? "",
-                                      maxLines: 3,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                          color: Color(0xFF071739),
-                                          fontSize: 13)),
+                                  Text(
+                                    q["content"]?.toString() ?? "",
+                                    maxLines: 3,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      color: Color(0xFF071739),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                  _questionMedia(q),
                                   const SizedBox(height: 12),
                                   Row(
                                     children: [
-                                      const Icon(Icons.favorite_border,
+                                      GestureDetector(
+                                        onTap: () => _likeQuestion(q),
+                                        child: const Icon(
+                                          Icons.favorite_border,
                                           color: Color(0xFF071739),
-                                          size: 18),
+                                          size: 18,
+                                        ),
+                                      ),
                                       const SizedBox(width: 4),
-                                      Text("${q["likes"] ?? 0}",
-                                          style: const TextStyle(
-                                              color: Color(0xFF071739))),
+                                      Text(
+                                        "${q["likes"] ?? 0}",
+                                        style: const TextStyle(
+                                          color: Color(0xFF071739),
+                                        ),
+                                      ),
                                       const SizedBox(width: 16),
                                       const Icon(
-                                          Icons.chat_bubble_outline,
+                                        Icons.chat_bubble_outline,
+                                        color: Color(0xFF071739),
+                                        size: 18,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        "${q["answers_count"] ?? 0}",
+                                        style: const TextStyle(
                                           color: Color(0xFF071739),
-                                          size: 18),
+                                        ),
+                                      ),
                                       const Spacer(),
-                                      const Icon(Icons.bookmark_border,
+                                      GestureDetector(
+                                        onTap: () => _saveQuestion(q),
+                                        child: const Icon(
+                                          Icons.bookmark_border,
                                           color: Color(0xFF071739),
-                                          size: 20),
+                                          size: 20,
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ],
@@ -323,6 +558,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     );
   }
 }
+
 
 // ===================== ANSWER SCREEN =====================
 class AnswerScreen extends StatefulWidget {
