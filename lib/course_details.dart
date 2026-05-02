@@ -88,26 +88,25 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   Future<void> _saveLessonCompleted(int lessonId) async {
-    setState(() {
-      _progress[lessonId] = true;
-      _courseStarted = true;
-    });
+  final token = await SessionManager.getToken();
+  print("TOKEN = $token");
 
-    try {
-      final token = await SessionManager.getToken();
-      if (token == null || token.isEmpty) return;
-
-      await http.post(
-        Uri.parse(
-          '${AppConstants.baseUrl}/profile/lesson-progress'
-          '?lesson_id=$lessonId&is_completed=true',
-        ),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-    } catch (e) {
-      debugPrint('❌ Error saving progress: $e');
-    }
+  if (token == null || token.isEmpty) {
+    print("❌ NO TOKEN");
+    return;
   }
+
+  final res = await http.post(
+    Uri.parse(
+      '${AppConstants.baseUrl}/profile/lesson-progress'
+      '?lesson_id=$lessonId&is_completed=true',
+    ),
+    headers: {'Authorization': 'Bearer $token'},
+  );
+
+  print("STATUS = ${res.statusCode}");
+  print("BODY = ${res.body}");
+}
 
   Future<void> _startCourse() async {
   try {

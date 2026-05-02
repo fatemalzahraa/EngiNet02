@@ -127,7 +127,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               .from('lesson_progress')
               .select('id')
               .eq('user_id', userId)
-              .eq('is_completed', true)
+              .eq('is_completed', 1)
               .inFilter('lesson_id', lessonIds);
 
           completedCount = (progressRes as List).length;
