@@ -90,30 +90,20 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   final index = _questions.indexWhere((item) => item['id'] == q['id']);
   if (index == -1) return;
 
-  final wasLiked =
-      q['is_liked'] == true || q['is_liked'] == 1;
+  final res = await http.post(
+    Uri.parse('${AppConstants.baseUrl}/questions/${q['id']}/like'),
+    headers: {'Authorization': 'Bearer $token'},
+  );
 
-  final oldLikes = int.tryParse(q['likes'].toString()) ?? 0;
+  debugPrint('LIKE STATUS: ${res.statusCode}');
+  debugPrint('LIKE BODY: ${res.body}');
 
-  setState(() {
-    _questions[index]['is_liked'] = !wasLiked;
-    _questions[index]['likes'] =
-        wasLiked ? (oldLikes > 0 ? oldLikes - 1 : 0) : oldLikes + 1;
-  });
+  if (res.statusCode == 200) {
+    final data = jsonDecode(res.body);
 
-  try {
-    final res = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/questions/${q['id']}/like'),
-      headers: {'Authorization': 'Bearer $token'},
-    );
-
-    if (res.statusCode != 200) {
-      throw Exception(res.body);
-    }
-  } catch (e) {
     setState(() {
-      _questions[index]['is_liked'] = wasLiked;
-      _questions[index]['likes'] = oldLikes;
+      _questions[index]['is_liked'] = data['liked'];
+      _questions[index]['likes'] = data['likes'];
     });
   }
 }
