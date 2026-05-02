@@ -95,7 +95,7 @@ def get_my_courses(current_user: dict = Depends(get_current_user)):
 
 # ── Mark lesson as complete / incomplete ──────────────────
 @router.post("/lesson-progress")
-def update_lesson_progress(
+def save_lesson_progress(
     lesson_id: int,
     is_completed: bool,
     current_user: dict = Depends(get_current_user),
@@ -103,10 +103,17 @@ def update_lesson_progress(
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+
+        cursor.execute(
+            "SELECT id FROM users WHERE email = %s",
+            (current_user["email"],),
+        )
         user = cursor.fetchone()
+
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
+
+        completed_value = 1 if is_completed else 0
 
         cursor.execute(
             """
@@ -115,10 +122,15 @@ def update_lesson_progress(
             ON CONFLICT (user_id, lesson_id)
             DO UPDATE SET is_completed = EXCLUDED.is_completed
             """,
-            (user["id"], lesson_id, is_completed),
+            (user["id"], lesson_id, completed_value),
         )
+
         db.commit()
-        return {"message": "Progress updated"}
+        return {"message": "Progress saved"}
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
 
