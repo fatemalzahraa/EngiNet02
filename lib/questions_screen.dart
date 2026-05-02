@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
+import 'package:http_parser/http_parser.dart';
 
 class QuestionsScreen extends StatefulWidget {
   const QuestionsScreen({super.key});
@@ -242,13 +243,19 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                         request.fields['category'] = '';
 
                         if (selectedMedia != null) {
-                          request.files.add(
-                            await http.MultipartFile.fromPath(
-                              'media',
-                              selectedMedia!.path,
-                              filename: selectedMediaName,
-                            ),
-                          );
+                          final isImage = selectedMediaType == 'image';
+
+request.files.add(
+  await http.MultipartFile.fromPath(
+    'media',
+    selectedMedia!.path,
+    filename: selectedMediaName,
+    contentType: MediaType(
+      isImage ? 'image' : 'video',
+      isImage ? 'jpeg' : 'mp4',
+    ),
+  ),
+);
                         }
 
                         final response = await request.send();
@@ -499,46 +506,59 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                   _questionMedia(q),
                                   const SizedBox(height: 12),
                                   Row(
-                                    children: [
-                                      GestureDetector(
-                                        onTap: () => _likeQuestion(q),
-                                        child: const Icon(
-                                          Icons.favorite_border,
-                                          color: Color(0xFF071739),
-                                          size: 18,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        "${q["likes"] ?? 0}",
-                                        style: const TextStyle(
-                                          color: Color(0xFF071739),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 16),
-                                      const Icon(
-                                        Icons.chat_bubble_outline,
-                                        color: Color(0xFF071739),
-                                        size: 18,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        "${q["answers_count"] ?? 0}",
-                                        style: const TextStyle(
-                                          color: Color(0xFF071739),
-                                        ),
-                                      ),
-                                      const Spacer(),
-                                      GestureDetector(
-                                        onTap: () => _saveQuestion(q),
-                                        child: const Icon(
-                                          Icons.bookmark_border,
-                                          color: Color(0xFF071739),
-                                          size: 20,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
+  children: [
+    GestureDetector(
+      onTap: () => _likeQuestion(q),
+      child: Icon(
+        (q['is_liked'] == true || q['is_liked'] == 1)
+            ? Icons.favorite
+            : Icons.favorite_border,
+        color: Colors.red,
+        size: 20,
+      ),
+    ),
+    const SizedBox(width: 4),
+    Text(
+      "${q["likes"] ?? 0}",
+      style: const TextStyle(
+        color: Colors.black87,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+
+    const SizedBox(width: 16),
+
+    GestureDetector(
+      onTap: () => _openQuestion(q),
+      child: const Icon(
+        Icons.chat_bubble,
+        color: Color(0xFF5B7FA6),
+        size: 18,
+      ),
+    ),
+    const SizedBox(width: 4),
+    Text(
+      "${q["answers_count"] ?? 0}",
+      style: const TextStyle(
+        color: Colors.black87,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+
+    const Spacer(),
+
+    GestureDetector(
+      onTap: () => _saveQuestion(q),
+      child: Icon(
+        (q['is_saved'] == true || q['is_saved'] == 1)
+            ? Icons.bookmark
+            : Icons.bookmark_border,
+        color: const Color(0xFF071739),
+        size: 28,
+      ),
+    ),
+  ],
+),
                                 ],
                               ),
                             ),

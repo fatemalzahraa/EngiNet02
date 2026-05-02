@@ -219,45 +219,71 @@ def like_question(
 
         cursor.execute(
             """
+            SELECT id FROM question_likes
+            WHERE user_id = %s AND question_id = %s
+            """,
+            (user["id"], question_id),
+        )
+        existing_like = cursor.fetchone()
+
+        if existing_like:
+            cursor.execute(
+                """
+                DELETE FROM question_likes
+                WHERE user_id = %s AND question_id = %s
+                """,
+                (user["id"], question_id),
+            )
+            cursor.execute(
+                """
+                UPDATE questions
+                SET likes = GREATEST(COALESCE(likes, 0) - 1, 0)
+                WHERE id = %s
+                """,
+                (question_id,),
+            )
+            db.commit()
+            return {"message": "Question unliked", "liked": False}
+
+        cursor.execute(
+            """
             INSERT INTO question_likes (user_id, question_id)
             VALUES (%s,%s)
-            ON CONFLICT (user_id, question_id) DO NOTHING
-            RETURNING id
             """,
             (user["id"], question_id),
         )
 
-        inserted = cursor.fetchone()
+        cursor.execute(
+            """
+            UPDATE questions
+            SET likes = COALESCE(likes, 0) + 1
+            WHERE id = %s
+            """,
+            (question_id,),
+        )
 
-        if inserted:
+        if question["user_id"] != user["id"]:
             cursor.execute(
-                "UPDATE questions SET likes = COALESCE(likes, 0) + 1 WHERE id = %s",
-                (question_id,),
+                """
+                INSERT INTO notifications (user_id, message, is_read, question_id)
+                VALUES (%s,%s,%s,%s)
+                """,
+                (
+                    question["user_id"],
+                    f"{user['username']} liked your question.",
+                    0,
+                    question_id,
+                ),
             )
 
-            if question["user_id"] != user["id"]:
-                cursor.execute(
-                    """
-                    INSERT INTO notifications (user_id, message, is_read, question_id)
-                    VALUES (%s,%s,%s,%s)
-                    """,
-                    (
-                        question["user_id"],
-                        f"{user['username']} liked your question.",
-                        0,
-                        question_id,
-                    ),
-                )
-
         db.commit()
-        return {"message": "Question liked"}
+        return {"message": "Question liked", "liked": True}
 
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
-
 
 @router.post("/{question_id}/save")
 def save_question(
