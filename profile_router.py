@@ -98,6 +98,7 @@ def get_my_courses(current_user: dict = Depends(get_current_user)):
 def save_lesson_progress(
     lesson_id: int,
     is_completed: bool,
+    watched_seconds: int = 0,
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
@@ -117,12 +118,14 @@ def save_lesson_progress(
 
         cursor.execute(
             """
-            INSERT INTO lesson_progress (user_id, lesson_id, is_completed)
-            VALUES (%s, %s, %s)
+            INSERT INTO lesson_progress (user_id, lesson_id, is_completed, watched_seconds)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT (user_id, lesson_id)
-            DO UPDATE SET is_completed = EXCLUDED.is_completed
+            DO UPDATE SET
+                is_completed = EXCLUDED.is_completed,
+                watched_seconds = GREATEST(lesson_progress.watched_seconds, EXCLUDED.watched_seconds)
             """,
-            (user["id"], lesson_id, completed_value),
+            (user["id"], lesson_id, completed_value, watched_seconds),
         )
 
         db.commit()
