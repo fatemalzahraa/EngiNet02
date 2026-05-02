@@ -32,27 +32,34 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   }
 
   Future<void> _fetchQuestions() async {
-    try {
-      final response =
-          await http.get(Uri.parse('${AppConstants.baseUrl}/questions'));
+  try {
+    final token = await SessionManager.getToken();
 
-      if (response.statusCode != 200) {
-        throw Exception('Failed to fetch questions');
-      }
+    final response = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/questions'),
+      headers: {
+        if (token != null && token.isNotEmpty)
+          'Authorization': 'Bearer $token',
+      },
+    );
 
-      final data = jsonDecode(response.body) as List<dynamic>;
-
-      if (!mounted) return;
-      setState(() {
-        _questions = data;
-        _isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _isLoading = false);
-      debugPrint("Error fetching questions: $e");
+    if (response.statusCode != 200) {
+      throw Exception('Failed to fetch questions');
     }
+
+    final data = jsonDecode(response.body) as List<dynamic>;
+
+    if (!mounted) return;
+    setState(() {
+      _questions = data;
+      _isLoading = false;
+    });
+  } catch (e) {
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+    debugPrint("Error fetching questions: $e");
   }
+}
 
   Future<void> _pickImage() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.image);
@@ -77,19 +84,39 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   }
 
   Future<void> _likeQuestion(Map q) async {
-    final token = await SessionManager.getToken();
-    if (token == null || token.isEmpty) return;
+  final token = await SessionManager.getToken();
+  if (token == null || token.isEmpty) return;
 
+  final index = _questions.indexWhere((item) => item['id'] == q['id']);
+  if (index == -1) return;
+
+  final wasLiked =
+      q['is_liked'] == true || q['is_liked'] == 1;
+
+  final oldLikes = int.tryParse(q['likes'].toString()) ?? 0;
+
+  setState(() {
+    _questions[index]['is_liked'] = !wasLiked;
+    _questions[index]['likes'] =
+        wasLiked ? (oldLikes > 0 ? oldLikes - 1 : 0) : oldLikes + 1;
+  });
+
+  try {
     final res = await http.post(
       Uri.parse('${AppConstants.baseUrl}/questions/${q['id']}/like'),
       headers: {'Authorization': 'Bearer $token'},
     );
 
-    if (res.statusCode == 200) {
-      await _fetchQuestions();
+    if (res.statusCode != 200) {
+      throw Exception(res.body);
     }
+  } catch (e) {
+    setState(() {
+      _questions[index]['is_liked'] = wasLiked;
+      _questions[index]['likes'] = oldLikes;
+    });
   }
-
+}
   Future<void> _saveQuestion(Map q) async {
     final token = await SessionManager.getToken();
     if (token == null || token.isEmpty) return;
