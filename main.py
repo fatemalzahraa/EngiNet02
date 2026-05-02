@@ -20,6 +20,7 @@ from database import get_db
 from models import User
 from post_router import router as post_router
 from profile_router import router as profile_router
+from questions_router import router as question_router
 from dependencies import (
     SECRET_KEY,
     ALGORITHM,
@@ -44,6 +45,7 @@ app.include_router(articles_router)
 app.include_router(course_router)
 app.include_router(profile_router)
 app.include_router(post_router)
+app.include_router(question_router)
 
 app.add_middleware(
     CORSMiddleware,
