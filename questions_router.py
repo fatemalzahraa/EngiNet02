@@ -211,7 +211,7 @@ def add_answer(
 
 
 @router.post("/{question_id}/like")
-def like_question(
+def toggle_question_like(
     question_id: int,
     current_user: dict = Depends(get_current_user),
 ):
@@ -228,7 +228,10 @@ def like_question(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        cursor.execute("SELECT user_id FROM questions WHERE id = %s", (question_id,))
+        cursor.execute(
+            "SELECT id, user_id FROM questions WHERE id = %s",
+            (question_id,),
+        )
         question = cursor.fetchone()
 
         if not question:
@@ -241,9 +244,9 @@ def like_question(
             """,
             (user["id"], question_id),
         )
-        existing_like = cursor.fetchone()
+        existing = cursor.fetchone()
 
-        if existing_like:
+        if existing:
             cursor.execute(
                 """
                 DELETE FROM question_likes
@@ -256,16 +259,18 @@ def like_question(
                 UPDATE questions
                 SET likes = GREATEST(COALESCE(likes, 0) - 1, 0)
                 WHERE id = %s
+                RETURNING likes
                 """,
                 (question_id,),
             )
+            likes = cursor.fetchone()["likes"]
             db.commit()
-            return {"message": "Question unliked", "liked": False}
+            return {"liked": False, "likes": likes}
 
         cursor.execute(
             """
             INSERT INTO question_likes (user_id, question_id)
-            VALUES (%s,%s)
+            VALUES (%s, %s)
             """,
             (user["id"], question_id),
         )
@@ -275,15 +280,17 @@ def like_question(
             UPDATE questions
             SET likes = COALESCE(likes, 0) + 1
             WHERE id = %s
+            RETURNING likes
             """,
             (question_id,),
         )
+        likes = cursor.fetchone()["likes"]
 
         if question["user_id"] != user["id"]:
             cursor.execute(
                 """
                 INSERT INTO notifications (user_id, message, is_read, question_id)
-                VALUES (%s,%s,%s,%s)
+                VALUES (%s, %s, %s, %s)
                 """,
                 (
                     question["user_id"],
@@ -294,7 +301,7 @@ def like_question(
             )
 
         db.commit()
-        return {"message": "Question liked", "liked": True}
+        return {"liked": True, "likes": likes}
 
     except Exception as e:
         db.rollback()
