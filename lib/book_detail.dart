@@ -79,6 +79,53 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     if (mounted) setState(() => isLoading = false);
   }
 
+  Future<void> _confirmDeleteBook() async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text("Delete Book"),
+      content: const Text(
+        "Are you sure you want to delete this book?",
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text("Cancel"),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(
+            "Delete",
+            style: TextStyle(color: Colors.red),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed == true) {
+    await _deleteBook();
+  }
+}
+
+Future<void> _deleteBook() async {
+  try {
+    await supabase
+        .from('books')
+        .delete()
+        .eq('id', _bookId);
+
+    if (!mounted) return;
+
+    _showSnack('Book deleted successfully');
+
+    Navigator.pop(context);
+  } catch (e) {
+    debugPrint('❌ deleteBook error: $e');
+    _showSnack('Failed to delete book');
+  }
+}
+
   /// Fetch the logged-in user row from Supabase (called only once).
   Future<Map<String, dynamic>?> _fetchCurrentUser() async {
     try {
@@ -293,6 +340,25 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
         await supabase.from('books').update({
           'likes': currentLikes + 1,
         }).eq('id', _bookId);
+        final ownerUsername = book?['author_username'] ?? book?['author'];
+
+if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
+  final owner = await supabase
+      .from('users')
+      .select('id')
+      .eq('username', ownerUsername)
+      .maybeSingle();
+
+  if (owner != null) {
+    await supabase.from('notifications').insert({
+      'user_id': owner['id'],
+      'message': '${_currentUser!['username']} liked your book.',
+      'is_read': 0,
+      'book_id': _bookId,
+      'type': 'book_like',
+    });
+  }
+}
       }
     } catch (e) {
       debugPrint('❌ toggleLike error: $e');
@@ -696,12 +762,30 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
                   ),
                   const SizedBox(width: 12),
                   Text(
-                    'Book details',
-                    style: GoogleFonts.agbalumo(
-                      fontSize: 28,
-                      color: const Color(0xFFE3C39D),
-                    ),
-                  ),
+  'Book details',
+  style: GoogleFonts.agbalumo(
+    fontSize: 28,
+    color: const Color(0xFFE3C39D),
+  ),
+),
+
+const Spacer(),
+
+GestureDetector(
+  onTap: _confirmDeleteBook,
+  child: Container(
+    width: 40,
+    height: 40,
+    decoration: const BoxDecoration(
+      color: Colors.red,
+      shape: BoxShape.circle,
+    ),
+    child: const Icon(
+      Icons.delete,
+      color: Colors.white,
+    ),
+  ),
+),
                 ],
               ),
             ),

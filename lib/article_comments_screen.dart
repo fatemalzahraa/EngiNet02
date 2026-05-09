@@ -3,16 +3,16 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/session_manager.dart';
 
-class CourseCommentsScreen extends StatefulWidget {
-  final String courseId;
+class ArticleCommentsScreen extends StatefulWidget {
+  final String articleId;
 
-  const CourseCommentsScreen({super.key, required this.courseId});
+  const ArticleCommentsScreen({super.key, required this.articleId});
 
   @override
-  State<CourseCommentsScreen> createState() => _CourseCommentsScreenState();
+  State<ArticleCommentsScreen> createState() => _ArticleCommentsScreenState();
 }
 
-class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
+class _ArticleCommentsScreenState extends State<ArticleCommentsScreen> {
   final supabase = Supabase.instance.client;
 
   List<Map<String, dynamic>> comments = [];
@@ -41,9 +41,9 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
 
   Future<void> _loadComments() async {
     final res = await supabase
-        .from('course_comments')
+        .from('comments')
         .select()
-        .eq('course_id', int.parse(widget.courseId))
+        .eq('article_id', int.parse(widget.articleId))
         .order('created_at', ascending: true);
 
     if (!mounted) return;
@@ -59,36 +59,34 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
   final text = _controller.text.trim();
   if (text.isEmpty) return;
 
-  final courseId = int.parse(widget.courseId);
-
-  await supabase.from('course_comments').insert({
-    'course_id': courseId,
+  await supabase.from('comments').insert({
+    'article_id': int.parse(widget.articleId),
     'comment_user_id': user!['id'],
     'username': user!['username'],
     'profile_image': user!['profile_image'],
     'content': text,
   });
 
-  final course = await supabase
-      .from('courses')
-      .select('instructor_name')
-      .eq('id', courseId)
+  final article = await supabase
+      .from('articles')
+      .select('author_name')
+      .eq('id', int.parse(widget.articleId))
       .maybeSingle();
 
-  if (course != null) {
+  if (article != null) {
     final owner = await supabase
         .from('users')
         .select('id')
-        .eq('username', course['instructor_name'])
+        .eq('username', article['author_name'])
         .maybeSingle();
 
     if (owner != null && owner['id'] != user!['id']) {
       await supabase.from('notifications').insert({
         'user_id': owner['id'],
-        'message': '${user!['username']} commented on your course.',
+        'message': '${user!['username']} commented on your article.',
         'is_read': 0,
-        'course_id': courseId,
-        'type': 'course_comment',
+        'article_id': int.parse(widget.articleId),
+        'type': 'article_comment',
       });
     }
   }
@@ -98,11 +96,7 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
 }
 
   Future<void> _deleteComment(int commentId) async {
-    await supabase
-        .from('course_comments')
-        .delete()
-        .eq('id', commentId);
-
+    await supabase.from('comments').delete().eq('id', commentId);
     await _loadComments();
   }
 
@@ -113,10 +107,7 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF071739),
-        title: const Text(
-          'Edit Comment',
-          style: TextStyle(color: Colors.white),
-        ),
+        title: const Text('Edit Comment', style: TextStyle(color: Colors.white)),
         content: TextField(
           controller: controller,
           style: const TextStyle(color: Colors.white),
@@ -133,7 +124,7 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
           TextButton(
             onPressed: () async {
               await supabase
-                  .from('course_comments')
+                  .from('comments')
                   .update({'content': controller.text})
                   .eq('id', comment['id']);
 
@@ -151,8 +142,6 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF071739),
-
-      // 🔥 زر الرجوع الصح
       appBar: AppBar(
         backgroundColor: const Color(0xFF071739),
         elevation: 0,
@@ -161,17 +150,11 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
           onTap: () => Navigator.pop(context),
           child: Container(
             margin: const EdgeInsets.all(8),
-            width: 44,
-            height: 44,
             decoration: const BoxDecoration(
               color: Color(0xFFE3C39D),
               shape: BoxShape.circle,
             ),
-            child: const Icon(
-              Icons.arrow_back,
-              color: Color(0xFF071739),
-              size: 24,
-            ),
+            child: const Icon(Icons.arrow_back, color: Color(0xFF071739)),
           ),
         ),
         title: Text(
@@ -182,16 +165,13 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
           ),
         ),
       ),
-
       body: Column(
         children: [
           Expanded(
             child: comments.isEmpty
                 ? const Center(
-                    child: Text(
-                      'No comments yet',
-                      style: TextStyle(color: Colors.white54),
-                    ),
+                    child: Text('No comments yet',
+                        style: TextStyle(color: Colors.white54)),
                   )
                 : ListView.builder(
                     itemCount: comments.length,
@@ -200,14 +180,12 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
 
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundImage: (c['profile_image'] ?? '')
-                                  .toString()
-                                  .isNotEmpty
-                              ? NetworkImage(c['profile_image'])
-                              : null,
+                          backgroundImage:
+                              (c['profile_image'] ?? '').toString().isNotEmpty
+                                  ? NetworkImage(c['profile_image'])
+                                  : null,
                           backgroundColor: const Color(0xFF4A6FA5),
                         ),
-
                         title: Row(
                           children: [
                             Expanded(
@@ -216,8 +194,6 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
                                 style: const TextStyle(color: Colors.white),
                               ),
                             ),
-
-                            // 🔥 الثلاث نقاط
                             if (user != null &&
                                 user!['id'] == c['comment_user_id'])
                               PopupMenuButton<String>(
@@ -239,7 +215,6 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
                               ),
                           ],
                         ),
-
                         subtitle: Text(
                           c['content'] ?? '',
                           style: const TextStyle(color: Colors.white70),
@@ -248,8 +223,6 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
                     },
                   ),
           ),
-
-          // ✍️ input التعليق
           Container(
             padding: const EdgeInsets.all(10),
             color: const Color(0xFF2C3E50),

@@ -4,6 +4,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:enginet/core/session_manager.dart';
+import 'article_comments_screen.dart';
 
 class ArticleDetailScreen extends StatefulWidget {
   final String articleId;
@@ -139,6 +140,21 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
         'article_id': _articleId,
         'parent_comment_id': replyingToCommentId,
       });
+      final owner = await supabase
+    .from('users')
+    .select('id')
+    .eq('username', article!['author_name'])
+    .maybeSingle();
+
+if (owner != null && owner['id'] != _currentUser!['id']) {
+  await supabase.from('notifications').insert({
+    'user_id': owner['id'],
+    'message': '${_currentUser!['username']} commented on your article.',
+    'is_read': 0,
+    'article_id': int.parse(widget.articleId),
+    'type': 'article_comment',
+  });
+}
 
       _commentController.clear();
       if (!mounted) return;
@@ -199,15 +215,32 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
           'likes': currentLikes > 0 ? currentLikes - 1 : 0,
         }).eq('id', _articleId);
       } else {
-        await supabase.from('likes').insert({
-          'user_id': _currentUser!['id'],
-          'article_id': _articleId,
-        });
+  await supabase.from('likes').insert({
+    'user_id': _currentUser!['id'],
+    'article_id': _articleId,
+  });
 
-        await supabase.from('articles').update({
-          'likes': currentLikes + 1,
-        }).eq('id', _articleId);
-      }
+  await supabase.from('articles').update({
+    'likes': currentLikes + 1,
+  }).eq('id', _articleId);
+
+
+  final owner = await supabase
+    .from('users')
+    .select('id')
+    .eq('username', article!['author_name'])
+    .maybeSingle();
+
+if (owner != null && owner['id'] != _currentUser!['id']) {
+  await supabase.from('notifications').insert({
+    'user_id': owner['id'],
+    'message': '${_currentUser!['username']} liked your article.',
+    'is_read': 0,
+    'article_id': _articleId,
+    'type': 'article_like',
+  });
+}
+}
     } catch (e) {
       debugPrint('❌ toggleLike error: $e');
       // Revert
@@ -280,6 +313,46 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(msg)));
   }
+  Future<void> _confirmDeleteArticle() async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text("Delete Article"),
+      content: const Text("Are you sure you want to delete this article?"),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text("Cancel"),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(
+            "Delete",
+            style: TextStyle(color: Colors.red),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed == true) {
+    await _deleteArticle();
+  }
+}
+
+Future<void> _deleteArticle() async {
+  try {
+    await supabase.from('articles').delete().eq('id', _articleId);
+
+    if (!mounted) return;
+
+    _showSnack('Article deleted successfully');
+    Navigator.pop(context);
+  } catch (e) {
+    debugPrint('❌ deleteArticle error: $e');
+    _showSnack('Failed to delete article');
+  }
+}
 
   // ─── Build ────────────────────────────────────────────────────────────────
   @override
@@ -322,28 +395,46 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
               padding:
                   const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      if (Navigator.canPop(context)) {
-                        Navigator.pop(context);
-                      } else {
-                        Navigator.pushReplacementNamed(context, '/home');
-                      }
-                    },
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFE3C39D),
-                        shape: BoxShape.circle,
-                      ),
-                      child:
-                          const Icon(Icons.arrow_back, color: Colors.black),
-                    ),
-                  ),
-                ],
-              ),
+  children: [
+    GestureDetector(
+      onTap: () {
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        } else {
+          Navigator.pushReplacementNamed(context, '/home');
+        }
+      },
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: const BoxDecoration(
+          color: Color(0xFFE3C39D),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.arrow_back, color: Colors.black),
+      ),
+    ),
+
+    const Spacer(),
+
+    GestureDetector(
+      onTap: _confirmDeleteArticle,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: const BoxDecoration(
+          color: Colors.red,
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(
+          Icons.delete,
+          color: Colors.white,
+          size: 20,
+        ),
+      ),
+    ),
+  ],
+),
             ),
 
             // ── Body ─────────────────────────────────────────────────
@@ -468,6 +559,68 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                               ],
                             ),
                           ),
+                          Padding(
+  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+  child: Row(
+    children: [
+      GestureDetector(
+        onTap: toggleLike,
+        child: Icon(
+          isLiked ? Icons.favorite : Icons.favorite_border,
+          color: Colors.red,
+          size: 22,
+        ),
+      ),
+      const SizedBox(width: 4),
+      Text(
+        '${article!['likes'] ?? 0}',
+        style: const TextStyle(
+          color: Colors.black87,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+
+      const SizedBox(width: 16),
+
+      GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ArticleCommentsScreen(
+                articleId: widget.articleId,
+              ),
+            ),
+          ).then((_) => loadComments());
+        },
+        child: const Icon(
+          Icons.chat_bubble,
+          color: Color(0xFF5B7FA6),
+          size: 20,
+        ),
+      ),
+      const SizedBox(width: 4),
+      Text(
+        '${comments.length}',
+        style: const TextStyle(
+          color: Colors.black87,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+
+      const Spacer(),
+
+      GestureDetector(
+        onTap: toggleSave,
+        child: Icon(
+          isSaved ? Icons.bookmark : Icons.bookmark_border,
+          color: const Color(0xFF071739),
+          size: 28,
+        ),
+      ),
+    ],
+  ),
+),
 
                           // Content
                           Padding(
@@ -482,221 +635,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
                             ),
                           ),
 
-                          // Likes / comments / bookmark + comment list
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                // Action row
-                                Row(
-                                  children: [
-                                    GestureDetector(
-                                      onTap: toggleLike,
-                                      child: Icon(
-                                        isLiked
-                                            ? Icons.favorite
-                                            : Icons.favorite_border,
-                                        color: Colors.red,
-                                        size: 22,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text('${article!['likes'] ?? 0}'),
-                                    const SizedBox(width: 16),
-                                    const Icon(Icons.chat_bubble,
-                                        color: Color(0xFF5B7FA6), size: 20),
-                                    const SizedBox(width: 4),
-                                    Text('${comments.length}'),
-                                    const Spacer(),
-                                    GestureDetector(
-                                      onTap: toggleSave,
-                                      child: Icon(
-                                        isSaved
-                                            ? Icons.bookmark
-                                            : Icons.bookmark_border,
-                                        color: const Color(0xFF071739),
-                                        size: 28,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-
-                                const SizedBox(height: 18),
-
-                                const Text(
-                                  'Comments',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-
-                                const SizedBox(height: 10),
-
-                                // Comments list
-                                ...comments.map((c) {
-                                  final isReply =
-                                      c['parent_comment_id'] != null;
-                                  return Container(
-                                    margin: EdgeInsets.only(
-                                      bottom: 8,
-                                      left: isReply ? 35 : 0,
-                                    ),
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      color: isReply
-                                          ? const Color(0xFFDDE3EA)
-                                          : const Color(0xFFE8DED0),
-                                      borderRadius:
-                                          BorderRadius.circular(10),
-                                    ),
-                                    child: Row(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        CircleAvatar(
-                                          radius: 15,
-                                          backgroundImage: (c['profile_image'] ??
-                                                      '')
-                                                  .toString()
-                                                  .isNotEmpty
-                                              ? NetworkImage(
-                                                  c['profile_image'])
-                                              : null,
-                                          backgroundColor:
-                                              const Color(0xFF6C94C6),
-                                          child: (c['profile_image'] ?? '')
-                                                  .toString()
-                                                  .isEmpty
-                                              ? const Icon(Icons.person,
-                                                  size: 15,
-                                                  color: Colors.white)
-                                              : null,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                c['username'] ?? 'User',
-                                                style: const TextStyle(
-                                                  fontWeight:
-                                                      FontWeight.bold,
-                                                  color: Colors.black87,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                c['content'] ?? '',
-                                                style: const TextStyle(
-                                                    color: Colors.black87),
-                                              ),
-                                              if (!isReply)
-                                                GestureDetector(
-                                                  onTap: () {
-                                                    setState(() {
-                                                      replyingToCommentId =
-                                                          c['id'].toString();
-                                                      replyingToUsername =
-                                                          c['username'];
-                                                    });
-                                                    FocusScope.of(context)
-                                                        .requestFocus(
-                                                            _commentFocusNode);
-                                                  },
-                                                  child: const Padding(
-                                                    padding: EdgeInsets.only(
-                                                        top: 4),
-                                                    child: Text(
-                                                      'Reply',
-                                                      style: TextStyle(
-                                                        color: Color(
-                                                            0xFF5B7FA6),
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ),
-                                            ],
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }),
-
-                                const SizedBox(height: 10),
-
-                                // Reply indicator
-                                if (replyingToUsername != null)
-                                  Container(
-                                    margin:
-                                        const EdgeInsets.only(bottom: 8),
-                                    padding: const EdgeInsets.all(8),
-                                    decoration: BoxDecoration(
-                                      color: Colors.grey[200],
-                                      borderRadius:
-                                          BorderRadius.circular(10),
-                                    ),
-                                    child: Row(
-                                      children: [
-                                        Expanded(
-                                          child: Text(
-                                            'Replying to $replyingToUsername',
-                                            style: const TextStyle(
-                                                color: Colors.black87),
-                                          ),
-                                        ),
-                                        GestureDetector(
-                                          onTap: () => setState(() {
-                                            replyingToCommentId = null;
-                                            replyingToUsername = null;
-                                          }),
-                                          child: const Icon(Icons.close,
-                                              size: 18),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-
-                                // Comment input
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: TextField(
-                                        controller: _commentController,
-                                        focusNode: _commentFocusNode,
-                                        decoration: InputDecoration(
-                                          hintText:
-                                              replyingToUsername == null
-                                                  ? 'Write a comment...'
-                                                  : 'Write a reply...',
-                                          filled: true,
-                                          fillColor: Colors.white,
-                                          border: OutlineInputBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(12),
-                                            borderSide: BorderSide.none,
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                    IconButton(
-                                      onPressed: addComment,
-                                      icon: const Icon(Icons.send,
-                                          color: Color(0xFF6C94C6)),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
+                          
                         ],
                       ),
                     ),

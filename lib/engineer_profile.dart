@@ -7,6 +7,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
+import 'package:enginet/following_screen.dart';
 
 class EngineerProfileScreen extends StatefulWidget {
   final int? targetUserId;
@@ -31,6 +32,7 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
   int? currentUserId;
   int selectedTab = 0;
   int followersCount = 0;
+  int followingCount = 0;
   final ImagePicker _picker = ImagePicker();
 
   @override
@@ -119,13 +121,12 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
           .select('id')
           .eq('following_id', targetId),
 
-      if (!isOwnProfile)
-        _supabase
-            .from('follows')
-            .select()
-            .eq('follower_id', currentUserId!)
-            .eq('following_id', targetId),
-    ]);
+      _supabase.from('follows').select('id').eq('follower_id', targetId),
+
+  if (!isOwnProfile)
+    _supabase.from('follows').select()
+        .eq('follower_id', currentUserId!)
+        .eq('following_id', targetId),]);
 
     if (!mounted) return;
 
@@ -135,6 +136,7 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
       books = results[1] as List;
       articles = results[2] as List;
       followersCount = (results[3] as List).length;
+      followingCount = (results[4] as List).length;
 
       if (!isOwnProfile && results.length > 4) {
         isFollowing = (results[4] as List).isNotEmpty;
@@ -410,7 +412,27 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                   Expanded(
                     child: Column(
                       children: [
-                        _statRow('Posts', '${posts.length}'),
+                        GestureDetector(
+  onTap: () async {
+    // جلب قائمة المهندسين يلي بتابعهم
+    final targetId = user!['id'] as int;
+    
+    final followsRes = await _supabase
+        .from('follows')
+        .select('following_id, users!follows_following_id_fkey(id, username, profile_image, role, bio)')
+        .eq('follower_id', targetId);
+
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => FollowingScreen(following: followsRes),
+      ),
+    );
+  },
+  child: _statRow('Following', '$followingCount'),
+),
                         const SizedBox(height: 10),
                         _statRow('Followers', '$followersCount'),
                         const SizedBox(height: 10),
