@@ -49,7 +49,7 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const SignupScreen(),
         '/home': (context) => const IndexPage(title: 'Enginet'),
-        '/reset-password': (context) => const ResetPasswordScreen(),
+        '//reset-password-link': (context) => const ResetPasswordScreen(),
         '/student-profile': (context) => const StudentProfileScreen(),
         '/engineer-profile': (context) => const EngineerProfileScreen(),
         '/ai-chat': (context) => const AIChatScreen(),

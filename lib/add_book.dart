@@ -135,7 +135,7 @@ Future<String?> _uploadBookFile() async {
         'image_url': imageUrl,
         'author_username': username,
         'book_url': finalBookUrl,
-        'author_username': username,
+        
 });
 
       if (!mounted) return;

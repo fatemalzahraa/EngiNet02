@@ -12,6 +12,8 @@ import 'package:enginet/book_detail.dart';
 import 'package:enginet/saved_books_screen.dart';
 import 'package:enginet/article_detail.dart';
 import 'package:enginet/course_details.dart';
+import 'package:enginet/post_comments_screen.dart';
+import 'package:enginet/saved_posts_screen.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({super.key});
@@ -32,6 +34,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   List<dynamic> followingEngineers = [];
   List<dynamic> savedBooks = [];
   List<dynamic> savedArticles = [];
+  List<dynamic> savedPosts = [];
 
   @override
   void initState() {
@@ -95,6 +98,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           .from('article_bookmarks')
           .select('articles(*)')
           .eq('user_id', userId);
+      final savedPostsRes = await _supabase
+    .from('saved_posts')
+    .select('posts(*)')
+    .eq('user_id', userId)
+    .order('created_at', ascending: true);
 
       final engineersOnly = (followingRes as List)
           .where((f) => f['users'] != null && f['users']['role'] == 'engineer')
@@ -160,6 +168,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             .map((e) => e['articles'])
             .where((e) => e != null)
             .toList();
+            savedPosts = (savedPostsRes as List)
+    .map((e) => e['posts'])
+    .where((e) => e != null)
+    .toList();
       });
     } catch (e) {
       debugPrint('❌ Error loading profile: $e');
@@ -417,54 +429,171 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       ),
     );
   }
+Widget _savedPostCard(dynamic post) {
+  final imageUrl = post['image_url']?.toString() ?? '';
+  final username = post['username']?.toString() ?? '';
+  final content = post['content']?.toString() ?? '';
+  final profileImage = post['profile_image']?.toString() ?? '';
 
+  return GestureDetector(
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => PostCommentsScreen(post: post),
+        ),
+      );
+    },
+    child: Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFD8C09A),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 22,
+                backgroundImage:
+                    profileImage.isNotEmpty ? NetworkImage(profileImage) : null,
+                backgroundColor: const Color(0xFF4A6FA5),
+                child: profileImage.isEmpty
+                    ? const Icon(Icons.person, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Text(
+                username,
+                style: GoogleFonts.agbalumo(
+                  fontSize: 16,
+                  color: Colors.black87,
+                ),
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Icons.bookmark_remove, color: Color(0xFF071739)),
+                onPressed: () async {
+                  final userId = user?['id'];
+                  if (userId == null) return;
+
+                  await _supabase
+                      .from('saved_posts')
+                      .delete()
+                      .eq('user_id', userId)
+                      .eq('post_id', post['id']);
+
+                  setState(() => savedPosts.remove(post));
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            content,
+            style: const TextStyle(
+              color: Colors.black87,
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          if (imageUrl.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                width: double.infinity,
+                height: 220,
+                color: const Color(0xFFF5ECD7),
+                child: CachedNetworkImage(
+                  imageUrl: imageUrl,
+                  fit: BoxFit.contain,
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+}
   // ─── Saved tab ────────────────────────────────────────────────────────────
   Widget _buildSavedBooks() {
-    if (savedBooks.isEmpty && savedArticles.isEmpty) {
-      return const Center(
-        child: Text('No saved items',
-            style: TextStyle(color: Colors.white54)),
-      );
-    }
-
-    final firstThreeBooks = savedBooks.take(3).toList();
-    final firstThreeArticles = savedArticles.take(3).toList();
-
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _sectionHeader(
-          title: 'Books',
-          onTap: savedBooks.length > 3
-              ? () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          SavedBooksScreen(books: savedBooks),
-                    ),
-                  )
-              : null,
-        ),
-        const SizedBox(height: 16),
-        savedBooks.isEmpty
-            ? const Text('No saved books yet',
-                style: TextStyle(color: Colors.white54))
-            : _horizontalList(firstThreeBooks),
-        const SizedBox(height: 30),
-        _sectionHeader(title: 'Articles'),
-        const SizedBox(height: 16),
-        savedArticles.isEmpty
-            ? const Text('No saved articles yet',
-                style: TextStyle(color: Colors.white54))
-            : _horizontalArticleList(firstThreeArticles),
-        const SizedBox(height: 30),
-        _sectionHeader(title: 'Questions'),
-        const SizedBox(height: 12),
-        const Text('No saved questions yet',
-            style: TextStyle(color: Colors.white54)),
-      ],
+  if (savedBooks.isEmpty && savedArticles.isEmpty && savedPosts.isEmpty) {
+    return const Center(
+      child: Text(
+        'No saved items',
+        style: TextStyle(color: Colors.white54),
+      ),
     );
   }
+
+  final firstThreeBooks = savedBooks.take(3).toList();
+  final firstThreeArticles = savedArticles.take(3).toList();
+
+  return ListView(
+    padding: const EdgeInsets.all(16),
+    children: [
+      _sectionHeader(
+        title: 'Books',
+        onTap: savedBooks.length > 3
+            ? () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SavedBooksScreen(books: savedBooks),
+                  ),
+                )
+            : null,
+      ),
+      const SizedBox(height: 16),
+      savedBooks.isEmpty
+          ? const Text(
+              'No saved books yet',
+              style: TextStyle(color: Colors.white54),
+            )
+          : _horizontalList(firstThreeBooks),
+
+      const SizedBox(height: 30),
+
+      _sectionHeader(title: 'Articles'),
+      const SizedBox(height: 16),
+      savedArticles.isEmpty
+          ? const Text(
+              'No saved articles yet',
+              style: TextStyle(color: Colors.white54),
+            )
+          : _horizontalArticleList(firstThreeArticles),
+
+      const SizedBox(height: 30),
+
+      _sectionHeader(
+        title: 'Posts',
+        onTap: savedPosts.length > 1
+            ? () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SavedPostsScreen(posts: savedPosts),
+                  ),
+                );
+              }
+            : null,
+      ),
+      const SizedBox(height: 12),
+
+      savedPosts.isEmpty
+          ? const Text(
+              'No saved posts yet',
+              style: TextStyle(color: Colors.white54),
+            )
+          : _savedPostCard(savedPosts.last),
+    ],
+  );
+}
 
   // ─── Courses tab ──────────────────────────────────────────────────────────
   Widget _buildCoursesList() {

@@ -175,7 +175,7 @@ def forgot_password(email: str):
         )
         db.commit()
 
-        reset_link = f"https://your-domain.com/reset-password?token={token}"
+        reset_link = f"https://your-domain.com/reset-password-link?token={token}"
 
         send_email(
             to=user["email"],

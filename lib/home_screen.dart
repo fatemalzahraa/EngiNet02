@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:enginet/engineer_profile.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:enginet/post_comments_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,19 +22,24 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> engineers = [];
   List<dynamic> posts = [];
   bool isLoading = true;
+
   int _page = 0;
   final int _limit = 10;
   bool _hasMore = true;
   bool _loadingMore = false;
+
   final ScrollController _scrollController = ScrollController();
   final _supabase = Supabase.instance.client;
+
   String? currentUsername;
-  
+  int? currentUserId;
+  Set<int> followedEngineerIds = {};
 
   @override
   void initState() {
     super.initState();
     loadData();
+
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
               _scrollController.position.maxScrollExtent - 200 &&
@@ -50,58 +56,81 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  void _editPost(dynamic post, int index) {
-  final controller = TextEditingController(text: post['content']);
+  Future<void> _loadCurrentUser() async {
+    currentUsername = await SessionManager.getUsername();
 
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Edit Post'),
-      content: TextField(
-        controller: controller,
-        maxLines: 4,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () async {
-            await _supabase
-                .from('posts')
-                .update({'content': controller.text})
-                .eq('id', post['id']);
+    final email = await SessionManager.getEmail();
+    if (email == null || email.isEmpty) return;
 
-            setState(() {
-              posts[index]['content'] = controller.text;
-            });
+    final userRes = await _supabase
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle();
 
-            Navigator.pop(context);
-          },
-          child: const Text('Save'),
-        ),
-      ],
-    ),
-  );
-}
-
-Future<void> _deletePost(int postId, int index) async {
-  try {
-    await _supabase.from('posts').delete().eq('id', postId);
-
-    setState(() {
-      posts.removeAt(index);
-    });
-  } catch (e) {
-    debugPrint('Delete error: $e');
+    currentUserId = userRes?['id'];
   }
-}
+
+  Future<List<dynamic>> _enrichPosts(List<dynamic> rawPosts) async {
+    final enrichedPosts = <dynamic>[];
+
+    for (final post in rawPosts) {
+      final postId = post['id'];
+
+      final commentsRes = await _supabase
+          .from('comments')
+          .select('id')
+          .eq('post_id', postId);
+
+      bool isLiked = false;
+      bool isSaved = false;
+
+      if (currentUserId != null) {
+        final likeRes = await _supabase
+            .from('likes')
+            .select('id')
+            .eq('user_id', currentUserId!)
+            .eq('post_id', postId)
+            .maybeSingle();
+
+        final saveRes = await _supabase
+            .from('saved_posts')
+            .select('id')
+            .eq('user_id', currentUserId!)
+            .eq('post_id', postId)
+            .maybeSingle();
+
+        isLiked = likeRes != null;
+        isSaved = saveRes != null;
+      }
+
+      enrichedPosts.add({
+        ...post,
+        'comments_count': (commentsRes as List).length,
+        'is_liked': isLiked,
+        'is_saved': isSaved,
+      });
+    }
+
+    return enrichedPosts;
+  }
+
   Future<void> loadData() async {
     try {
       final supabaseUrl = dotenv.env['SUPABASE_URL']!;
       final supabaseKey = dotenv.env['SUPABASE_ANON_KEY']!;
-      currentUsername = await SessionManager.getUsername();
+
+      await _loadCurrentUser();
+      if (currentUserId != null) {
+  final followsRes = await _supabase
+      .from('follows')
+      .select('following_id')
+      .eq('follower_id', currentUserId!);
+
+  followedEngineerIds = (followsRes as List)
+      .map((e) => e['following_id'] as int)
+      .toSet();
+}
       _page = 0;
 
       final results = await Future.wait([
@@ -121,18 +150,27 @@ Future<void> _deletePost(int postId, int index) async {
         ),
       ]);
 
-      final engineersData = results[0].statusCode == 200
-          ? jsonDecode(results[0].body) as List<dynamic>
-          : <dynamic>[];
+      final allEngineers = results[0].statusCode == 200
+    ? jsonDecode(results[0].body) as List<dynamic>
+    : <dynamic>[];
+
+final engineersData = allEngineers
+    .where((e) =>
+        !followedEngineerIds.contains(e['id'] as int?) &&
+        e['id'] != currentUserId)
+    .toList();
 
       final postsData = results[1].statusCode == 200
           ? jsonDecode(results[1].body) as List<dynamic>
           : <dynamic>[];
+  
+
+      final enrichedPosts = await _enrichPosts(postsData);
 
       if (!mounted) return;
       setState(() {
         engineers = engineersData;
-        posts = postsData;
+        posts = enrichedPosts;
         _hasMore = postsData.length == _limit;
         isLoading = false;
       });
@@ -143,6 +181,63 @@ Future<void> _deletePost(int postId, int index) async {
     }
   }
 
+  Future<void> toggleFollowEngineer(int engineerId) async {
+  if (currentUserId == null) return;
+
+  final isFollowing = followedEngineerIds.contains(engineerId);
+
+  if (!isFollowing) {
+    // أضفه للمتابَعين فوراً (يتحول أخضر)
+    setState(() {
+      followedEngineerIds.add(engineerId);
+    });
+
+    // بعد ثانية يختفي
+    Future.delayed(const Duration(seconds: 1), () {
+      if (mounted) {
+        setState(() {
+          engineers.removeWhere((e) => e['id'] == engineerId);
+        });
+      }
+    });
+
+    try {
+      await _supabase.from('follows').insert({
+        'follower_id': currentUserId!,
+        'following_id': engineerId,
+      });
+    } catch (e) {
+      debugPrint('Follow error: $e');
+      // تراجع عند الخطأ
+      if (mounted) {
+        setState(() {
+          followedEngineerIds.remove(engineerId);
+        });
+      }
+    }
+  } else {
+    // إلغاء المتابعة
+    setState(() {
+      followedEngineerIds.remove(engineerId);
+    });
+
+    try {
+      await _supabase
+          .from('follows')
+          .delete()
+          .eq('follower_id', currentUserId!)
+          .eq('following_id', engineerId);
+    } catch (e) {
+      debugPrint('Unfollow error: $e');
+      if (mounted) {
+        setState(() {
+          followedEngineerIds.add(engineerId);
+        });
+      }
+    }
+  }
+}
+
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore) return;
     setState(() => _loadingMore = true);
@@ -150,6 +245,7 @@ Future<void> _deletePost(int postId, int index) async {
     try {
       final supabaseUrl = dotenv.env['SUPABASE_URL']!;
       final supabaseKey = dotenv.env['SUPABASE_ANON_KEY']!;
+
       _page++;
 
       final res = await http.get(
@@ -168,9 +264,11 @@ Future<void> _deletePost(int postId, int index) async {
 
       if (res.statusCode == 200) {
         final newPosts = jsonDecode(res.body) as List<dynamic>;
+        final enrichedNewPosts = await _enrichPosts(newPosts);
+
         if (!mounted) return;
         setState(() {
-          posts.addAll(newPosts);
+          posts.addAll(enrichedNewPosts);
           _hasMore = newPosts.length == _limit;
         });
       }
@@ -181,32 +279,179 @@ Future<void> _deletePost(int postId, int index) async {
     }
   }
 
+  void _editPost(dynamic post, int index) {
+    final controller = TextEditingController(text: post['content']);
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Post'),
+        content: TextField(
+          controller: controller,
+          maxLines: 4,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await _supabase
+                  .from('posts')
+                  .update({'content': controller.text})
+                  .eq('id', post['id']);
+
+              setState(() {
+                posts[index]['content'] = controller.text;
+              });
+
+              Navigator.pop(context);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _deletePost(int postId, int index) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Delete Post'),
+      content: const Text('Are you sure you want to delete this post?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(
+            'Delete',
+            style: TextStyle(color: Colors.red),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed != true) return;
+
+  try {
+    await _supabase.from('posts').delete().eq('id', postId);
+
+    if (!mounted) return;
+
+    setState(() {
+      posts.removeAt(index);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Post deleted')),
+    );
+  } catch (e) {
+    debugPrint('Delete error: $e');
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Failed to delete post')),
+    );
+  }
+}
   Future<void> likePost(int index) async {
+    if (currentUserId == null) return;
+
     final post = posts[index];
     final postId = post['id'];
+    final wasLiked = post['is_liked'] == true;
+    final oldLikes = post['likes'] ?? 0;
 
-    setState(() => posts[index] = {...post, 'likes': (post['likes'] ?? 0) + 1});
+    setState(() {
+      posts[index]['is_liked'] = !wasLiked;
+      posts[index]['likes'] =
+          wasLiked ? (oldLikes > 0 ? oldLikes - 1 : 0) : oldLikes + 1;
+    });
 
     try {
-      final token = await SessionManager.getToken();
-      if (token == null || token.isEmpty) {
-        if (mounted) setState(() => posts[index] = post);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please login to like posts')),
-        );
-        return;
-      }
+      if (wasLiked) {
+        await _supabase
+            .from('likes')
+            .delete()
+            .eq('user_id', currentUserId!)
+            .eq('post_id', postId);
+      } else {
+  await _supabase.from('likes').insert({
+    'user_id': currentUserId!,
+    'post_id': postId,
+  });
 
-      final res = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/posts/$postId/like'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
+  final ownerUsername = post['username']?.toString() ?? '';
 
-      if (res.statusCode != 200 && mounted) {
-        setState(() => posts[index] = post);
+  if (ownerUsername.isNotEmpty && ownerUsername != currentUsername) {
+    final owner = await _supabase
+        .from('users')
+        .select('id')
+        .eq('username', ownerUsername)
+        .maybeSingle();
+
+    if (owner != null) {
+      await _supabase.from('notifications').insert({
+        'user_id': owner['id'],
+        'message': '$currentUsername liked your post.',
+        'is_read': 0,
+        'post_id': postId,
+        'type': 'post_like',
+      });
+    }
+  }
+}
+
+      await _supabase.from('posts').update({
+        'likes': posts[index]['likes'],
+      }).eq('id', postId);
+    } catch (e) {
+      debugPrint('Like post error: $e');
+      if (!mounted) return;
+      setState(() {
+        posts[index]['is_liked'] = wasLiked;
+        posts[index]['likes'] = oldLikes;
+      });
+    }
+  }
+
+  Future<void> toggleSavePost(int index) async {
+    if (currentUserId == null) return;
+
+    final post = posts[index];
+    final postId = post['id'];
+    final wasSaved = post['is_saved'] == true;
+
+    setState(() {
+      posts[index]['is_saved'] = !wasSaved;
+    });
+
+    try {
+      if (wasSaved) {
+        await _supabase
+            .from('saved_posts')
+            .delete()
+            .eq('user_id', currentUserId!)
+            .eq('post_id', postId);
+      } else {
+        await _supabase.from('saved_posts').insert({
+          'user_id': currentUserId!,
+          'post_id': postId,
+        });
       }
     } catch (e) {
-      if (mounted) setState(() => posts[index] = post);
+      debugPrint('Save post error: $e');
+      if (!mounted) return;
+      setState(() {
+        posts[index]['is_saved'] = wasSaved;
+      });
     }
   }
 
@@ -218,9 +463,13 @@ Future<void> _deletePost(int postId, int index) async {
           ? ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text('Engineer',
-                    style: GoogleFonts.agbalumo(
-                        color: const Color(0xFF6C94C6), fontSize: 24)),
+                Text(
+                  'Engineer',
+                  style: GoogleFonts.agbalumo(
+                    color: const Color(0xFF6C94C6),
+                    fontSize: 24,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 SizedBox(
                   height: 165,
@@ -231,9 +480,13 @@ Future<void> _deletePost(int postId, int index) async {
                   ),
                 ),
                 const SizedBox(height: 24),
-                Text('posts',
-                    style: GoogleFonts.agbalumo(
-                        color: const Color(0xFF6C94C6), fontSize: 24)),
+                Text(
+                  'posts',
+                  style: GoogleFonts.agbalumo(
+                    color: const Color(0xFF6C94C6),
+                    fontSize: 24,
+                  ),
+                ),
                 const SizedBox(height: 12),
                 ...List.generate(3, (_) => _buildPostSkeleton()),
               ],
@@ -244,16 +497,23 @@ Future<void> _deletePost(int postId, int index) async {
                 controller: _scrollController,
                 padding: const EdgeInsets.all(16),
                 children: [
-                  Text('Engineer',
-                      style: GoogleFonts.agbalumo(
-                          color: const Color(0xFF6C94C6), fontSize: 24)),
+                  Text(
+                    'Engineer',
+                    style: GoogleFonts.agbalumo(
+                      color: const Color(0xFF6C94C6),
+                      fontSize: 24,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   SizedBox(
                     height: 165,
                     child: engineers.isEmpty
                         ? const Center(
-                            child: Text('No engineers',
-                                style: TextStyle(color: Colors.white54)))
+                            child: Text(
+                              'No engineers',
+                              style: TextStyle(color: Colors.white54),
+                            ),
+                          )
                         : ListView.builder(
                             scrollDirection: Axis.horizontal,
                             itemCount: engineers.length,
@@ -262,35 +522,46 @@ Future<void> _deletePost(int postId, int index) async {
                           ),
                   ),
                   const SizedBox(height: 24),
-                  Text('posts',
-                      style: GoogleFonts.agbalumo(
-                          color: const Color(0xFF6C94C6), fontSize: 24)),
+                  Text(
+                    'posts',
+                    style: GoogleFonts.agbalumo(
+                      color: const Color(0xFF6C94C6),
+                      fontSize: 24,
+                    ),
+                  ),
                   const SizedBox(height: 12),
                   if (posts.isEmpty)
                     const Center(
                       child: Padding(
                         padding: EdgeInsets.all(32),
-                        child: Text('No posts yet',
-                            style: TextStyle(color: Colors.white54)),
+                        child: Text(
+                          'No posts yet',
+                          style: TextStyle(color: Colors.white54),
+                        ),
                       ),
                     )
                   else
                     ...List.generate(
-                        posts.length, (i) => _buildPostCard(i, posts[i])),
+                      posts.length,
+                      (i) => _buildPostCard(i, posts[i]),
+                    ),
                   if (_loadingMore)
                     const Center(
                       child: Padding(
                         padding: EdgeInsets.all(16),
                         child: CircularProgressIndicator(
-                            color: Color(0xFF6C94C6)),
+                          color: Color(0xFF6C94C6),
+                        ),
                       ),
                     ),
                   if (!_hasMore && posts.isNotEmpty)
                     const Center(
                       child: Padding(
                         padding: EdgeInsets.all(16),
-                        child: Text('No more posts',
-                            style: TextStyle(color: Colors.white38)),
+                        child: Text(
+                          'No more posts',
+                          style: TextStyle(color: Colors.white38),
+                        ),
                       ),
                     ),
                 ],
@@ -335,31 +606,39 @@ Future<void> _deletePost(int postId, int index) async {
                   width: 42,
                   height: 42,
                   decoration: const BoxDecoration(
-                      color: Colors.white, shape: BoxShape.circle),
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Container(
-                    width: 100,
-                    height: 14,
-                    decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(8))),
+                  width: 100,
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
               ],
             ),
             const SizedBox(height: 12),
             Container(
-                width: double.infinity,
-                height: 12,
-                decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8))),
+              width: double.infinity,
+              height: 12,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
             const SizedBox(height: 8),
             Container(
-                width: 200,
-                height: 12,
-                decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8))),
+              width: 200,
+              height: 12,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
           ],
         ),
       ),
@@ -370,15 +649,17 @@ Future<void> _deletePost(int postId, int index) async {
     final name = eng['username']?.toString() ?? '';
     final image = eng['profile_image']?.toString() ?? '';
     final userId = eng['id'] as int?;
+    final isFollowing = userId != null && followedEngineerIds.contains(userId);
 
     return GestureDetector(
       onTap: () {
         if (userId != null) {
           Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => EngineerProfileScreen(targetUserId: userId),
-              ));
+            context,
+            MaterialPageRoute(
+              builder: (_) => EngineerProfileScreen(targetUserId: userId),
+            ),
+          );
         }
       },
       child: Container(
@@ -392,7 +673,10 @@ Future<void> _deletePost(int postId, int index) async {
               decoration: BoxDecoration(
                 color: const Color(0xFFD8C09A),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: const Color(0xFFE3C39D), width: 2),
+                border: Border.all(
+                  color: const Color(0xFFE3C39D),
+                  width: 2,
+                ),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -412,17 +696,21 @@ Future<void> _deletePost(int postId, int index) async {
                               height: 85,
                               fit: BoxFit.cover,
                               errorWidget: (c, u, e) => const Icon(
-                                  Icons.person,
-                                  size: 40,
-                                  color: Colors.white54),
+                                Icons.person,
+                                size: 40,
+                                color: Colors.white54,
+                              ),
                               placeholder: (c, u) => Shimmer.fromColors(
                                 baseColor: const Color(0xFF1A2F55),
                                 highlightColor: const Color(0xFF2A4A7F),
                                 child: Container(color: Colors.white),
                               ),
                             )
-                          : const Icon(Icons.person,
-                              size: 40, color: Colors.white54),
+                          : const Icon(
+                              Icons.person,
+                              size: 40,
+                              color: Colors.white54,
+                            ),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -431,7 +719,9 @@ Future<void> _deletePost(int postId, int index) async {
                     child: Text(
                       name,
                       style: GoogleFonts.agbalumo(
-                          color: Colors.black87, fontSize: 12),
+                        color: Colors.black87,
+                        fontSize: 12,
+                      ),
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                     ),
@@ -440,19 +730,30 @@ Future<void> _deletePost(int postId, int index) async {
               ),
             ),
             Positioned(
-              bottom: 55,
-              right: 15,
-              child: Container(
-                width: 28,
-                height: 28,
-                decoration: BoxDecoration(
-                  color: const Color.fromARGB(255, 88, 16, 15),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: const Color(0xFFD8C09A), width: 2),
-                ),
-                child: const Icon(Icons.add, size: 16, color: Colors.white),
-              ),
-            ),
+  bottom: 55,
+  right: 15,
+  child: GestureDetector(
+    onTap: () {
+      if (userId != null) toggleFollowEngineer(userId);
+    },
+    child: Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        color: isFollowing
+            ? const Color(0xFF4CAF50)
+            : const Color.fromARGB(255, 88, 16, 15),
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0xFFD8C09A), width: 2),
+      ),
+      child: Icon(
+        isFollowing ? Icons.check : Icons.add,
+        size: 16,
+        color: Colors.white,
+      ),
+    ),
+  ),
+),
           ],
         ),
       ),
@@ -485,58 +786,62 @@ Future<void> _deletePost(int postId, int index) async {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-        Row(
-  children: [
-    _buildProfileAvatar(profileImage, size: 42),
-    const SizedBox(width: 10),
-    Text(username,
-        style: GoogleFonts.agbalumo(
-            fontSize: 14, color: Colors.black87)),
-    const Spacer(),
-
-    if (username == currentUsername)
-      PopupMenuButton<String>(
-        onSelected: (value) {
-          if (value == 'delete') {
-            _deletePost(post['id'], index);
-          } else if (value == 'edit') {
-            _editPost(post, index);
-          }
-        },
-        itemBuilder: (context) => [
-          const PopupMenuItem(value: 'edit', child: Text('Edit')),
-          const PopupMenuItem(value: 'delete', child: Text('Delete')),
-        ],
-      ),
-  ],
-),
-          const SizedBox(height: 12),
-          Text(content,
-              style: const TextStyle(
-                  fontSize: 14, color: Colors.black87, height: 1.45)),
-          if (postImageUrl.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: CachedNetworkImage(
-                imageUrl: postImageUrl,
-                width: double.infinity,
-                fit: BoxFit.cover,
-                errorWidget: (c, u, e) => const SizedBox.shrink(),
-                placeholder: (c, u) => Shimmer.fromColors(
-                  baseColor: const Color(0xFF1A2F55),
-                  highlightColor: const Color(0xFF2A4A7F),
-                  child: Container(height: 200, color: Colors.white),
+          Row(
+            children: [
+              _buildProfileAvatar(profileImage, size: 42),
+              const SizedBox(width: 10),
+              Text(
+                username,
+                style: GoogleFonts.agbalumo(
+                  fontSize: 14,
+                  color: Colors.black87,
                 ),
               ),
+              const Spacer(),
+              if (username == currentUsername)
+                PopupMenuButton<String>(
+                  onSelected: (value) {
+                    if (value == 'delete') {
+                      _deletePost(post['id'], index);
+                    } else if (value == 'edit') {
+                      _editPost(post, index);
+                    }
+                  },
+                  itemBuilder: (context) => const [
+                    PopupMenuItem(value: 'edit', child: Text('Edit')),
+                    PopupMenuItem(value: 'delete', child: Text('Delete')),
+                  ],
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            content,
+            style: const TextStyle(
+              fontSize: 14,
+              color: Colors.black87,
+              height: 1.45,
             ),
+          ),
+          if (postImageUrl.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+  width: double.infinity,
+  height: 220,
+  color: const Color(0xFFF5ECD7),
+  child: CachedNetworkImage(
+    imageUrl: postImageUrl,
+    fit: BoxFit.contain,
+  ),
+),
           ],
           if (linkedCourse != null) ...[
             const SizedBox(height: 10),
             Container(
               decoration: BoxDecoration(
-                  color: const Color(0xFFF5ECD7),
-                  borderRadius: BorderRadius.circular(12)),
+                color: const Color(0xFFF5ECD7),
+                borderRadius: BorderRadius.circular(12),
+              ),
               padding: const EdgeInsets.all(10),
               child: Row(
                 children: [
@@ -550,27 +855,35 @@ Future<void> _deletePost(int postId, int index) async {
                             height: 52,
                             fit: BoxFit.cover,
                             errorWidget: (c, u, e) => const Icon(
-                                Icons.play_circle,
-                                size: 40,
-                                color: Colors.grey),
+                              Icons.play_circle,
+                              size: 40,
+                              color: Colors.grey,
+                            ),
                             placeholder: (c, u) => Shimmer.fromColors(
                               baseColor: const Color(0xFF1A2F55),
                               highlightColor: const Color(0xFF2A4A7F),
                               child: Container(
-                                  width: 52, height: 52, color: Colors.white),
+                                width: 52,
+                                height: 52,
+                                color: Colors.white,
+                              ),
                             ),
                           )
-                        : const Icon(Icons.play_circle,
-                            size: 40, color: Colors.grey),
+                        : const Icon(
+                            Icons.play_circle,
+                            size: 40,
+                            color: Colors.grey,
+                          ),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       linkedCourse['title']?.toString() ?? '',
                       style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: Colors.black87),
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.black87,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -586,29 +899,63 @@ Future<void> _deletePost(int postId, int index) async {
                 onTap: () => likePost(index),
                 child: Row(
                   children: [
-                    const Icon(Icons.favorite_border,
-                        size: 20, color: Colors.black54),
+                    Icon(
+                      post['is_liked'] == true
+                          ? Icons.favorite
+                          : Icons.favorite_border,
+                      size: 20,
+                      color: Colors.red,
+                    ),
                     const SizedBox(width: 5),
-                    Text('$likes',
-                        style: const TextStyle(
-                            color: Colors.black54, fontSize: 13)),
+                    Text(
+                      '$likes',
+                      style: const TextStyle(
+                        color: Colors.black54,
+                        fontSize: 13,
+                      ),
+                    ),
                   ],
                 ),
               ),
               const SizedBox(width: 18),
-              Row(
-                children: [
-                  const Icon(Icons.chat_bubble_outline,
-                      size: 18, color: Color(0xFF5B7FA6)),
-                  const SizedBox(width: 5),
-                  Text('$comments',
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PostCommentsScreen(post: post),
+                    ),
+                  ).then((_) => loadData());
+                },
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.chat_bubble,
+                      size: 18,
+                      color: Color(0xFF5B7FA6),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      '$comments',
                       style: const TextStyle(
-                          color: Color(0xFF5B7FA6), fontSize: 13)),
-                ],
+                        color: Color(0xFF5B7FA6),
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               const Spacer(),
-              const Icon(Icons.bookmark_border,
-                  size: 22, color: Colors.black54),
+              GestureDetector(
+                onTap: () => toggleSavePost(index),
+                child: Icon(
+                  post['is_saved'] == true
+                      ? Icons.bookmark
+                      : Icons.bookmark_border,
+                  size: 22,
+                  color: const Color(0xFF071739),
+                ),
+              ),
             ],
           ),
         ],
@@ -622,7 +969,10 @@ Future<void> _deletePost(int postId, int index) async {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: const Color(0xFFE3C39D), width: 1.5),
+        border: Border.all(
+          color: const Color(0xFFE3C39D),
+          width: 1.5,
+        ),
       ),
       child: ClipOval(
         child: imageUrl.isNotEmpty
@@ -631,19 +981,30 @@ Future<void> _deletePost(int postId, int index) async {
                 width: size,
                 height: size,
                 fit: BoxFit.cover,
-                errorWidget: (c, u, e) =>
-                    const Icon(Icons.person, color: Colors.white54, size: 22),
+                errorWidget: (c, u, e) => const Icon(
+                  Icons.person,
+                  color: Colors.white54,
+                  size: 22,
+                ),
                 placeholder: (c, u) => Shimmer.fromColors(
                   baseColor: const Color(0xFF1A2F55),
                   highlightColor: const Color(0xFF2A4A7F),
-                  child: Container(width: size, height: size, color: Colors.white),
+                  child: Container(
+                    width: size,
+                    height: size,
+                    color: Colors.white,
+                  ),
                 ),
               )
             : Container(
                 color: const Color(0xFF4A6FA5),
-                child: const Icon(Icons.person, color: Colors.white, size: 22),
+                child: const Icon(
+                  Icons.person,
+                  color: Colors.white,
+                  size: 22,
+                ),
               ),
       ),
     );
   }
-}
+} 

@@ -2,6 +2,12 @@ import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:enginet/questions_screen.dart';
+import 'package:enginet/book_detail.dart';
+import 'package:enginet/article_detail.dart';
+import 'package:enginet/article_comments_screen.dart';
+import 'package:enginet/course_comments_screen.dart';
+import 'package:enginet/post_comments_screen.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -77,80 +83,107 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     }
   }
 
-  Future<void> _openPost(dynamic notification) async {
-    final postId = notification['post_id'];
+  Future<void> _openNotification(dynamic notification) async {
+  final questionId = notification['question_id'];
+  final bookId = notification['book_id'];
+  final articleId = notification['article_id'];
+  final courseId = notification['course_id'];
+  final type = notification['type']?.toString() ?? '';
+  final postId = notification['post_id'];
 
-    if (postId == null) return;
+  debugPrint('NOTIFICATION CLICKED: $notification');
+  debugPrint('NOTIFICATION CLICKED: $notification');
 
-    try {
-      final post = await _supabase
-          .from('posts')
-          .select()
-          .eq('id', postId)
-          .single();
+if (postId != null) {
+  final post = await _supabase
+      .from('posts')
+      .select()
+      .eq('id', postId)
+      .maybeSingle();
 
-      if (!mounted) return;
+  if (post == null) return;
 
-      showDialog(
-        context: context,
-        builder: (context) => AlertDialog(
-          backgroundColor: const Color(0xFF071739),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => PostCommentsScreen(post: post),
+    ),
+  );
+  return;
+}
+
+
+  if (courseId != null) {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => CourseCommentsScreen(
+        courseId: courseId.toString(),
+      ),
+    ),
+  );
+  return;
+}
+
+  if (articleId != null) {
+    if (type == 'article_comment') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ArticleCommentsScreen(
+            articleId: articleId.toString(),
           ),
-          title: Text(
-            post['username'] ?? 'Post',
-            style: GoogleFonts.agbalumo(
-              color: const Color(0xFFE3C39D),
-              fontSize: 20,
-            ),
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if ((post['content'] ?? '').toString().isNotEmpty)
-                  Text(
-                    post['content'],
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      height: 1.5,
-                    ),
-                  ),
-                if ((post['image_url'] ?? '').toString().isNotEmpty) ...[
-                  const SizedBox(height: 12),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(12),
-                    child: Image.network(
-                      post['image_url'],
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text(
-                'Close',
-                style: TextStyle(color: Color(0xFFE3C39D)),
-              ),
-            ),
-          ],
         ),
       );
-    } catch (e) {
-      debugPrint('Error opening post: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Post could not be opened')),
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ArticleDetailScreen(
+            articleId: articleId.toString(),
+          ),
+        ),
       );
     }
+    return;
   }
+
+  if (bookId != null) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BookDetailScreen(bookId: bookId.toString()),
+      ),
+    );
+    return;
+  }
+
+  if (questionId != null) {
+    final question = await _supabase
+        .from('questions')
+        .select()
+        .eq('id', questionId)
+        .single();
+
+    final user = await _supabase
+        .from('users')
+        .select('username, profile_image')
+        .eq('id', question['user_id'])
+        .maybeSingle();
+
+    question['username'] = user?['username'] ?? '';
+    question['profile_image'] = user?['profile_image'] ?? '';
+
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AnswerScreen(question: question),
+      ),
+    );
+  }
+}
 
   String _timeAgo(String dateStr) {
     final date = DateTime.tryParse(dateStr);
@@ -212,7 +245,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     final isRead = n["is_read"] == 1;
 
                     return GestureDetector(
-                      onTap: () => _openPost(n),
+                      onTap: () => _openNotification(n),
                       child: Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(14),

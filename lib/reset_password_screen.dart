@@ -133,7 +133,7 @@ Future<void> _resetPassword() async {
 
   try {
     final res = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/reset-password'),
+      Uri.parse('${AppConstants.baseUrl}/reset-password-link'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'email': _emailCtrl.text.trim(),

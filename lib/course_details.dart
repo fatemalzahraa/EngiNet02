@@ -76,6 +76,54 @@ String get _durationLabel {
   ]);
 }
 
+Future<void> _confirmDeleteCourse() async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text("Delete Course"),
+      content: const Text("Are you sure you want to delete this course?"),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text("Cancel"),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(
+            "Delete",
+            style: TextStyle(color: Colors.red),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed == true) {
+    await _deleteCourse();
+  }
+}
+
+Future<void> _deleteCourse() async {
+  try {
+    await supabase.from('courses').delete().eq('id', int.parse(widget.courseId));
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Course deleted successfully')),
+    );
+
+    Navigator.pop(context);
+  } catch (e) {
+    debugPrint('❌ deleteCourse error: $e');
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Failed to delete course')),
+    );
+  }
+}
+
 Future<Map<String, dynamic>?> _fetchCurrentUser() async {
   final email = await SessionManager.getEmail();
   if (email == null) return null;
@@ -542,21 +590,24 @@ Future<void> _loadCommentsCount() async {
                     : const Icon(Icons.play_circle, size: 80, color: Colors.white54),
               ),
               Positioned(
-                top: 40,
-                left: 16,
-                child: GestureDetector(
-                  onTap: () => Navigator.pop(context),
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFE3C39D),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.arrow_back, color: Colors.black),
-                  ),
-                ),
-              ),
+  top: 40,
+  right: 16,
+  child: GestureDetector(
+    onTap: _confirmDeleteCourse,
+    child: Container(
+      width: 40,
+      height: 40,
+      decoration: const BoxDecoration(
+        color: Colors.red,
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(
+        Icons.delete,
+        color: Colors.white,
+      ),
+    ),
+  ),
+),
             ],
           ),
 
@@ -884,10 +935,11 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
     icon: const Icon(Icons.arrow_back, color: Color(0xFFE3C39D)),
     onPressed: () => Navigator.pop(context),
   ),
-  title: Text(
-    'Comments',
-    style: GoogleFonts.agbalumo(color: const Color(0xFFE3C39D)),
-  ),
+  title:  Text(
+  widget.title,
+  style: GoogleFonts.agbalumo(color: const Color(0xFFE3C39D)),
+  overflow: TextOverflow.ellipsis,
+),
 ),
       body: Center(
         child: _isInitialized
