@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/session_manager.dart';
-
+import 'dart:async';
 class PostCommentsScreen extends StatefulWidget {
   final dynamic post;
 
@@ -19,6 +19,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
   Map<String, dynamic>? _currentUser;
   final TextEditingController _ctrl = TextEditingController();
   bool _isPosting = false;
+  StreamSubscription<List<Map<String, dynamic>>>? _commentsSub;
 
   int get _postId => int.tryParse(widget.post['id'].toString()) ?? 0;
 
@@ -30,10 +31,91 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
 
   @override
   void dispose() {
-    _ctrl.dispose();
-    super.dispose();
+    _commentsSub?.cancel();
+_ctrl.dispose();
+super.dispose();
   }
+Future<void> _editComment(Map<String, dynamic> comment) async {
+  final editCtrl = TextEditingController(
+    text: comment['content']?.toString() ?? '',
+  );
 
+  final newText = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Edit Comment'),
+      content: TextField(
+        controller: editCtrl,
+        maxLines: 4,
+        decoration: const InputDecoration(
+          hintText: 'Edit your comment...',
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, editCtrl.text.trim()),
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+
+  if (newText == null || newText.isEmpty) return;
+
+  await supabase
+      .from('comments')
+      .update({'content': newText})
+      .eq('id', comment['id']);
+
+  if (!mounted) return;
+
+  setState(() {
+    final index = _comments.indexWhere((c) => c['id'] == comment['id']);
+    if (index != -1) {
+      _comments[index]['content'] = newText;
+    }
+  });
+}
+
+Future<void> _deleteComment(Map<String, dynamic> comment) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Delete Comment'),
+      content: const Text('Are you sure you want to delete this comment?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('No'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(
+            'Yes, delete',
+            style: TextStyle(color: Colors.red),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed != true) return;
+
+  await supabase
+      .from('comments')
+      .delete()
+      .eq('id', comment['id']);
+
+  if (!mounted) return;
+
+  setState(() {
+    _comments.removeWhere((c) => c['id'] == comment['id']);
+  });
+}
   Future<void> _loadAll() async {
     final email = await SessionManager.getEmail();
 
@@ -46,7 +128,24 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
     }
 
     await _fetchComments();
+    _startCommentsRealtime();
   }
+  void _startCommentsRealtime() {
+  _commentsSub?.cancel();
+
+  _commentsSub = supabase
+      .from('comments')
+      .stream(primaryKey: ['id'])
+      .eq('post_id', _postId)
+      .order('created_at', ascending: true)
+      .listen((data) {
+        if (!mounted) return;
+
+        setState(() {
+          _comments = data;
+        });
+      });
+}
 
   Future<void> _fetchComments() async {
     try {
@@ -75,6 +174,23 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
     }
 
     setState(() => _isPosting = true);
+    final commentText = _ctrl.text.trim();
+
+final tempComment = {
+  'id': DateTime.now().millisecondsSinceEpoch,
+  'post_id': _postId,
+  'comment_user_id': _currentUser!['id'],
+  'username': _currentUser!['username'],
+  'profile_image': _currentUser!['profile_image'],
+  'content': commentText,
+  'created_at': DateTime.now().toIso8601String(),
+};
+
+setState(() {
+  _comments.add(tempComment);
+});
+
+_ctrl.clear();
 
     try {
       await supabase.from('comments').insert({
@@ -82,7 +198,7 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
   'comment_user_id': _currentUser!['id'],
   'username': _currentUser!['username'],
   'profile_image': _currentUser!['profile_image'],
-  'content': _ctrl.text.trim(),
+  'content': commentText,
 });
 final ownerUsername = widget.post['username']?.toString() ?? '';
 
@@ -120,11 +236,6 @@ if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
   });
 }
 
-
-
-
-      _ctrl.clear();
-      await _fetchComments();
     } catch (e) {
       debugPrint('❌ Error posting comment: $e');
       if (!mounted) return;
@@ -282,6 +393,29 @@ if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
                                     color: const Color(0xFF071739),
                                   ),
                                 ),
+                                const Spacer(),
+
+if (_currentUser != null &&
+    c['comment_user_id'] == _currentUser!['id'])
+  PopupMenuButton<String>(
+    onSelected: (value) {
+      if (value == 'edit') {
+        _editComment(c);
+      } else if (value == 'delete') {
+        _deleteComment(c);
+      }
+    },
+    itemBuilder: (context) => const [
+      PopupMenuItem(
+        value: 'edit',
+        child: Text('Edit'),
+      ),
+      PopupMenuItem(
+        value: 'delete',
+        child: Text('Delete'),
+      ),
+    ],
+  ),
                               ],
                             ),
                             const SizedBox(height: 6),

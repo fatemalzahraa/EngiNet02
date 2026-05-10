@@ -8,6 +8,7 @@ import 'package:enginet/article_detail.dart';
 import 'package:enginet/article_comments_screen.dart';
 import 'package:enginet/course_comments_screen.dart';
 import 'package:enginet/post_comments_screen.dart';
+import 'dart:async';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -22,12 +23,37 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   List _notifications = [];
   bool _isLoading = true;
   int? _currentUserId;
+  StreamSubscription<List<Map<String, dynamic>>>? _notificationsSub;
+  @override
+void dispose() {
+  _notificationsSub?.cancel();
+  super.dispose();
+}
 
   @override
   void initState() {
     super.initState();
     _loadData();
   }
+  void _startNotificationsRealtime() {
+  if (_currentUserId == null) return;
+
+  _notificationsSub?.cancel();
+
+  _notificationsSub = _supabase
+      .from('notifications')
+      .stream(primaryKey: ['id'])
+      .eq('user_id', _currentUserId!)
+      .order('created_at', ascending: false)
+      .listen((data) {
+        if (!mounted) return;
+
+        setState(() {
+          _notifications = data;
+          _isLoading = false;
+        });
+      });
+}
 
   Future<void> _loadData() async {
     await _fetchNotifications();
@@ -50,6 +76,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           .single();
 
       _currentUserId = userRes['id'] as int;
+      _startNotificationsRealtime();
 
       final res = await _supabase
           .from('notifications')

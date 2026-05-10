@@ -16,6 +16,7 @@ supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 class AnswerCreate(BaseModel):
     content: str
+    parent_answer_id: int | None = None
 
 
 @router.get("")
@@ -260,11 +261,21 @@ def add_answer(
 
         cursor.execute(
             """
-            INSERT INTO answers (question_id, user_id, content)
-            VALUES (%s,%s,%s)
+            INSERT INTO answers (
+    question_id,
+    user_id,
+    content,
+    parent_answer_id
+)
+VALUES (%s,%s,%s,%s)
             RETURNING id
             """,
-            (question_id, user["id"], answer.content),
+            (
+    question_id,
+    user["id"],
+    answer.content,
+    answer.parent_answer_id,
+),
         )
 
         answer_id = cursor.fetchone()["id"]
@@ -425,5 +436,101 @@ def save_question(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+@router.put("/answers/{answer_id}")
+def update_answer(
+    answer_id: int,
+    answer: AnswerCreate,
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_db()
+
+    try:
+        cursor = db.cursor()
+
+        cursor.execute(
+            "SELECT id FROM users WHERE email = %s",
+            (current_user["email"],),
+        )
+
+        user = cursor.fetchone()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cursor.execute(
+            "SELECT user_id FROM answers WHERE id = %s",
+            (answer_id,),
+        )
+
+        existing = cursor.fetchone()
+
+        if not existing:
+            raise HTTPException(status_code=404, detail="Answer not found")
+
+        if existing["user_id"] != user["id"]:
+            raise HTTPException(status_code=403, detail="Not allowed")
+
+        cursor.execute(
+            """
+            UPDATE answers
+            SET content = %s
+            WHERE id = %s
+            """,
+            (answer.content, answer_id),
+        )
+
+        db.commit()
+
+        return {"message": "Answer updated"}
+
+    finally:
+        db.close()
+
+
+@router.delete("/answers/{answer_id}")
+def delete_answer(
+    answer_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_db()
+
+    try:
+        cursor = db.cursor()
+
+        cursor.execute(
+            "SELECT id FROM users WHERE email = %s",
+            (current_user["email"],),
+        )
+
+        user = cursor.fetchone()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cursor.execute(
+            "SELECT user_id FROM answers WHERE id = %s",
+            (answer_id,),
+        )
+
+        answer = cursor.fetchone()
+
+        if not answer:
+            raise HTTPException(status_code=404, detail="Answer not found")
+
+        if answer["user_id"] != user["id"]:
+            raise HTTPException(status_code=403, detail="Not allowed")
+
+        cursor.execute(
+            "DELETE FROM answers WHERE id = %s",
+            (answer_id,),
+        )
+
+        db.commit()
+
+        return {"message": "Answer deleted"}
+
     finally:
         db.close()

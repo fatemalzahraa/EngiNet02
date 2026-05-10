@@ -57,18 +57,18 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _loadCurrentUser() async {
-    currentUsername = await SessionManager.getUsername();
-
     final email = await SessionManager.getEmail();
     if (email == null || email.isEmpty) return;
 
     final userRes = await _supabase
         .from('users')
-        .select('id')
+        .select('id, username')
         .eq('email', email)
         .maybeSingle();
 
     currentUserId = userRes?['id'];
+    currentUsername = userRes?['username']?.toString() ??
+        await SessionManager.getUsername();
   }
 
   Future<List<dynamic>> _enrichPosts(List<dynamic> rawPosts) async {
@@ -361,6 +361,46 @@ final engineersData = allEngineers
     );
   }
 }
+  Future<void> _sendPostLikeNotification(dynamic post, dynamic postId) async {
+    if (currentUserId == null) return;
+
+    int? postOwnerId;
+
+    final rawOwnerId = post['user_id'];
+    if (rawOwnerId is int) {
+      postOwnerId = rawOwnerId;
+    } else if (rawOwnerId != null) {
+      postOwnerId = int.tryParse(rawOwnerId.toString());
+    }
+
+    // Fallback for older posts that do not have user_id yet.
+    if (postOwnerId == null) {
+      final ownerUsername = post['username']?.toString() ?? '';
+
+      if (ownerUsername.isNotEmpty && ownerUsername != currentUsername) {
+        final owner = await _supabase
+            .from('users')
+            .select('id')
+            .eq('username', ownerUsername)
+            .maybeSingle();
+
+        if (owner != null) {
+          postOwnerId = owner['id'] as int?;
+        }
+      }
+    }
+
+    if (postOwnerId == null || postOwnerId == currentUserId) return;
+
+    await _supabase.from('notifications').insert({
+      'user_id': postOwnerId,
+      'message': '${currentUsername ?? 'Someone'} liked your post.',
+      'is_read': 0,
+      'post_id': postId,
+      'type': 'post_like',
+    });
+  }
+
   Future<void> likePost(int index) async {
     if (currentUserId == null) return;
 
@@ -388,25 +428,7 @@ final engineersData = allEngineers
     'post_id': postId,
   });
 
-  final ownerUsername = post['username']?.toString() ?? '';
-
-  if (ownerUsername.isNotEmpty && ownerUsername != currentUsername) {
-    final owner = await _supabase
-        .from('users')
-        .select('id')
-        .eq('username', ownerUsername)
-        .maybeSingle();
-
-    if (owner != null) {
-      await _supabase.from('notifications').insert({
-        'user_id': owner['id'],
-        'message': '$currentUsername liked your post.',
-        'is_read': 0,
-        'post_id': postId,
-        'type': 'post_like',
-      });
-    }
-  }
+  await _sendPostLikeNotification(post, postId);
 }
 
       await _supabase.from('posts').update({

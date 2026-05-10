@@ -14,6 +14,9 @@ import 'package:enginet/article_detail.dart';
 import 'package:enginet/course_details.dart';
 import 'package:enginet/post_comments_screen.dart';
 import 'package:enginet/saved_posts_screen.dart';
+import 'package:enginet/questions_screen.dart';
+import 'package:enginet/settings_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({super.key});
@@ -35,12 +38,22 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   List<dynamic> savedBooks = [];
   List<dynamic> savedArticles = [];
   List<dynamic> savedPosts = [];
+  List<dynamic> myQuestions = [];
 
   @override
   void initState() {
     super.initState();
     loadProfile();
   }
+  Future<void> openLink(String url) async {
+  if (url.isEmpty) return;
+
+  final uri = Uri.parse(url);
+
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri);
+  }
+}
 
   // ─── Pick & upload profile image ─────────────────────────────────────────
   Future<String?> _pickAndUploadProfileImage() async {
@@ -53,14 +66,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     final file = File(pickedFile.path);
     final username = await SessionManager.getUsername() ?? 'user';
     final fileExt = path.extension(file.path);
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}_$username$fileExt';
+    final fileName =
+        '${DateTime.now().millisecondsSinceEpoch}_$username$fileExt';
     final filePath = 'profile-images/$fileName';
 
-    await _supabase.storage.from('profiles').upload(
-          filePath,
-          file,
-          fileOptions: const FileOptions(upsert: true),
-        );
+    await _supabase.storage
+        .from('profiles')
+        .upload(filePath, file, fileOptions: const FileOptions(upsert: true));
 
     return _supabase.storage.from('profiles').getPublicUrl(filePath);
   }
@@ -86,7 +98,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       final followingRes = await _supabase
           .from('follows')
           .select(
-              'following_id, users!follows_following_id_fkey(id, username, profile_image, role, bio)')
+            'following_id, users!follows_following_id_fkey(id, username, profile_image, role, bio)',
+          )
           .eq('follower_id', userId);
 
       final savedRes = await _supabase
@@ -99,10 +112,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           .select('articles(*)')
           .eq('user_id', userId);
       final savedPostsRes = await _supabase
-    .from('saved_posts')
-    .select('posts(*)')
-    .eq('user_id', userId)
-    .order('created_at', ascending: true);
+          .from('saved_posts')
+          .select('posts(*)')
+          .eq('user_id', userId)
+          .order('created_at', ascending: true);
 
       final engineersOnly = (followingRes as List)
           .where((f) => f['users'] != null && f['users']['role'] == 'engineer')
@@ -153,6 +166,28 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         });
       }
 
+      final myQuestionsRes = await _supabase
+          .from('questions')
+          .select('*, users(username, profile_image)')
+          .eq('user_id', userId)
+          .order('created_at', ascending: false);
+
+      final enrichedQuestions = <dynamic>[];
+      for (final q in myQuestionsRes as List) {
+        final u = q['users'];
+        final answersRes = await _supabase
+            .from('answers')
+            .select('id')
+            .eq('question_id', q['id']);
+
+        enrichedQuestions.add({
+          ...q,
+          'username': u?['username'] ?? userRes['username'],
+          'profile_image': u?['profile_image'] ?? userRes['profile_image'],
+          'answers_count': (answersRes as List).length,
+        });
+      }
+
       if (!mounted) return;
       setState(() {
         user = userRes;
@@ -168,10 +203,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             .map((e) => e['articles'])
             .where((e) => e != null)
             .toList();
-            savedPosts = (savedPostsRes as List)
-    .map((e) => e['posts'])
-    .where((e) => e != null)
-    .toList();
+        savedPosts = (savedPostsRes as List)
+            .map((e) => e['posts'])
+            .where((e) => e != null)
+            .toList();
+        myQuestions = enrichedQuestions;
       });
     } catch (e) {
       debugPrint('❌ Error loading profile: $e');
@@ -179,7 +215,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       setState(() => isLoading = false);
     }
   }
-  
 
   // ─── Edit dialog ──────────────────────────────────────────────────────────
   void showEditDialog() {
@@ -207,8 +242,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 if (!mounted) return;
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
-                    content:
-                        Text('Image selected. Press Save to update.'),
+                    content: Text('Image selected. Press Save to update.'),
                   ),
                 );
               },
@@ -223,8 +257,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                   children: [
                     Icon(Icons.image, color: Colors.black54),
                     SizedBox(width: 10),
-                    Text('Choose profile image',
-                        style: TextStyle(color: Colors.black87)),
+                    Text(
+                      'Choose profile image',
+                      style: TextStyle(color: Colors.black87),
+                    ),
                   ],
                 ),
               ),
@@ -234,8 +270,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child:
-                const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () async {
@@ -256,27 +291,31 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               Navigator.pop(dialogContext);
               loadProfile();
             },
-            child: Text('Save',
-                style:
-                    GoogleFonts.agbalumo(color: const Color(0xFFE3C39D))),
+            child: Text(
+              'Save',
+              style: GoogleFonts.agbalumo(color: const Color(0xFFE3C39D)),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _dialogField(TextEditingController ctrl, String hint,
-      {int maxLines = 1}) {
+  Widget _dialogField(
+    TextEditingController ctrl,
+    String hint, {
+    int maxLines = 1,
+  }) {
     return Container(
       decoration: BoxDecoration(
-          color: const Color(0xFFE3C39D),
-          borderRadius: BorderRadius.circular(16)),
+        color: const Color(0xFFE3C39D),
+        borderRadius: BorderRadius.circular(16),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: TextField(
         controller: ctrl,
         maxLines: maxLines,
-        decoration:
-            InputDecoration(border: InputBorder.none, hintText: hint),
+        decoration: InputDecoration(border: InputBorder.none, hintText: hint),
       ),
     );
   }
@@ -323,8 +362,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) =>
-                    BookDetailScreen(bookId: book['id'].toString()),
+                builder: (_) => BookDetailScreen(bookId: book['id'].toString()),
               ),
             ),
             child: Container(
@@ -382,8 +420,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => ArticleDetailScreen(
-                    articleId: article['id'].toString()),
+                builder: (_) =>
+                    ArticleDetailScreen(articleId: article['id'].toString()),
               ),
             ),
             child: Container(
@@ -400,9 +438,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: (article['image_url'] ?? '')
-                              .toString()
-                              .isNotEmpty
+                      child: (article['image_url'] ?? '').toString().isNotEmpty
                           ? CachedNetworkImage(
                               imageUrl: article['image_url'],
                               fit: BoxFit.cover,
@@ -429,171 +465,172 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       ),
     );
   }
-Widget _savedPostCard(dynamic post) {
-  final imageUrl = post['image_url']?.toString() ?? '';
-  final username = post['username']?.toString() ?? '';
-  final content = post['content']?.toString() ?? '';
-  final profileImage = post['profile_image']?.toString() ?? '';
 
-  return GestureDetector(
-    onTap: () {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => PostCommentsScreen(post: post),
+  Widget _savedPostCard(dynamic post) {
+    final imageUrl = post['image_url']?.toString() ?? '';
+    final username = post['username']?.toString() ?? '';
+    final content = post['content']?.toString() ?? '';
+    final profileImage = post['profile_image']?.toString() ?? '';
+
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => PostCommentsScreen(post: post)),
+        );
+      },
+      child: Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 16),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFD8C09A),
+          borderRadius: BorderRadius.circular(18),
         ),
-      );
-    },
-    child: Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFD8C09A),
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              CircleAvatar(
-                radius: 22,
-                backgroundImage:
-                    profileImage.isNotEmpty ? NetworkImage(profileImage) : null,
-                backgroundColor: const Color(0xFF4A6FA5),
-                child: profileImage.isEmpty
-                    ? const Icon(Icons.person, color: Colors.white)
-                    : null,
-              ),
-              const SizedBox(width: 10),
-              Text(
-                username,
-                style: GoogleFonts.agbalumo(
-                  fontSize: 16,
-                  color: Colors.black87,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundImage: profileImage.isNotEmpty
+                      ? NetworkImage(profileImage)
+                      : null,
+                  backgroundColor: const Color(0xFF4A6FA5),
+                  child: profileImage.isEmpty
+                      ? const Icon(Icons.person, color: Colors.white)
+                      : null,
                 ),
+                const SizedBox(width: 10),
+                Text(
+                  username,
+                  style: GoogleFonts.agbalumo(
+                    fontSize: 16,
+                    color: Colors.black87,
+                  ),
+                ),
+                const Spacer(),
+                IconButton(
+                  icon: const Icon(
+                    Icons.bookmark_remove,
+                    color: Color(0xFF071739),
+                  ),
+                  onPressed: () async {
+                    final userId = user?['id'];
+                    if (userId == null) return;
+
+                    await _supabase
+                        .from('saved_posts')
+                        .delete()
+                        .eq('user_id', userId)
+                        .eq('post_id', post['id']);
+
+                    setState(() => savedPosts.remove(post));
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              content,
+              style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 15,
+                height: 1.4,
               ),
-              const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.bookmark_remove, color: Color(0xFF071739)),
-                onPressed: () async {
-                  final userId = user?['id'];
-                  if (userId == null) return;
-
-                  await _supabase
-                      .from('saved_posts')
-                      .delete()
-                      .eq('user_id', userId)
-                      .eq('post_id', post['id']);
-
-                  setState(() => savedPosts.remove(post));
-                },
+            ),
+            if (imageUrl.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  width: double.infinity,
+                  height: 220,
+                  color: const Color(0xFFF5ECD7),
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    fit: BoxFit.contain,
+                  ),
+                ),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            content,
-            style: const TextStyle(
-              color: Colors.black87,
-              fontSize: 15,
-              height: 1.4,
-            ),
-          ),
-          if (imageUrl.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: Container(
-                width: double.infinity,
-                height: 220,
-                color: const Color(0xFFF5ECD7),
-                child: CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  fit: BoxFit.contain,
-                ),
-              ),
-            ),
           ],
-        ],
-      ),
-    ),
-  );
-}
-  // ─── Saved tab ────────────────────────────────────────────────────────────
-  Widget _buildSavedBooks() {
-  if (savedBooks.isEmpty && savedArticles.isEmpty && savedPosts.isEmpty) {
-    return const Center(
-      child: Text(
-        'No saved items',
-        style: TextStyle(color: Colors.white54),
+        ),
       ),
     );
   }
 
-  final firstThreeBooks = savedBooks.take(3).toList();
-  final firstThreeArticles = savedArticles.take(3).toList();
+  // ─── Saved tab ────────────────────────────────────────────────────────────
+  Widget _buildSavedBooks() {
+    if (savedBooks.isEmpty && savedArticles.isEmpty && savedPosts.isEmpty) {
+      return const Center(
+        child: Text('No saved items', style: TextStyle(color: Colors.white54)),
+      );
+    }
 
-  return ListView(
-    padding: const EdgeInsets.all(16),
-    children: [
-      _sectionHeader(
-        title: 'Books',
-        onTap: savedBooks.length > 3
-            ? () => Navigator.push(
+    final firstThreeBooks = savedBooks.take(3).toList();
+    final firstThreeArticles = savedArticles.take(3).toList();
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        _sectionHeader(
+          title: 'Books',
+          onTap: savedBooks.length > 3
+              ? () => Navigator.push(
                   context,
                   MaterialPageRoute(
                     builder: (_) => SavedBooksScreen(books: savedBooks),
                   ),
                 )
-            : null,
-      ),
-      const SizedBox(height: 16),
-      savedBooks.isEmpty
-          ? const Text(
-              'No saved books yet',
-              style: TextStyle(color: Colors.white54),
-            )
-          : _horizontalList(firstThreeBooks),
+              : null,
+        ),
+        const SizedBox(height: 16),
+        savedBooks.isEmpty
+            ? const Text(
+                'No saved books yet',
+                style: TextStyle(color: Colors.white54),
+              )
+            : _horizontalList(firstThreeBooks),
 
-      const SizedBox(height: 30),
+        const SizedBox(height: 30),
 
-      _sectionHeader(title: 'Articles'),
-      const SizedBox(height: 16),
-      savedArticles.isEmpty
-          ? const Text(
-              'No saved articles yet',
-              style: TextStyle(color: Colors.white54),
-            )
-          : _horizontalArticleList(firstThreeArticles),
+        _sectionHeader(title: 'Articles'),
+        const SizedBox(height: 16),
+        savedArticles.isEmpty
+            ? const Text(
+                'No saved articles yet',
+                style: TextStyle(color: Colors.white54),
+              )
+            : _horizontalArticleList(firstThreeArticles),
 
-      const SizedBox(height: 30),
+        const SizedBox(height: 30),
 
-      _sectionHeader(
-        title: 'Posts',
-        onTap: savedPosts.length > 1
-            ? () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => SavedPostsScreen(posts: savedPosts),
-                  ),
-                );
-              }
-            : null,
-      ),
-      const SizedBox(height: 12),
+        _sectionHeader(
+          title: 'Posts',
+          onTap: savedPosts.length > 1
+              ? () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => SavedPostsScreen(posts: savedPosts),
+                    ),
+                  );
+                }
+              : null,
+        ),
+        const SizedBox(height: 12),
 
-      savedPosts.isEmpty
-          ? const Text(
-              'No saved posts yet',
-              style: TextStyle(color: Colors.white54),
-            )
-          : _savedPostCard(savedPosts.last),
-    ],
-  );
-}
+        savedPosts.isEmpty
+            ? const Text(
+                'No saved posts yet',
+                style: TextStyle(color: Colors.white54),
+              )
+            : _savedPostCard(savedPosts.last),
+      ],
+    );
+  }
 
   // ─── Courses tab ──────────────────────────────────────────────────────────
   Widget _buildCoursesList() {
@@ -604,11 +641,15 @@ Widget _savedPostCard(dynamic post) {
           children: const [
             Icon(Icons.school_outlined, color: Colors.white24, size: 60),
             SizedBox(height: 16),
-            Text('No courses started yet',
-                style: TextStyle(color: Colors.white54, fontSize: 16)),
+            Text(
+              'No courses started yet',
+              style: TextStyle(color: Colors.white54, fontSize: 16),
+            ),
             SizedBox(height: 8),
-            Text('Start watching lessons to track your progress',
-                style: TextStyle(color: Colors.white38, fontSize: 13)),
+            Text(
+              'Start watching lessons to track your progress',
+              style: TextStyle(color: Colors.white38, fontSize: 13),
+            ),
           ],
         ),
       );
@@ -631,9 +672,8 @@ Widget _savedPostCard(dynamic post) {
           onTap: () => Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (_) => CourseDetailScreen(
-                courseId: course['id'].toString(),
-              ),
+              builder: (_) =>
+                  CourseDetailScreen(courseId: course['id'].toString()),
             ),
           ).then((_) => loadProfile()),
           child: Container(
@@ -660,24 +700,29 @@ Widget _savedPostCard(dynamic post) {
                             baseColor: const Color(0xFF1A2F55),
                             highlightColor: const Color(0xFF2A4A7F),
                             child: Container(
-                                width: 90,
-                                height: 80,
-                                color: Colors.white),
+                              width: 90,
+                              height: 80,
+                              color: Colors.white,
+                            ),
                           ),
                           errorWidget: (c, u, e) => Container(
                             width: 90,
                             height: 80,
                             color: const Color(0xFF4A6FA5),
-                            child: const Icon(Icons.play_circle,
-                                color: Colors.white54),
+                            child: const Icon(
+                              Icons.play_circle,
+                              color: Colors.white54,
+                            ),
                           ),
                         )
                       : Container(
                           width: 90,
                           height: 80,
                           color: const Color(0xFF4A6FA5),
-                          child: const Icon(Icons.play_circle,
-                              color: Colors.white54),
+                          child: const Icon(
+                            Icons.play_circle,
+                            color: Colors.white54,
+                          ),
                         ),
                 ),
 
@@ -689,43 +734,43 @@ Widget _savedPostCard(dynamic post) {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Row(
-  children: [
-    Expanded(
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontWeight: FontWeight.bold,
-          fontSize: 13,
-        ),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-    ),
-    const SizedBox(width: 8),
-    isFinished
-        ? Container(
-            width: 26,
-            height: 26,
-            decoration: const BoxDecoration(
-              color: Color(0xFF4CAF50),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.check,
-              color: Colors.white,
-              size: 16,
-            ),
-          )
-        : Text(
-            '$progressPercent%',
-            style: const TextStyle(
-              color: Color(0xFF4A6FA5),
-              fontWeight: FontWeight.bold,
-              fontSize: 13,
-            ),
-          ),
-  ],
-),
+                          children: [
+                            Expanded(
+                              child: Text(
+                                title,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                ),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            isFinished
+                                ? Container(
+                                    width: 26,
+                                    height: 26,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFF4CAF50),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: const Icon(
+                                      Icons.check,
+                                      color: Colors.white,
+                                      size: 16,
+                                    ),
+                                  )
+                                : Text(
+                                    '$progressPercent%',
+                                    style: const TextStyle(
+                                      color: Color(0xFF4A6FA5),
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                          ],
+                        ),
                         const SizedBox(height: 6),
                         Row(
                           children: [
@@ -744,8 +789,11 @@ Widget _savedPostCard(dynamic post) {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                            const Icon(Icons.star,
-                                color: Colors.orange, size: 14),
+                            const Icon(
+                              Icons.star,
+                              color: Colors.orange,
+                              size: 14,
+                            ),
                             Text(
                               rating.toStringAsFixed(1),
                               style: const TextStyle(fontSize: 12),
@@ -764,6 +812,84 @@ Widget _savedPostCard(dynamic post) {
     );
   }
 
+  Widget _buildMyQuestions() {
+    if (myQuestions.isEmpty) {
+      return const Center(
+        child: Text(
+          'No questions yet',
+          style: TextStyle(color: Colors.white54),
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: loadProfile,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: myQuestions.length,
+        itemBuilder: (context, index) {
+          final q = myQuestions[index];
+          final title = q['title']?.toString() ?? '';
+          final content = q['content']?.toString() ?? '';
+          final likes = q['likes'] ?? 0;
+          final answersCount = q['answers_count'] ?? 0;
+
+          return GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => AnswerScreen(question: q)),
+              ).then((_) => loadProfile());
+            },
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 14),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE3C39D),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Color(0xFF071739),
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    content,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF071739),
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      const Icon(Icons.favorite_border, size: 18),
+                      const SizedBox(width: 4),
+                      Text('$likes'),
+                      const SizedBox(width: 16),
+                      const Icon(Icons.chat_bubble_outline, size: 18),
+                      const SizedBox(width: 4),
+                      Text('$answersCount'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   // ─── Build ────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -771,7 +897,8 @@ Widget _savedPostCard(dynamic post) {
       return const Scaffold(
         backgroundColor: Color(0xFF071739),
         body: Center(
-            child: CircularProgressIndicator(color: Color(0xFF6C94C6))),
+          child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
+        ),
       );
     }
 
@@ -803,23 +930,38 @@ Widget _savedPostCard(dynamic post) {
                       width: 36,
                       height: 36,
                       decoration: const BoxDecoration(
-                          color: Color(0xFFE3C39D),
-                          shape: BoxShape.circle),
-                      child: const Icon(Icons.arrow_back,
-                          color: Colors.black, size: 18),
+                        color: Color(0xFFE3C39D),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.arrow_back,
+                        color: Colors.black,
+                        size: 18,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Text(
                     username,
                     style: GoogleFonts.agbalumo(
-                        color: const Color(0xFFE3C39D), fontSize: 22),
+                      color: const Color(0xFFE3C39D),
+                      fontSize: 22,
+                    ),
                   ),
                   const Spacer(),
                   GestureDetector(
-                    onTap: showEditDialog,
-                    child:
-                        const Icon(Icons.edit, color: Color(0xFFE3C39D)),
+                    onTap: () {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => const SettingsScreen(),
+    ),
+  );
+},
+                    child: const Icon(
+  Icons.settings,
+  color: Color(0xFFE3C39D),
+)
                   ),
                 ],
               ),
@@ -837,15 +979,20 @@ Widget _savedPostCard(dynamic post) {
                         : null,
                     backgroundColor: const Color(0xFF4A6FA5),
                     child: profileImage.isEmpty
-                        ? const Icon(Icons.person,
-                            size: 55, color: Colors.white)
+                        ? const Icon(
+                            Icons.person,
+                            size: 55,
+                            color: Colors.white,
+                          )
                         : null,
                   ),
                   const SizedBox(height: 8),
                   Text(
                     username,
                     style: GoogleFonts.agbalumo(
-                        color: const Color(0xFFE3C39D), fontSize: 22),
+                      color: const Color(0xFFE3C39D),
+                      fontSize: 22,
+                    ),
                   ),
                 ],
               ),
@@ -863,8 +1010,8 @@ Widget _savedPostCard(dynamic post) {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => FollowingScreen(
-                              following: followingEngineers),
+                          builder: (_) =>
+                              FollowingScreen(following: followingEngineers),
                         ),
                       ),
                       child: _statColumn('Following', '$followingCount'),
@@ -886,20 +1033,42 @@ Widget _savedPostCard(dynamic post) {
                     child: Text(
                       'Bio — $bio',
                       style: GoogleFonts.agbalumo(
-                          color: Colors.white, fontSize: 16),
+                        color: Colors.white,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ),
               ),
+              if ((user?['specialty'] ?? '').toString().isNotEmpty)
+  Text(
+    'Specialty: ${user!['specialty']}',
+    style: const TextStyle(color: Colors.white70),
+  ),
+
+if ((user?['skills'] ?? '').toString().isNotEmpty)
+  Text(
+    'Skills: ${user!['skills']}',
+    style: const TextStyle(color: Colors.white70),
+  ),
+
+if (user?['show_email'] == true)
+  Text(
+    'Email: ${user!['email']}',
+    style: const TextStyle(color: Colors.white70),
+  ),
+
 
             const Divider(color: Colors.white24),
 
             // ── Tabs ─────────────────────────────────────────────
-            Row(children: [
-              _tab('My Courses', 0),
-              _tab('Questions', 1),
-              _tab('Saved', 2),
-            ]),
+            Row(
+              children: [
+                _tab('My Courses', 0),
+                _tab('Questions', 1),
+                _tab('Saved', 2),
+              ],
+            ),
             const Divider(color: Colors.white24, height: 1),
 
             // ── Tab content ──────────────────────────────────────
@@ -907,11 +1076,8 @@ Widget _savedPostCard(dynamic post) {
               child: selectedTab == 0
                   ? _buildCoursesList()
                   : selectedTab == 2
-                      ? _buildSavedBooks()
-                      : const Center(
-                          child: Text('Coming soon…',
-                              style: TextStyle(color: Colors.white54)),
-                        ),
+                  ? _buildSavedBooks()
+                  : _buildMyQuestions(),
             ),
           ],
         ),
@@ -921,19 +1087,25 @@ Widget _savedPostCard(dynamic post) {
 
   // ─── Small helpers ────────────────────────────────────────────────────────
   Widget _statColumn(String label, String value) => Column(
-        children: [
-          Text(label,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16)),
-          Text(value,
-              style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20)),
-        ],
-      );
+    children: [
+      Text(
+        label,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 16,
+        ),
+      ),
+      Text(
+        value,
+        style: const TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 20,
+        ),
+      ),
+    ],
+  );
 
   Widget _tab(String label, int index) {
     final isSelected = selectedTab == index;
@@ -956,9 +1128,7 @@ Widget _savedPostCard(dynamic post) {
             child: Text(
               label,
               style: GoogleFonts.agbalumo(
-                color: isSelected
-                    ? const Color(0xFFE3C39D)
-                    : Colors.white54,
+                color: isSelected ? const Color(0xFFE3C39D) : Colors.white54,
                 fontSize: 16,
               ),
             ),
