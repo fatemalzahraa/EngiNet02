@@ -8,6 +8,8 @@ import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:enginet/following_screen.dart';
+import 'package:enginet/settings_screen.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class EngineerProfileScreen extends StatefulWidget {
   final int? targetUserId;
@@ -40,6 +42,15 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
     super.initState();
     loadProfile();
   }
+  Future<void> openLink(String url) async {
+  if (url.isEmpty) return;
+
+  final uri = Uri.parse(url);
+
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri);
+  }
+}
   
   Future<String?> _pickAndUploadProfileImage() async {
   final pickedFile = await _picker.pickImage(
@@ -355,8 +366,18 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                   const Spacer(),
                   if (isOwnProfile)
                     GestureDetector(
-                      onTap: showEditDialog,
-                      child: const Icon(Icons.edit, color: Color(0xFFE3C39D)),
+                      onTap: () {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => const SettingsScreen(),
+    ),
+  );
+},
+                      child: const Icon(
+  Icons.settings,
+  color: Color(0xFFE3C39D),
+)
                     ),
                 ],
               ),
@@ -456,8 +477,30 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                     height: 1.5,
                   ),
                 ),
+                
               ),
             ),
+           if ((user?['specialty'] ?? '').toString().isNotEmpty)
+  Text(
+    'Specialty: ${user!['specialty']}',
+    style: const TextStyle(color: Colors.white70),
+  ),
+
+if ((user?['skills'] ?? '').toString().isNotEmpty)
+  Text(
+    'Skills: ${user!['skills']}',
+    style: const TextStyle(color: Colors.white70),
+  ),
+
+
+
+if (user?['show_email'] == true)
+  Text(
+    'Email: ${user!['email']}',
+    style: const TextStyle(color: Colors.white70),
+  ),
+
+
             const SizedBox(height: 14),
             if (!isOwnProfile)
               Padding(

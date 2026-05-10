@@ -143,15 +143,17 @@ class _CourseScreenState extends State<CourseScreen> {
     final rating = (item['rating'] ?? 0.0).toDouble();
 
     return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) =>
-                CourseDetailScreen(courseId: item['id'].toString()),
-          ),
-        );
-      },
+      onTap: () async {
+  await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (context) =>
+          CourseDetailScreen(courseId: item['id'].toString()),
+    ),
+  );
+
+  await loadCourses();
+},
       child: Container(
         margin: const EdgeInsets.only(bottom: 16),
         decoration: BoxDecoration(

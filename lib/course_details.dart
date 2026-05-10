@@ -105,21 +105,73 @@ Future<void> _confirmDeleteCourse() async {
 
 Future<void> _deleteCourse() async {
   try {
-    await supabase.from('courses').delete().eq('id', int.parse(widget.courseId));
+    final courseId = int.parse(widget.courseId);
+
+   
+    final lessons = await supabase
+        .from('lessons')
+        .select('id')
+        .eq('course_id', courseId);
+
+    final lessonIds =
+        (lessons as List).map((e) => e['id'] as int).toList();
+
+    
+    if (lessonIds.isNotEmpty) {
+      await supabase
+          .from('lesson_progress')
+          .delete()
+          .inFilter('lesson_id', lessonIds);
+    }
+
+    
+    await supabase
+        .from('lessons')
+        .delete()
+        .eq('course_id', courseId);
+
+    
+    await supabase
+        .from('student_courses')
+        .delete()
+        .eq('course_id', courseId);
+
+   
+    await supabase
+        .from('course_ratings')
+        .delete()
+        .eq('course_id', courseId);
+
+   
+    await supabase
+        .from('course_comments')
+        .delete()
+        .eq('course_id', courseId);
+
+   
+    await supabase
+        .from('courses')
+        .delete()
+        .eq('id', courseId);
 
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Course deleted successfully')),
+      const SnackBar(
+        content: Text('Course deleted successfully'),
+      ),
     );
 
-    Navigator.pop(context);
+    Navigator.pop(context, true);
   } catch (e) {
     debugPrint('❌ deleteCourse error: $e');
 
     if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Failed to delete course')),
+      SnackBar(
+        content: Text('Delete failed: $e'),
+      ),
     );
   }
 }
@@ -130,7 +182,7 @@ Future<Map<String, dynamic>?> _fetchCurrentUser() async {
 
   return await supabase
       .from('users')
-      .select('id, username, profile_image')
+      .select('id, username, profile_image, role')
       .eq('email', email)
       .maybeSingle();
 }
@@ -567,49 +619,67 @@ Future<void> _loadCommentsCount() async {
       backgroundColor: const Color(0xFF2C3E50),
       body: Column(
         children: [
-          Stack(
-            children: [
-              Container(
-                height: 250,
-                width: double.infinity,
-                color: const Color(0xFF1a237e),
-                child: imageUrl.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: imageUrl,
-                        height: 250,
-                        width: double.infinity,
-                        fit: BoxFit.cover,
-                        errorWidget: (c, u, e) =>
-                            const Icon(Icons.play_circle, size: 80, color: Colors.white54),
-                        placeholder: (c, u) => Shimmer.fromColors(
-                          baseColor: const Color(0xFF1A2F55),
-                          highlightColor: const Color(0xFF2A4A7F),
-                          child: Container(height: 250, color: Colors.white),
-                        ),
-                      )
-                    : const Icon(Icons.play_circle, size: 80, color: Colors.white54),
+        Stack(
+  children: [
+    Container(
+      height: 250,
+      width: double.infinity,
+      color: const Color(0xFF1a237e),
+      child: imageUrl.isNotEmpty
+          ? CachedNetworkImage(
+              imageUrl: imageUrl,
+              height: 250,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorWidget: (c, u, e) =>
+                  const Icon(Icons.play_circle, size: 80, color: Colors.white54),
+              placeholder: (c, u) => Shimmer.fromColors(
+                baseColor: const Color(0xFF1A2F55),
+                highlightColor: const Color(0xFF2A4A7F),
+                child: Container(height: 250, color: Colors.white),
               ),
-              Positioned(
-  top: 40,
-  right: 16,
-  child: GestureDetector(
-    onTap: _confirmDeleteCourse,
-    child: Container(
-      width: 40,
-      height: 40,
-      decoration: const BoxDecoration(
-        color: Colors.red,
-        shape: BoxShape.circle,
-      ),
-      child: const Icon(
-        Icons.delete,
-        color: Colors.white,
+            )
+          : const Icon(Icons.play_circle, size: 80, color: Colors.white54),
+    ),
+
+    Positioned(
+      top: 40,
+      left: 16,
+      child: GestureDetector(
+        onTap: () => Navigator.pop(context),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: const BoxDecoration(
+            color: Color(0xFFE3C39D),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.arrow_back, color: Colors.black),
+        ),
       ),
     ),
-  ),
-),
-            ],
+
+    if (_currentUser != null &&
+        (_currentUser!['username'] == course!['instructor_name'] ||
+            _currentUser!['role'] == 'admin'))
+      Positioned(
+        top: 40,
+        right: 16,
+        child: GestureDetector(
+          onTap: _confirmDeleteCourse,
+          child: Container(
+            width: 40,
+            height: 40,
+            decoration: const BoxDecoration(
+              color: Colors.red,
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.delete, color: Colors.white),
           ),
+        ),
+      ),
+  ],
+),
 
           Expanded(
             child: Container(

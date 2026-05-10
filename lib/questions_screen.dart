@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-
+import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/session_manager.dart';
@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class QuestionsScreen extends StatefulWidget {
   const QuestionsScreen({super.key});
@@ -776,6 +777,7 @@ class _AnswerScreenState extends State<AnswerScreen> {
   final FocusNode _answerFocusNode = FocusNode();
 
   bool _isPosting = false;
+  StreamSubscription<List<Map<String, dynamic>>>? _answersSub;
 
   String? replyingToAnswerId;
   String? replyingToUsername;
@@ -784,13 +786,15 @@ class _AnswerScreenState extends State<AnswerScreen> {
   void initState() {
     super.initState();
     _fetchAnswers();
+_startAnswersRealtime();
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
-    _answerFocusNode.dispose();
-    super.dispose();
+    _answersSub?.cancel();
+  _ctrl.dispose();
+  _answerFocusNode.dispose();
+  super.dispose();
   }
 
   String? _parentIdOf(Map a) {
@@ -807,7 +811,25 @@ class _AnswerScreenState extends State<AnswerScreen> {
 
     return text;
   }
+void _startAnswersRealtime() {
+  _answersSub?.cancel();
 
+  final questionId =
+      int.tryParse(widget.question['id'].toString()) ?? 0;
+
+  _answersSub = Supabase.instance.client
+      .from('answers')
+      .stream(primaryKey: ['id'])
+      .eq('question_id', questionId)
+      .order('created_at', ascending: true)
+      .listen((data) {
+        if (!mounted) return;
+
+        setState(() {
+          _answers = data;
+        });
+      });
+}
   Future<void> _fetchAnswers() async {
     try {
       final response = await http.get(
@@ -872,7 +894,7 @@ class _AnswerScreenState extends State<AnswerScreen> {
         replyingToUsername = null;
       });
 
-      await _fetchAnswers();
+      
     } catch (e) {
       debugPrint("Error posting answer: $e");
       if (!mounted) return;

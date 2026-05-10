@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException
+import os
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from supabase import create_client
 from pydantic import BaseModel
 from typing import Optional
 
@@ -6,13 +8,109 @@ from typing import Optional
 from dependencies import get_current_user
 from database import get_db
 
-router = APIRouter(prefix="/profile", tags=["Profile"])
+router = APIRouter(prefix="/profile", tags=["Profile"]) 
+
 
 
 class UpdateProfile(BaseModel):
     bio: Optional[str] = None
     profile_image: Optional[str] = None
     university: Optional[str] = None
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+
+@router.put("/update")
+async def update_profile_full(
+    username: str = Form(...),
+    email: str = Form(...),
+    bio: str = Form(""),
+    phone: str = Form(""),
+    university: str = Form(""),
+    specialty: str = Form(""),
+    location: str = Form(""),
+    linkedin: str = Form(""),
+    github: str = Form(""),
+    website: str = Form(""),
+    skills: str = Form(""),
+    show_email: bool = Form(False),
+    image: UploadFile | None = File(None),
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_db()
+    try:
+        cursor = db.cursor()
+
+        cursor.execute(
+            "SELECT id FROM users WHERE email = %s",
+            (current_user["email"],),
+        )
+        user = cursor.fetchone()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        profile_image_url = None
+
+        if image:
+            file_ext = image.filename.split(".")[-1]
+            file_path = f"profile-images/{user['id']}_{username}.{file_ext}"
+            file_bytes = await image.read()
+
+            supabase.storage.from_("profiles").upload(
+                path=file_path,
+                file=file_bytes,
+                file_options={
+                    "content-type": image.content_type,
+                    "upsert": "true",
+                },
+            )
+
+            profile_image_url = supabase.storage.from_("profiles").get_public_url(
+                file_path
+            )
+
+        if profile_image_url:
+            cursor.execute("""
+                UPDATE users
+                SET username=%s, email=%s, bio=%s, phone=%s, university=%s,
+                    specialty=%s, location=%s, linkedin=%s, github=%s,
+                    website=%s, skills=%s, show_email=%s, profile_image=%s
+                WHERE id=%s
+            """, (
+                username, email, bio, phone, university,
+                specialty, location, linkedin, github,
+                website, skills, show_email, profile_image_url,
+                user["id"],
+            ))
+        else:
+            cursor.execute("""
+                UPDATE users
+                SET username=%s, email=%s, bio=%s, phone=%s, university=%s,
+                    specialty=%s, location=%s, linkedin=%s, github=%s,
+                    website=%s, skills=%s, show_email=%s
+                WHERE id=%s
+            """, (
+                username, email, bio, phone, university,
+                specialty, location, linkedin, github,
+                website, skills, show_email,
+                user["id"],
+            ))
+
+        db.commit()
+
+        return {
+            "message": "Profile updated",
+            "profile_image": profile_image_url,
+        }
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+    finally:
+        db.close()
 
 
 # ── Get my profile ────────────────────────────────────────
