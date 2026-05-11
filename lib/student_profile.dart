@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
+import 'dart:async';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:enginet/book_detail.dart';
@@ -39,12 +40,23 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   List<dynamic> savedArticles = [];
   List<dynamic> savedPosts = [];
   List<dynamic> myQuestions = [];
+  
 
   @override
   void initState() {
     super.initState();
     loadProfile();
   }
+  StreamSubscription<List<Map<String, dynamic>>>? _articleBookmarksSub;
+StreamSubscription<List<Map<String, dynamic>>>? _savedPostsSub;
+StreamSubscription<List<Map<String, dynamic>>>? _savedBooksSub;
+@override
+void dispose() {
+  _articleBookmarksSub?.cancel();
+  _savedPostsSub?.cancel();
+  _savedBooksSub?.cancel();
+  super.dispose();
+}
   Future<void> openLink(String url) async {
   if (url.isEmpty) return;
 
@@ -53,6 +65,29 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   if (await canLaunchUrl(uri)) {
     await launchUrl(uri);
   }
+}
+void _startRealtime(int userId) {
+  _articleBookmarksSub?.cancel();
+  _savedPostsSub?.cancel();
+  _savedBooksSub?.cancel();
+
+  _articleBookmarksSub = _supabase
+      .from('article_bookmarks')
+      .stream(primaryKey: ['user_id', 'article_id'])
+      .eq('user_id', userId)
+      .listen((_) => loadProfile());
+
+  _savedPostsSub = _supabase
+      .from('saved_posts')
+      .stream(primaryKey: ['user_id', 'post_id'])
+      .eq('user_id', userId)
+      .listen((_) => loadProfile());
+
+  _savedBooksSub = _supabase
+      .from('bookmarks')
+      .stream(primaryKey: ['user_id', 'book_id'])
+      .eq('user_id', userId)
+      .listen((_) => loadProfile());
 }
 
   // ─── Pick & upload profile image ─────────────────────────────────────────
@@ -94,6 +129,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           .single();
 
       final userId = userRes['id'];
+      _startRealtime(userId);
 
       final followingRes = await _supabase
           .from('follows')
@@ -423,7 +459,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 builder: (_) =>
                     ArticleDetailScreen(articleId: article['id'].toString()),
               ),
-            ),
+            ).then((_) => loadProfile()),
             child: Container(
               width: 125,
               margin: const EdgeInsets.only(right: 14),

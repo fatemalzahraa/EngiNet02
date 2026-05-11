@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:enginet/core/session_manager.dart';
+import 'package:enginet/points_helper.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -137,6 +138,15 @@ Future<String?> _uploadBookFile() async {
         'book_url': finalBookUrl,
         
 });
+final email = await SessionManager.getEmail();
+
+final userData = await _supabase
+    .from('users')
+    .select('id')
+    .eq('email', email!)
+    .single();
+
+await addPoints(userData['id'], 5);
 
       if (!mounted) return;
 

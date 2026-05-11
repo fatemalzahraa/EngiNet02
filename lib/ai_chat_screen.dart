@@ -16,37 +16,32 @@ class _AIChatScreenState extends State<AIChatScreen> {
   final List<Map<String, String>> _messages = [];
   bool _isLoading = false;
 
-  // ✅ المفتاح يُمرَّر وقت البناء عبر:
-  //    flutter run --dart-define=GROQ_API_KEY=your_key_here
-  // أو في pubspec.yaml أو CI/CD environment variables
-  // لا تكتب المفتاح مباشرة هنا أبداً
   static const String _apiKey = String.fromEnvironment(
     'GROQ_API_KEY',
     defaultValue: '',
   );
 
   static const String _systemPrompt = """
-أنت مساعد ذكاء اصطناعي متخصص في مجال الهندسة والبرمجة لمنصة EngiNet.
-مهمتك مساعدة الطلاب والمهندسين في:
-- الأسئلة الهندسية والتقنية
-- شرح مفاهيم البرمجة
-- تحليل الكود وإيجاد الأخطاء
-- اقتراح الكورسات والمصادر التعليمية
-- الإجابة على أسئلة الرياضيات والفيزياء
+Sen EngiNet platformu için mühendislik ve programlama alanında uzmanlaşmış bir yapay zeka asistanısın.
+Görevin öğrencilere ve mühendislere şu konularda yardımcı olmak:
+- Mühendislik ve teknik sorular
+- Programlama kavramlarını açıklama
+- Kod analizi ve hata bulma
+- Kurs ve eğitim kaynakları önerme
+- Matematik ve fizik sorularını yanıtlama
 
-أجب دائماً بشكل واضح ومفيد. يمكنك الإجابة بالعربية أو الإنجليزية حسب لغة السؤال.
+Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türkçe veya İngilizce yanıt verebilirsin.
 """;
 
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _isLoading) return;
 
-    // ✅ تحقق أن المفتاح موجود قبل الإرسال
     if (_apiKey.isEmpty) {
       setState(() {
         _messages.add({
           "role": "error",
-          "content": "❌ لم يتم تكوين مفتاح API. يرجى التواصل مع المطور."
+          "content": "❌ API anahtarı yapılandırılmamış. Lütfen geliştirici ile iletişime geçin."
         });
       });
       return;
@@ -90,7 +85,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
         setState(() {
           _messages.add({
             "role": "error",
-            "content": "❌ خطأ: ${error['error']?['message'] ?? 'حدث خطأ غير متوقع'}"
+            "content": "❌ Hata: ${error['error']?['message'] ?? 'Beklenmeyen bir hata oluştu'}"
           });
           _isLoading = false;
         });
@@ -99,7 +94,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
       setState(() {
         _messages.add({
           "role": "error",
-          "content": "❌ تعذّر الاتصال. تحقق من الإنترنت."
+          "content": "❌ Bağlantı kurulamadı. İnternet bağlantınızı kontrol edin."
         });
         _isLoading = false;
       });
@@ -183,7 +178,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
               Text("EngiNet AI",
                   style: GoogleFonts.agbalumo(
                       fontSize: 22, color: const Color(0xFFE3C39D))),
-              const Text("Powered by Groq",
+              const Text("Groq tarafından desteklenmektedir",
                   style: TextStyle(color: Colors.white54, fontSize: 12)),
             ],
           ),
@@ -215,17 +210,19 @@ class _AIChatScreenState extends State<AIChatScreen> {
             child: const Icon(Icons.smart_toy, color: Colors.white, size: 50),
           ),
           const SizedBox(height: 20),
-          Text("مرحباً! أنا EngiNet AI",
+          Text("Merhaba! Ben EngiNet AI",
               style: GoogleFonts.agbalumo(
                   color: const Color(0xFFE3C39D), fontSize: 22)),
           const SizedBox(height: 8),
-          const Text("اسألني عن الهندسة، البرمجة،\nالكورسات، أو أي شيء تقني!",
+          const Text(
+              "Mühendislik, programlama,\nkurslar veya teknik konularda bana sor!",
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white54, fontSize: 14, height: 1.5)),
+              style:
+                  TextStyle(color: Colors.white54, fontSize: 14, height: 1.5)),
           const SizedBox(height: 30),
-          _buildSuggestedQuestion("ما هي أفضل لغة برمجة للمبتدئين؟"),
-          _buildSuggestedQuestion("اشرح لي مفهوم OOP ببساطة"),
-          _buildSuggestedQuestion("كيف أتعلم Flutter من الصفر؟"),
+          _buildSuggestedQuestion("Yeni başlayanlar için en iyi programlama dili hangisi?"),
+          _buildSuggestedQuestion("OOP kavramını basitçe açıklar mısın?"),
+          _buildSuggestedQuestion("Flutter'ı sıfırdan nasıl öğrenebilirim?"),
         ],
       ),
     );
@@ -252,7 +249,8 @@ class _AIChatScreenState extends State<AIChatScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(question,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
+                  style:
+                      const TextStyle(color: Colors.white70, fontSize: 13)),
             ),
           ],
         ),
@@ -280,13 +278,15 @@ class _AIChatScreenState extends State<AIChatScreen> {
                     colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+              child:
+                  const Icon(Icons.smart_toy, color: Colors.white, size: 18),
             ),
             const SizedBox(width: 8),
           ],
           Flexible(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: isError
                     ? const Color(0xFF5C1A1A)
@@ -337,11 +337,13 @@ class _AIChatScreenState extends State<AIChatScreen> {
                   colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+            child:
+                const Icon(Icons.smart_toy, color: Colors.white, size: 18),
           ),
           const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: const Color(0xFF1E3A5F),
               borderRadius: const BorderRadius.only(
@@ -389,7 +391,7 @@ class _AIChatScreenState extends State<AIChatScreen> {
                 maxLines: 4,
                 minLines: 1,
                 decoration: const InputDecoration(
-                  hintText: "اسألني أي شيء...",
+                  hintText: "Bana bir şey sor...",
                   hintStyle: TextStyle(color: Colors.white38),
                   contentPadding:
                       EdgeInsets.symmetric(horizontal: 16, vertical: 10),

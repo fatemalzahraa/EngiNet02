@@ -10,6 +10,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:enginet/engineer_profile.dart';
 
 class QuestionsScreen extends StatefulWidget {
   const QuestionsScreen({super.key});
@@ -33,6 +34,32 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     super.initState();
     _fetchQuestions();
   }
+  Future<void> _openUserProfile(String username) async {
+  if (username.isEmpty) return;
+
+  try {
+    final owner = await Supabase.instance.client
+        .from('users')
+        .select('id')
+        .eq('username', username)
+        .maybeSingle();
+
+    if (owner == null || owner['id'] == null) return;
+
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EngineerProfileScreen(
+          targetUserId: owner['id'],
+        ),
+      ),
+    );
+  } catch (e) {
+    debugPrint('❌ open profile error: $e');
+  }
+}
 
   Future<void> _fetchQuestions() async {
     try {
@@ -618,9 +645,11 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                       crossAxisAlignment:
                                           CrossAxisAlignment.start,
                                       children: [
-                                        Row(
-                                          children: [
-                                            CircleAvatar(
+                                        GestureDetector(
+  onTap: () => _openUserProfile(username),
+  child: Row(
+    children: [
+      CircleAvatar(
                                               radius: 18,
                                               backgroundImage:
                                                   profileImage.isNotEmpty
@@ -666,7 +695,9 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                               ),
                                             ),
                                           ],
-                                        ),
+                                                
+  ),
+),
                                         const SizedBox(height: 10),
                                         Text(
                                           q["title"]?.toString() ?? "",
@@ -775,6 +806,7 @@ class _AnswerScreenState extends State<AnswerScreen> {
   List _answers = [];
   final _ctrl = TextEditingController();
   final FocusNode _answerFocusNode = FocusNode();
+  Map<String, dynamic>? _currentUser;
 
   bool _isPosting = false;
   StreamSubscription<List<Map<String, dynamic>>>? _answersSub;
@@ -787,6 +819,7 @@ class _AnswerScreenState extends State<AnswerScreen> {
     super.initState();
     _fetchAnswers();
 _startAnswersRealtime();
+_loadCurrentUser();
   }
 
   @override
@@ -829,6 +862,51 @@ void _startAnswersRealtime() {
           _answers = data;
         });
       });
+}
+
+Future<void> _openUserProfile(String username) async {
+  if (username.isEmpty) return;
+
+  try {
+    final owner = await Supabase.instance.client
+        .from('users')
+        .select('id')
+        .eq('username', username)
+        .maybeSingle();
+
+    if (owner == null || owner['id'] == null) return;
+
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EngineerProfileScreen(
+          targetUserId: owner['id'],
+        ),
+      ),
+    );
+  } catch (e) {
+    debugPrint('❌ open profile error: $e');
+  }
+}
+
+Future<void> _loadCurrentUser() async {
+  final email = await SessionManager.getEmail();
+
+  if (email == null) return;
+
+  final user = await Supabase.instance.client
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+
+  if (!mounted) return;
+
+  setState(() {
+    _currentUser = user;
+  });
 }
   Future<void> _fetchAnswers() async {
     try {
@@ -963,6 +1041,102 @@ void _startAnswersRealtime() {
       ),
     );
   }
+  Future<void> _editAnswer(Map<String, dynamic> answer) async {
+  final token = await SessionManager.getToken();
+  if (token == null || token.isEmpty) return;
+
+  final editCtrl = TextEditingController(
+    text: answer['content']?.toString() ?? '',
+  );
+
+  final newText = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Edit Answer'),
+      content: TextField(
+        controller: editCtrl,
+        maxLines: 4,
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, editCtrl.text.trim()),
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+
+  if (newText == null || newText.isEmpty) return;
+
+  final res = await http.put(
+    Uri.parse('${AppConstants.baseUrl}/questions/answers/${answer['id']}'),
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    },
+    body: jsonEncode({
+      'content': newText,
+      'parent_answer_id': answer['parent_answer_id'],
+    }),
+  );
+
+  if (res.statusCode >= 400) {
+    throw Exception(res.body);
+  }
+
+  if (!mounted) return;
+  setState(() {
+    answer['content'] = newText;
+  });
+}
+
+Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Delete Answer'),
+      content: const Text('Are you sure you want to delete this answer?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('No'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text(
+            'Yes, delete',
+            style: TextStyle(color: Colors.red),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed != true) return;
+
+  final token = await SessionManager.getToken();
+  if (token == null || token.isEmpty) return;
+
+  final res = await http.delete(
+    Uri.parse('${AppConstants.baseUrl}/questions/answers/${answer['id']}'),
+    headers: {
+      'Authorization': 'Bearer $token',
+    },
+  );
+
+  if (res.statusCode >= 400) {
+    throw Exception(res.body);
+  }
+
+  if (!mounted) return;
+  setState(() {
+    _answers.removeWhere((a) => a['id'] == answer['id']);
+  });
+}
 
   Widget _buildAnswer(Map<String, dynamic> a, bool isReply) {
   final aProfile = a['profiles'];
@@ -1016,14 +1190,49 @@ void _startAnswersRealtime() {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  aUsername,
-                  style: GoogleFonts.robotoCondensed(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13,
-                    color: Colors.white,
-                  ),
-                ),
+               GestureDetector(
+  onTap: () => _openUserProfile(aUsername),
+  child: Row(
+    children: [
+    Expanded(
+      child: Text(
+        aUsername,
+        style: GoogleFonts.robotoCondensed(
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+          color: Colors.white,
+        ),
+      ),
+    ),
+
+    if (_currentUser != null && a['user_id'] == _currentUser!['id'])
+      PopupMenuButton<String>(
+        icon: const Icon(
+          Icons.more_vert,
+          color: Colors.white,
+          size: 18,
+        ),
+        onSelected: (value) {
+          if (value == 'edit') {
+            _editAnswer(a);
+          } else if (value == 'delete') {
+            _deleteAnswer(a);
+          }
+        },
+        itemBuilder: (context) => const [
+          PopupMenuItem(
+            value: 'edit',
+            child: Text('Edit'),
+          ),
+          PopupMenuItem(
+            value: 'delete',
+            child: Text('Delete'),
+          ),
+        ],
+      ),
+      ],
+  ),
+),
                 const SizedBox(height: 4),
                 if (isReply) _buildParentAnswerPreview(a),
                 Text(
@@ -1121,9 +1330,11 @@ void _startAnswersRealtime() {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
+                GestureDetector(
+  onTap: () => _openUserProfile(questionUsername),
+  child: Row(
+    children: [
+      CircleAvatar(
                       radius: 18,
                       backgroundImage: questionProfileImage.isNotEmpty
                           ? NetworkImage(questionProfileImage)
@@ -1145,8 +1356,9 @@ void _startAnswersRealtime() {
                         color: const Color(0xFF071739),
                       ),
                     ),
-                  ],
-                ),
+                      ],
+  ),
+),
                 const SizedBox(height: 10),
                 Text(
                   widget.question["title"]?.toString() ?? "",

@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
-
+import 'package:enginet/points_helper.dart';
 import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'package:file_picker/file_picker.dart';
@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
+import 'package:enginet/points_helper.dart';
 
 class AddCourseScreen extends StatefulWidget {
   const AddCourseScreen({super.key});
@@ -159,7 +160,8 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
 
       request.fields['title'] = title;
       request.fields['description'] = description;
-      request.fields['instructor_name'] = engineer['username']?.toString() ?? '';
+      request.fields['instructor_name'] =
+          engineer['username']?.toString() ?? '';
       request.fields['instructor_image'] =
           engineer['profile_image']?.toString() ?? '';
 
@@ -197,6 +199,16 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
         throw Exception(body);
       }
 
+      final email = await SessionManager.getEmail();
+
+      final userData = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', email!)
+          .single();
+
+      await addPoints(userData['id'], 10);
+
       if (!mounted) return;
 
       showMessage('Course added successfully');
@@ -212,9 +224,9 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
   }
 
   void showMessage(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   InputDecoration inputDecoration(String hint) {
@@ -424,10 +436,7 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
               ),
               child: Row(
                 children: [
-                  const Icon(
-                    Icons.video_library,
-                    color: Color(0xFFE3C39D),
-                  ),
+                  const Icon(Icons.video_library, color: Color(0xFFE3C39D)),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(

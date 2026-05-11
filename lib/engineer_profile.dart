@@ -98,7 +98,7 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
     currentUserId = currentUserRes['id'] as int;
 
     final targetId = widget.targetUserId ?? currentUserId!;
-    isOwnProfile = (targetId == currentUserId);
+    isOwnProfile = targetId == currentUserId;
 
     final userRes = await _supabase
         .from('users')
@@ -108,51 +108,54 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
 
     final targetUsername = userRes['username'];
 
-    final results = await Future.wait([
-      _supabase
-          .from('posts')
-          .select()
-          .eq('username', targetUsername)
-          .order('created_at', ascending: false),
+    final postsRes = await _supabase
+        .from('posts')
+        .select()
+        .eq('username', targetUsername)
+        .order('created_at', ascending: false);
 
-      _supabase
-          .from('books')
-          .select()
-          .eq('author_username', targetUsername)
-          .order('created_at', ascending: false),
+    final booksRes = await _supabase
+        .from('books')
+        .select()
+        .eq('author_username', targetUsername)
+        .order('created_at', ascending: false);
 
-      _supabase
-          .from('articles')
-          .select()
-          .eq('author_name', targetUsername)
-          .order('created_at', ascending: false),
+    final articlesRes = await _supabase
+        .from('articles')
+        .select()
+        .eq('author_name', targetUsername)
+        .order('created_at', ascending: false);
 
-      _supabase
+    final followersRes = await _supabase
+        .from('follows')
+        .select('id')
+        .eq('following_id', targetId);
+
+    final followingRes = await _supabase
+        .from('follows')
+        .select('id')
+        .eq('follower_id', targetId);
+
+    List followingCheckRes = [];
+
+    if (!isOwnProfile) {
+      followingCheckRes = await _supabase
           .from('follows')
-          .select('id')
-          .eq('following_id', targetId),
-
-      _supabase.from('follows').select('id').eq('follower_id', targetId),
-
-  if (!isOwnProfile)
-    _supabase.from('follows').select()
-        .eq('follower_id', currentUserId!)
-        .eq('following_id', targetId),]);
+          .select()
+          .eq('follower_id', currentUserId!)
+          .eq('following_id', targetId);
+    }
 
     if (!mounted) return;
 
     setState(() {
       user = userRes;
-      posts = results[0] as List;
-      books = results[1] as List;
-      articles = results[2] as List;
-      followersCount = (results[3] as List).length;
-      followingCount = (results[4] as List).length;
-
-      if (!isOwnProfile && results.length > 4) {
-        isFollowing = (results[4] as List).isNotEmpty;
-      }
-
+      posts = postsRes as List;
+      books = booksRes as List;
+      articles = articlesRes as List;
+      followersCount = (followersRes as List).length;
+      followingCount = (followingRes as List).length;
+      isFollowing = followingCheckRes.isNotEmpty;
       isLoading = false;
     });
   } catch (e) {

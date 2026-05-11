@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:enginet/points_helper.dart';
 
 class AddArticleScreen extends StatefulWidget {
   const AddArticleScreen({super.key});
@@ -86,12 +87,22 @@ class _AddArticleScreenState extends State<AddArticleScreen> {
       final username = await SessionManager.getUsername();
       final imageUrl = await _uploadImage();
 
-      await _supabase.from('articles').insert({
-        'title': title,
-        'content': content,
-        'author_name': username?.toString().trim(),
-        'image_url': imageUrl,
-      });
+     await _supabase.from('articles').insert({
+  'title': title,
+  'content': content,
+  'author_name': username?.toString().trim(),
+  'image_url': imageUrl,
+});
+
+final email = await SessionManager.getEmail();
+
+final userData = await _supabase
+    .from('users')
+    .select('id')
+    .eq('email', email!)
+    .single();
+
+await addPoints(userData['id'], 5);
 
       if (!mounted) return;
 

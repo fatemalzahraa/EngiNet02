@@ -195,9 +195,9 @@ def get_my_courses(current_user: dict = Depends(get_current_user)):
 @router.post("/lesson-progress")
 def save_lesson_progress(
     lesson_id: int,
-    is_completed: bool,
+    is_completed: bool = False,
     watched_seconds: int = 0,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_role("student", "engineer", "admin")),
 ):
     db = get_db()
     try:
@@ -212,18 +212,21 @@ def save_lesson_progress(
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
-        completed_value = 1 if is_completed else 0
-
         cursor.execute(
             """
-            INSERT INTO lesson_progress (user_id, lesson_id, is_completed, watched_seconds)
+            INSERT INTO lesson_progress (
+                user_id, lesson_id, is_completed, watched_seconds
+            )
             VALUES (%s, %s, %s, %s)
             ON CONFLICT (user_id, lesson_id)
             DO UPDATE SET
-                is_completed = EXCLUDED.is_completed,
-                watched_seconds = GREATEST(lesson_progress.watched_seconds, EXCLUDED.watched_seconds)
+                is_completed = EXCLUDED.is_completed OR lesson_progress.is_completed,
+                watched_seconds = GREATEST(
+                    lesson_progress.watched_seconds,
+                    EXCLUDED.watched_seconds
+                )
             """,
-            (user["id"], lesson_id, completed_value, watched_seconds),
+            (user["id"], lesson_id, is_completed, watched_seconds),
         )
 
         db.commit()
@@ -238,25 +241,43 @@ def save_lesson_progress(
 
 # ── Get lesson progress for a course ─────────────────────
 @router.get("/lesson-progress/{course_id}")
-def get_lesson_progress(course_id: int, current_user: dict = Depends(get_current_user)):
+def get_lesson_progress(
+    course_id: int,
+    current_user: dict = Depends(require_role("student", "engineer", "admin")),
+):
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+
+        cursor.execute(
+            "SELECT id FROM users WHERE email = %s",
+            (current_user["email"],),
+        )
         user = cursor.fetchone()
+
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
         cursor.execute(
             """
-            SELECT lp.lesson_id, lp.is_completed
+            SELECT lp.lesson_id, lp.is_completed, lp.watched_seconds
             FROM lesson_progress lp
             JOIN lessons l ON l.id = lp.lesson_id
-            WHERE lp.user_id = %s AND l.course_id = %s
+            WHERE lp.user_id = %s
+              AND l.course_id = %s
             """,
             (user["id"], course_id),
         )
+
         rows = cursor.fetchall()
-        return {row["lesson_id"]: row["is_completed"] for row in rows}
+
+        return {
+            str(row["lesson_id"]): {
+                "completed": bool(row["is_completed"]),
+                "watched_seconds": row["watched_seconds"] or 0,
+            }
+            for row in rows
+        }
+
     finally:
         db.close()

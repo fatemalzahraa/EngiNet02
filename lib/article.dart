@@ -5,6 +5,9 @@ import 'article_detail.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:enginet/core/session_manager.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:enginet/core/constants.dart';
 
 class ArticleScreen extends StatefulWidget {
   const ArticleScreen({super.key});
@@ -19,7 +22,9 @@ class _ArticleScreenState extends State<ArticleScreen> {
 
   List<dynamic> allArticles = [];
   List<dynamic> filteredArticles = [];
+  List<dynamic> recommendedArticles = [];
   bool isLoading = true;
+  bool isLoadingRecommended = true;
   bool showSearch = false;
   final TextEditingController _searchController = TextEditingController();
 
@@ -28,12 +33,13 @@ class _ArticleScreenState extends State<ArticleScreen> {
     super.initState();
     _loadCurrentUser();
     loadArticles();
-    
+    loadRecommendedArticles();
   }
+
   Future<void> _loadCurrentUser() async {
-  currentUsername = await SessionManager.getUsername();
-  if (mounted) setState(() {});
-}
+    currentUsername = await SessionManager.getUsername();
+    if (mounted) setState(() {});
+  }
 
   @override
   void dispose() {
@@ -42,48 +48,50 @@ class _ArticleScreenState extends State<ArticleScreen> {
   }
 
   Future<void> _deleteArticle(String id) async {
-  await supabase.from('articles').delete().eq('id', id);
-  loadArticles(); // تحديث الصفحة
-}
-void _editArticle(dynamic article) {
-  final titleController =
-      TextEditingController(text: article['title'] ?? '');
-  final contentController =
-      TextEditingController(text: article['content'] ?? '');
+    await supabase.from('articles').delete().eq('id', id);
+    loadArticles();
+  }
 
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Edit Article'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(controller: titleController),
-          const SizedBox(height: 10),
-          TextField(controller: contentController, maxLines: 4),
+  void _editArticle(dynamic article) {
+    final titleController =
+        TextEditingController(text: article['title'] ?? '');
+    final contentController =
+        TextEditingController(text: article['content'] ?? '');
+
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Article'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: titleController),
+            const SizedBox(height: 10),
+            TextField(controller: contentController, maxLines: 4),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await supabase.from('articles').update({
+                'title': titleController.text.trim(),
+                'content': contentController.text.trim(),
+              }).eq('id', article['id']);
+
+              Navigator.pop(context);
+              loadArticles();
+            },
+            child: const Text('Save'),
+          ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () async {
-            await supabase.from('articles').update({
-              'title': titleController.text.trim(),
-              'content': contentController.text.trim(),
-            }).eq('id', article['id']);
+    );
+  }
 
-            Navigator.pop(context);
-            loadArticles(); // تحديث
-          },
-          child: const Text('Save'),
-        ),
-      ],
-    ),
-  );
-}
   Future<void> loadArticles() async {
     try {
       final data = await supabase
@@ -103,6 +111,31 @@ void _editArticle(dynamic article) {
       debugPrint("Error loading articles: $e");
     }
   }
+
+  Future<void> loadRecommendedArticles() async {
+  try {
+    final token = await SessionManager.getToken();
+
+    final res = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/recommendations'),
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+
+    if (!mounted) return;
+    setState(() {
+      recommendedArticles = data['articles'] ?? [];
+      isLoadingRecommended = false;
+    });
+  } catch (e) {
+    if (!mounted) return;
+    setState(() => isLoadingRecommended = false);
+    debugPrint("Error loading recommended articles: $e");
+  }
+}
 
   void filterArticles(String value) {
     setState(() {
@@ -178,22 +211,150 @@ void _editArticle(dynamic article) {
                   ? const Center(
                       child: CircularProgressIndicator(
                           color: Color(0xFF6C94C6)))
-                  : filteredArticles.isEmpty
-                      ? const Center(
-                          child: Text("No articles found",
-                              style: TextStyle(color: Colors.white)))
-                      : RefreshIndicator(
-                          onRefresh: loadArticles,
-                          child: ListView.builder(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16),
-                            itemCount: filteredArticles.length,
-                            itemBuilder: (context, index) {
-                              final item = filteredArticles[index];
-                              return _buildArticleCard(item);
-                            },
-                          ),
-                        ),
+                  : RefreshIndicator(
+                      onRefresh: () async {
+                        await loadArticles();
+                        await loadRecommendedArticles();
+                      },
+                      child: ListView(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        children: [
+                          // ─── Recommended Articles Section ───
+                          if (recommendedArticles.isNotEmpty || isLoadingRecommended) ...[
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12, top: 4),
+                              child: Text(
+                                "Recommended Articles",
+                                style: GoogleFonts.agbalumo(
+                                  fontSize: 22,
+                                  color: const Color(0xFF6C94C6),
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              height: 220,
+                              child: isLoadingRecommended
+                                  ? const Center(
+                                      child: CircularProgressIndicator(
+                                          color: Color(0xFF6C94C6)))
+                                  : ListView.separated(
+                                      scrollDirection: Axis.horizontal,
+                                      itemCount: recommendedArticles.length,
+                                      separatorBuilder: (_, __) =>
+                                          const SizedBox(width: 12),
+                                      itemBuilder: (context, index) {
+                                        final item =
+                                            recommendedArticles[index];
+                                        return _buildRecommendedArticleCard(
+                                            item);
+                                      },
+                                    ),
+                            ),
+                            const SizedBox(height: 20),
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: Text(
+                                "All Articles",
+                                style: GoogleFonts.agbalumo(
+                                  fontSize: 22,
+                                  color: const Color(0xFF6C94C6),
+                                ),
+                              ),
+                            ),
+                          ],
+
+                          // ─── All Articles ───
+                          if (filteredArticles.isEmpty)
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(32),
+                                child: Text("No articles found",
+                                    style:
+                                        TextStyle(color: Colors.white)),
+                              ),
+                            )
+                          else
+                            ...filteredArticles
+                                .map((item) => _buildArticleCard(item))
+                                .toList(),
+                        ],
+                      ),
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecommendedArticleCard(dynamic item) {
+    final title = item['title']?.toString() ?? '';
+    final imageUrl = item['image_url']?.toString() ?? '';
+    final articleId = item['id']?.toString() ?? '';
+
+    return GestureDetector(
+      onTap: () {
+        if (articleId.isEmpty) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                ArticleDetailScreen(articleId: articleId),
+          ),
+        );
+      },
+      child: Container(
+        width: 160,
+        decoration: BoxDecoration(
+          color: const Color(0xFF1E3A5F),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ClipRRect(
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(16),
+                topRight: Radius.circular(16),
+              ),
+              child: imageUrl.isNotEmpty
+                  ? CachedNetworkImage(
+                      imageUrl: imageUrl,
+                      height: 120,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorWidget: (c, u, e) => Container(
+                        height: 120,
+                        color: const Color(0xFF2A4A6F),
+                        child: const Icon(Icons.article,
+                            size: 40, color: Colors.white54),
+                      ),
+                      placeholder: (c, u) => Shimmer.fromColors(
+                        baseColor: const Color(0xFF1A2F55),
+                        highlightColor: const Color(0xFF2A4A7F),
+                        child:
+                            Container(height: 120, color: Colors.white),
+                      ),
+                    )
+                  : Container(
+                      height: 120,
+                      color: const Color(0xFF2A4A6F),
+                      child: const Icon(Icons.article,
+                          size: 40, color: Colors.white54),
+                    ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: Text(
+                title,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
           ],
         ),
@@ -209,8 +370,6 @@ void _editArticle(dynamic article) {
     final isOwner = authorName == currentUsername;
     final rating =
         double.tryParse(item['rating']?.toString() ?? '0') ?? 0.0;
-
-    // ✅ يدعم UUID (String) وأيضاً int
     final articleId = item['id']?.toString() ?? '';
 
     return GestureDetector(
@@ -240,21 +399,23 @@ void _editArticle(dynamic article) {
               ),
               child: imageUrl.isNotEmpty
                   ? CachedNetworkImage(
-        imageUrl: imageUrl,
-        height: 200,
-        width: double.infinity,
-        fit: BoxFit.cover,
-        errorWidget: (c, u, e) => Container(
-          height: 200,
-          color: const Color(0xFF2A4A6F),
-          child: const Icon(Icons.article, size: 60, color: Colors.white54),
-        ),
-        placeholder: (c, u) => Shimmer.fromColors(
-          baseColor: const Color(0xFF1A2F55),
-          highlightColor: const Color(0xFF2A4A7F),
-          child: Container(height: 200, color: Colors.white),
-        ),
-      )
+                      imageUrl: imageUrl,
+                      height: 200,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorWidget: (c, u, e) => Container(
+                        height: 200,
+                        color: const Color(0xFF2A4A6F),
+                        child: const Icon(Icons.article,
+                            size: 60, color: Colors.white54),
+                      ),
+                      placeholder: (c, u) => Shimmer.fromColors(
+                        baseColor: const Color(0xFF1A2F55),
+                        highlightColor: const Color(0xFF2A4A7F),
+                        child:
+                            Container(height: 200, color: Colors.white),
+                      ),
+                    )
                   : Container(
                       height: 200,
                       color: const Color(0xFF2A4A6F),
@@ -268,38 +429,41 @@ void _editArticle(dynamic article) {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
-  children: [
-    Expanded(
-      child: Text(
-        title,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          decoration: TextDecoration.underline,
-          decorationColor: Colors.white,
-        ),
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-    ),
-    if (isOwner)
-      PopupMenuButton<String>(
-        icon: const Icon(Icons.more_vert, color: Colors.white),
-        onSelected: (value) {
-  if (value == 'delete') {
-    _deleteArticle(articleId);
-  } else if (value == 'edit') {
-    _editArticle(item);
-  }
-},
-        itemBuilder: (context) => const [
-          PopupMenuItem(value: 'edit', child: Text('Edit')),
-          PopupMenuItem(value: 'delete', child: Text('Delete')),
-        ],
-      ),
-  ],
-),
+                    children: [
+                      Expanded(
+                        child: Text(
+                          title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            decoration: TextDecoration.underline,
+                            decorationColor: Colors.white,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isOwner)
+                        PopupMenuButton<String>(
+                          icon: const Icon(Icons.more_vert,
+                              color: Colors.white),
+                          onSelected: (value) {
+                            if (value == 'delete') {
+                              _deleteArticle(articleId);
+                            } else if (value == 'edit') {
+                              _editArticle(item);
+                            }
+                          },
+                          itemBuilder: (context) => const [
+                            PopupMenuItem(
+                                value: 'edit', child: Text('Edit')),
+                            PopupMenuItem(
+                                value: 'delete', child: Text('Delete')),
+                          ],
+                        ),
+                    ],
+                  ),
                   const SizedBox(height: 12),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
