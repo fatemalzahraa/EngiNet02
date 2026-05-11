@@ -9,6 +9,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:video_player/video_player.dart';
 import 'course_comments_screen.dart';
+import 'package:enginet/engineer_profile.dart';
+import 'package:enginet/points_helper.dart';
 
 class CourseDetailScreen extends StatefulWidget {
   final String courseId;
@@ -23,41 +25,32 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 
   Map<String, dynamic>? course;
   List<dynamic> lessons = [];
-  Map<int, bool> _progress = {};
+ Map<int, bool> _progress = {};
+Map<int, int> _watchedSeconds = {};
 
   bool isLoading = true;
   bool _courseStarted = false;
   int commentsCount = 0;
   Map<String, dynamic>? _currentUser;
-bool isLiked = false;
-int selectedRating = 0;
-bool _isProcessingLike = false;
-bool _isProcessingRating = false;
-final TextEditingController _commentController = TextEditingController();
-List<Map<String, dynamic>> comments = [];
-int _totalDurationSeconds = 0;
-bool _isCalculatingDuration = false;
+  bool isLiked = false;
+  int selectedRating = 0;
+  bool _isProcessingLike = false;
+  bool _isProcessingRating = false;
+  final TextEditingController _commentController = TextEditingController();
+  List<Map<String, dynamic>> comments = [];
+  int _totalDurationSeconds = 0;
+  bool _isCalculatingDuration = false;
 
-String get _durationLabel {
-  final totalSeconds = _totalDurationSeconds;
-
-  if (totalSeconds < 60) {
-    return '${totalSeconds}s';
+  String get _durationLabel {
+    final totalSeconds = _totalDurationSeconds;
+    if (totalSeconds < 60) return '${totalSeconds}s';
+    final totalMinutes = totalSeconds ~/ 60;
+    if (totalMinutes < 60) return '${totalMinutes}m';
+    final hours = totalMinutes ~/ 60;
+    final minutes = totalMinutes % 60;
+    if (minutes == 0) return '${hours}h';
+    return '${hours}h ${minutes}m';
   }
-
-  final totalMinutes = totalSeconds ~/ 60;
-
-  if (totalMinutes < 60) {
-    return '${totalMinutes}m';
-  }
-
-  final hours = totalMinutes ~/ 60;
-  final minutes = totalMinutes % 60;
-
-  if (minutes == 0) return '${hours}h';
-
-  return '${hours}h ${minutes}m';
-}
 
   @override
   void initState() {
@@ -65,326 +58,340 @@ String get _durationLabel {
     _loadAll();
   }
 
-  Future<void> _loadAll() async {
-  _currentUser = await _fetchCurrentUser();
-  await Future.wait([
-    loadCourse(),
-    _loadProgress(),
-    _loadComments(),
-    _checkLike(),
-    _loadMyRating(),
-  ]);
-}
+  // ── Completion reward ────────────────────────────────────────────────────
+  Future<void> _giveCompletionReward() async {
+    if (_currentUser == null || course == null) return;
+    if (_currentUser!['role'] != 'student') return;
 
-Future<void> _confirmDeleteCourse() async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text("Delete Course"),
-      content: const Text("Are you sure you want to delete this course?"),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text("Cancel"),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text(
-            "Delete",
-            style: TextStyle(color: Colors.red),
-          ),
-        ),
-      ],
-    ),
-  );
-
-  if (confirmed == true) {
-    await _deleteCourse();
-  }
-}
-
-Future<void> _deleteCourse() async {
-  try {
-    final courseId = int.parse(widget.courseId);
-
-   
-    final lessons = await supabase
-        .from('lessons')
-        .select('id')
-        .eq('course_id', courseId);
-
-    final lessonIds =
-        (lessons as List).map((e) => e['id'] as int).toList();
-
-    
-    if (lessonIds.isNotEmpty) {
-      await supabase
-          .from('lesson_progress')
-          .delete()
-          .inFilter('lesson_id', lessonIds);
-    }
-
-    
-    await supabase
-        .from('lessons')
-        .delete()
-        .eq('course_id', courseId);
-
-    
-    await supabase
-        .from('student_courses')
-        .delete()
-        .eq('course_id', courseId);
-
-   
-    await supabase
-        .from('course_ratings')
-        .delete()
-        .eq('course_id', courseId);
-
-   
-    await supabase
-        .from('course_comments')
-        .delete()
-        .eq('course_id', courseId);
-
-   
-    await supabase
-        .from('courses')
-        .delete()
-        .eq('id', courseId);
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Course deleted successfully'),
-      ),
-    );
-
-    Navigator.pop(context, true);
-  } catch (e) {
-    debugPrint('❌ deleteCourse error: $e');
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Delete failed: $e'),
-      ),
-    );
-  }
-}
-
-Future<Map<String, dynamic>?> _fetchCurrentUser() async {
-  final email = await SessionManager.getEmail();
-  if (email == null) return null;
-
-  return await supabase
-      .from('users')
-      .select('id, username, profile_image, role')
-      .eq('email', email)
-      .maybeSingle();
-}
-
-Future<void> _checkLike() async {
-  if (_currentUser == null) return;
-
-  final res = await supabase
-      .from('course_likes')
-      .select()
-      .eq('user_id', _currentUser!['id'])
-      .eq('course_id', int.parse(widget.courseId))
-      .maybeSingle();
-
-  if (mounted) setState(() => isLiked = res != null);
-}
-
-Future<void> _toggleLike() async {
-  if (_currentUser == null || course == null || _isProcessingLike) return;
-
-  _isProcessingLike = true;
-  final wasLiked = isLiked;
-  final currentLikes = course!['likes'] ?? 0;
-
-  setState(() {
-    isLiked = !wasLiked;
-    course!['likes'] = wasLiked ? currentLikes - 1 : currentLikes + 1;
-  });
-
-  try {
-    if (wasLiked) {
-      await supabase
-          .from('course_likes')
-          .delete()
+    try {
+      final existing = await supabase
+          .from('course_completions')
+          .select()
           .eq('user_id', _currentUser!['id'])
-          .eq('course_id', int.parse(widget.courseId));
-    } else {
-      await supabase.from('course_likes').insert({
+          .eq('course_id', int.parse(widget.courseId))
+          .maybeSingle();
+
+      if (existing != null) return;
+
+      await supabase.from('course_completions').insert({
         'user_id': _currentUser!['id'],
         'course_id': int.parse(widget.courseId),
       });
+
+      await addPoints(_currentUser!['id'], 10);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('🎉 You earned 10 points for completing the course!'),
+        ),
+      );
+    } catch (e) {
+      debugPrint('❌ completion reward error: $e');
     }
-
-    await supabase.from('courses').update({
-      'likes': course!['likes'],
-    }).eq('id', int.parse(widget.courseId));
-  } catch (e) {
-    setState(() {
-      isLiked = wasLiked;
-      course!['likes'] = currentLikes;
-    });
-  } finally {
-    _isProcessingLike = false;
   }
-}
 
-Future<void> _loadMyRating() async {
-  if (_currentUser == null) return;
+  // ── Open instructor profile ───────────────────────────────────────────────
+  Future<void> _openInstructorProfile() async {
+    final instructorUsername = course?['instructor_name']?.toString() ?? '';
+    if (instructorUsername.isEmpty) return;
 
-  final res = await supabase
-      .from('course_ratings')
-      .select('rating')
-      .eq('user_id', _currentUser!['id'])
-      .eq('course_id', int.parse(widget.courseId))
-      .maybeSingle();
+    try {
+      final owner = await supabase
+          .from('users')
+          .select('id')
+          .eq('username', instructorUsername)
+          .maybeSingle();
 
-  if (mounted) setState(() => selectedRating = res?['rating'] ?? 0);
-}
+      if (owner == null || owner['id'] == null) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User profile not found')),
+        );
+        return;
+      }
 
-Future<void> _rateCourse(int ratingValue) async {
-  if (_currentUser == null || course == null || _isProcessingRating) return;
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EngineerProfileScreen(targetUserId: owner['id']),
+        ),
+      );
+    } catch (e) {
+      debugPrint('❌ open instructor profile error: $e');
+    }
+  }
 
-  _isProcessingRating = true;
+  // ── Load all ─────────────────────────────────────────────────────────────
+  Future<void> _loadAll() async {
+    _currentUser = await _fetchCurrentUser();
+    await Future.wait([
+      loadCourse(),
+      _loadProgress(),
+      _loadComments(),
+      _checkLike(),
+      _loadMyRating(),
+    ]);
+  }
 
-  setState(() {
-    selectedRating = selectedRating == ratingValue ? 0 : ratingValue;
-  });
+  // ── Delete course ─────────────────────────────────────────────────────────
+  Future<void> _confirmDeleteCourse() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Course'),
+        content: const Text('Are you sure you want to delete this course?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
 
-  try {
-    if (selectedRating == 0) {
-      await supabase
-          .from('course_ratings')
-          .delete()
-          .eq('user_id', _currentUser!['id'])
-          .eq('course_id', int.parse(widget.courseId));
-    } else {
-      await supabase.from('course_ratings').upsert(
-        {
-          'user_id': _currentUser!['id'],
-          'course_id': int.parse(widget.courseId),
-          'rating': selectedRating,
-        },
-        onConflict: 'user_id,course_id',
+    if (confirmed == true) await _deleteCourse();
+  }
+
+  Future<void> _deleteCourse() async {
+    try {
+      final courseId = int.parse(widget.courseId);
+
+      final lessonRows = await supabase
+          .from('lessons')
+          .select('id')
+          .eq('course_id', courseId);
+
+      final lessonIds =
+          (lessonRows as List).map((e) => e['id'] as int).toList();
+
+      if (lessonIds.isNotEmpty) {
+        await supabase
+            .from('lesson_progress')
+            .delete()
+            .inFilter('lesson_id', lessonIds);
+      }
+
+      await supabase.from('lessons').delete().eq('course_id', courseId);
+      await supabase.from('student_courses').delete().eq('course_id', courseId);
+      await supabase.from('course_ratings').delete().eq('course_id', courseId);
+      await supabase.from('course_comments').delete().eq('course_id', courseId);
+      await supabase.from('courses').delete().eq('id', courseId);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Course deleted successfully')),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      debugPrint('❌ deleteCourse error: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Delete failed: $e')),
       );
     }
+  }
 
-    final allRatings = await supabase
+  // ── Current user ─────────────────────────────────────────────────────────
+  Future<Map<String, dynamic>?> _fetchCurrentUser() async {
+    final email = await SessionManager.getEmail();
+    if (email == null) return null;
+    return await supabase
+        .from('users')
+        .select('id, username, profile_image, role')
+        .eq('email', email)
+        .maybeSingle();
+  }
+
+  // ── Like ─────────────────────────────────────────────────────────────────
+  Future<void> _checkLike() async {
+    if (_currentUser == null) return;
+    final res = await supabase
+        .from('course_likes')
+        .select()
+        .eq('user_id', _currentUser!['id'])
+        .eq('course_id', int.parse(widget.courseId))
+        .maybeSingle();
+    if (mounted) setState(() => isLiked = res != null);
+  }
+
+  Future<void> _toggleLike() async {
+    if (_currentUser == null || course == null || _isProcessingLike) return;
+    _isProcessingLike = true;
+    final wasLiked = isLiked;
+    final currentLikes = course!['likes'] ?? 0;
+
+    setState(() {
+      isLiked = !wasLiked;
+      course!['likes'] = wasLiked ? currentLikes - 1 : currentLikes + 1;
+    });
+
+    try {
+      if (wasLiked) {
+        await supabase
+            .from('course_likes')
+            .delete()
+            .eq('user_id', _currentUser!['id'])
+            .eq('course_id', int.parse(widget.courseId));
+      } else {
+        await supabase.from('course_likes').insert({
+          'user_id': _currentUser!['id'],
+          'course_id': int.parse(widget.courseId),
+        });
+      }
+      await supabase
+          .from('courses')
+          .update({'likes': course!['likes']})
+          .eq('id', int.parse(widget.courseId));
+    } catch (e) {
+      setState(() {
+        isLiked = wasLiked;
+        course!['likes'] = currentLikes;
+      });
+    } finally {
+      _isProcessingLike = false;
+    }
+  }
+
+  // ── Rating ────────────────────────────────────────────────────────────────
+  Future<void> _loadMyRating() async {
+    if (_currentUser == null) return;
+    final res = await supabase
         .from('course_ratings')
         .select('rating')
-        .eq('course_id', int.parse(widget.courseId));
-
-    double avg = 0.0;
-    final list = allRatings as List;
-    if (list.isNotEmpty) {
-      final sum = list.fold<int>(0, (p, r) => p + (r['rating'] as int));
-      avg = sum / list.length;
-    }
-
-    await supabase.from('courses').update({
-      'rating': avg.toStringAsFixed(1),
-    }).eq('id', int.parse(widget.courseId));
-
-    if (mounted) setState(() => course!['rating'] = avg.toStringAsFixed(1));
-  } finally {
-    _isProcessingRating = false;
+        .eq('user_id', _currentUser!['id'])
+        .eq('course_id', int.parse(widget.courseId))
+        .maybeSingle();
+    if (mounted) setState(() => selectedRating = res?['rating'] ?? 0);
   }
-}
 
-Future<void> _loadComments() async {
-  final res = await supabase
-      .from('course_comments')
-      .select()
-      .eq('course_id', int.parse(widget.courseId))
-      .order('created_at', ascending: true);
+  Future<void> _rateCourse(int ratingValue) async {
+    if (_currentUser == null || course == null || _isProcessingRating) return;
+    _isProcessingRating = true;
 
-  if (mounted) {
     setState(() {
-      comments = List<Map<String, dynamic>>.from(res as List);
-      commentsCount = comments.length;
-    });
-  }
-}
-
-Future<void> _addComment() async {
-  if (_currentUser == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Please login first')),
-    );
-    return;
-  }
-
-  final text = _commentController.text.trim();
-  if (text.isEmpty) return;
-
-  try {
-    await supabase.from('course_comments').insert({
-      'course_id': int.parse(widget.courseId),
-      'comment_user_id': _currentUser!['id'],
-      'username': _currentUser!['username'],
-      'profile_image': _currentUser!['profile_image'],
-      'content': text,
+      selectedRating = selectedRating == ratingValue ? 0 : ratingValue;
     });
 
-    _commentController.clear();
-    await _loadComments();
+    try {
+      if (selectedRating == 0) {
+        await supabase
+            .from('course_ratings')
+            .delete()
+            .eq('user_id', _currentUser!['id'])
+            .eq('course_id', int.parse(widget.courseId));
+      } else {
+        await supabase.from('course_ratings').upsert(
+          {
+            'user_id': _currentUser!['id'],
+            'course_id': int.parse(widget.courseId),
+            'rating': selectedRating,
+          },
+          onConflict: 'user_id,course_id',
+        );
+      }
 
-  } catch (e) {
-    debugPrint("❌ ERROR COMMENT: $e");
+      final allRatings = await supabase
+          .from('course_ratings')
+          .select('rating')
+          .eq('course_id', int.parse(widget.courseId));
+
+      double avg = 0.0;
+      final list = allRatings as List;
+      if (list.isNotEmpty) {
+        final sum = list.fold<int>(0, (p, r) => p + (r['rating'] as int));
+        avg = sum / list.length;
+      }
+
+      await supabase
+          .from('courses')
+          .update({'rating': avg.toStringAsFixed(1)})
+          .eq('id', int.parse(widget.courseId));
+
+      if (mounted) setState(() => course!['rating'] = avg.toStringAsFixed(1));
+    } finally {
+      _isProcessingRating = false;
+    }
   }
-}
-Future<void> _loadCommentsCount() async {
-  try {
+
+  // ── Comments ─────────────────────────────────────────────────────────────
+  Future<void> _loadComments() async {
     final res = await supabase
         .from('course_comments')
-        .select('id')
-        .eq('course_id', int.parse(widget.courseId));
+        .select()
+        .eq('course_id', int.parse(widget.courseId))
+        .order('created_at', ascending: true);
 
-    if (!mounted) return;
-    setState(() => commentsCount = (res as List).length);
-  } catch (e) {
-    debugPrint('❌ Error loading course comments count: $e');
+    if (mounted) {
+      setState(() {
+        comments = List<Map<String, dynamic>>.from(res as List);
+        commentsCount = comments.length;
+      });
+    }
   }
-}
+
+  Future<void> _addComment() async {
+    if (_currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please login first')),
+      );
+      return;
+    }
+    final text = _commentController.text.trim();
+    if (text.isEmpty) return;
+
+    try {
+      await supabase.from('course_comments').insert({
+        'course_id': int.parse(widget.courseId),
+        'comment_user_id': _currentUser!['id'],
+        'username': _currentUser!['username'],
+        'profile_image': _currentUser!['profile_image'],
+        'content': text,
+      });
+      _commentController.clear();
+      await _loadComments();
+    } catch (e) {
+      debugPrint('❌ ERROR COMMENT: $e');
+    }
+  }
+
+  // ── Lesson progress ───────────────────────────────────────────────────────
   Future<void> _saveLessonProgress(
-  int lessonId, {
-  required bool completed,
-  required int watchedSeconds,
-}) async {
-  final token = await SessionManager.getToken();
-  if (token == null || token.isEmpty) return;
+    int lessonId, {
+    required bool completed,
+    required int watchedSeconds,
+  }) async {
+    final token = await SessionManager.getToken();
 
-  final res = await http.post(
-    Uri.parse(
-      '${AppConstants.baseUrl}/profile/lesson-progress'
-      '?lesson_id=$lessonId'
-      '&is_completed=$completed'
-      '&watched_seconds=$watchedSeconds',
-    ),
-    headers: {'Authorization': 'Bearer $token'},
-  );
+if (token == null || token.isEmpty) return;
 
-  debugPrint('STATUS = ${res.statusCode}');
-  debugPrint('BODY = ${res.body}');
+    final res = await http.post(
+      Uri.parse(
+        '${AppConstants.baseUrl}/profile/lesson-progress'
+        '?lesson_id=$lessonId'
+        '&is_completed=$completed'
+        '&watched_seconds=$watchedSeconds',
+      ),
+      headers: {'Authorization': 'Bearer $token'},
+    );
 
-  if (res.statusCode == 200 && completed) {
-    setState(() {
-      _progress[lessonId] = true;
-      _courseStarted = true;
-    });
+    debugPrint('STATUS = ${res.statusCode}');
+    debugPrint('BODY = ${res.body}');
+
+    if (res.statusCode == 200 && completed) {
+      setState(() {
+        _progress[lessonId] = true;
+        _courseStarted = true;
+      });
+    }
   }
-}
 
+  // ── Load course ───────────────────────────────────────────────────────────
   Future<void> loadCourse() async {
     try {
       final courseRes = await supabase
@@ -412,35 +419,32 @@ Future<void> _loadCommentsCount() async {
       setState(() => isLoading = false);
     }
   }
+
   Future<void> _calculateVideosDuration(List<dynamic> courseLessons) async {
-  if (_isCalculatingDuration) return;
-  _isCalculatingDuration = true;
+    if (_isCalculatingDuration) return;
+    _isCalculatingDuration = true;
 
-  int totalSeconds = 0;
-
-  for (final lesson in courseLessons) {
-    final videoUrl = lesson['video_url']?.toString() ?? '';
-    if (videoUrl.isEmpty) continue;
-
-    try {
-      final controller = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
-      await controller.initialize();
-
-      totalSeconds += controller.value.duration.inSeconds;
-
-      await controller.dispose();
-    } catch (e) {
-      debugPrint('❌ Duration error: $e');
+    int totalSeconds = 0;
+    for (final lesson in courseLessons) {
+      final videoUrl = lesson['video_url']?.toString() ?? '';
+      if (videoUrl.isEmpty) continue;
+      try {
+        final controller =
+            VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+        await controller.initialize();
+        totalSeconds += controller.value.duration.inSeconds;
+        await controller.dispose();
+      } catch (e) {
+        debugPrint('❌ Duration error: $e');
+      }
     }
+
+    if (!mounted) return;
+    setState(() {
+      _totalDurationSeconds = totalSeconds;
+      _isCalculatingDuration = false;
+    });
   }
-
-  if (!mounted) return;
-
-  setState(() {
-    _totalDurationSeconds = totalSeconds;
-    _isCalculatingDuration = false;
-  });
-}
 
   Future<void> _loadProgress() async {
     try {
@@ -448,7 +452,8 @@ Future<void> _loadCommentsCount() async {
       if (token == null || token.isEmpty) return;
 
       final res = await http.get(
-        Uri.parse('${AppConstants.baseUrl}/profile/lesson-progress/${widget.courseId}'),
+        Uri.parse(
+            '${AppConstants.baseUrl}/profile/lesson-progress/${widget.courseId}'),
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -456,83 +461,73 @@ Future<void> _loadCommentsCount() async {
         final Map<String, dynamic> data = jsonDecode(res.body);
         if (!mounted) return;
         setState(() {
-          _progress = data.map((k, v) {
-  final completed = v == true || v == 1 || v.toString() == '1';
-  return MapEntry(int.parse(k), completed);
+  _progress = {};
+  _watchedSeconds = {};
+
+  data.forEach((k, v) {
+    final lessonId = int.parse(k);
+
+    if (v is Map) {
+      _progress[lessonId] =
+          v['completed'] == true || v['completed'] == 1;
+      _watchedSeconds[lessonId] =
+          int.tryParse(v['watched_seconds'].toString()) ?? 0;
+    } else {
+      _progress[lessonId] =
+          v == true || v == 1 || v.toString() == '1';
+      _watchedSeconds[lessonId] = 0;
+    }
+  });
+
+  _courseStarted = _progress.isNotEmpty || _watchedSeconds.isNotEmpty;
 });
-          _courseStarted = _progress.isNotEmpty;
-        });
       }
     } catch (e) {
       debugPrint('❌ Error loading progress: $e');
     }
   }
 
-  Future<void> _saveLessonCompleted(int lessonId) async {
-  final token = await SessionManager.getToken();
-
-  if (token == null || token.isEmpty) return;
-
-  final res = await http.post(
-    Uri.parse(
-      '${AppConstants.baseUrl}/profile/lesson-progress'
-      '?lesson_id=$lessonId&is_completed=true',
-    ),
-    headers: {'Authorization': 'Bearer $token'},
-  );
-
-  debugPrint('STATUS = ${res.statusCode}');
-  debugPrint('BODY = ${res.body}');
-
-  if (res.statusCode == 200) {
-    if (!mounted) return;
-
-    setState(() {
-      _progress[lessonId] = true;
-      _courseStarted = true;
-    });
-  }
-}
-
+  // ── Start course ──────────────────────────────────────────────────────────
   Future<void> _startCourse() async {
-  try {
-    final token = await SessionManager.getToken();
+    try {
+      final token = await SessionManager.getToken();
+      debugPrint('TOKEN USED = $token');
 
-    if (token == null || token.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login first')),
-      );
-      return;
-    }
-
-    final res = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/courses/${widget.courseId}/start'),
-      headers: {'Authorization': 'Bearer $token'},
-    );
-
-    debugPrint('START COURSE STATUS: ${res.statusCode}');
-    debugPrint('START COURSE BODY: ${res.body}');
-
-    if (res.statusCode != 200) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Start failed: ${res.body}')),
-      );
-      return;
-    }
-
-    setState(() => _courseStarted = true);
-
-    if (lessons.isNotEmpty) {
-      _openLesson(0);
-    }
-  } catch (e) {
-    debugPrint('❌ Error starting course: $e');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error starting course: $e')),
-    );
-  }
+if (token == null || token.isEmpty) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Please login first')),
+  );
+  return;
 }
 
+      final res = await http.post(
+        Uri.parse(
+            '${AppConstants.baseUrl}/courses/${widget.courseId}/start'),
+        headers: {
+  'Authorization': 'Bearer $token',
+},
+      );
+
+      if (res.statusCode != 200) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Start failed: ${res.body}')),
+        );
+        return;
+      }
+
+      setState(() => _courseStarted = true);
+      if (lessons.isNotEmpty) _openLesson(0);
+    } catch (e) {
+      debugPrint('❌ Error starting course: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error starting course: $e')),
+      );
+    }
+  }
+
+  // ── Progress helpers ──────────────────────────────────────────────────────
   int get _completedCount => _progress.values.where((v) => v).length;
 
   double get _progressPercent {
@@ -542,13 +537,12 @@ Future<void> _loadCommentsCount() async {
 
   bool _canOpenLesson(int index) {
     if (index == 0) return true;
-
-    final previousLesson = lessons[index - 1];
-    final previousLessonId = previousLesson['id'] as int? ?? 0;
-
+    final previousLessonId =
+        lessons[index - 1]['id'] as int? ?? 0;
     return _progress[previousLessonId] == true;
   }
 
+  // ── Open lesson ───────────────────────────────────────────────────────────
   Future<void> _openLesson(int index) async {
   if (!_canOpenLesson(index)) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -564,22 +558,44 @@ Future<void> _loadCommentsCount() async {
 
   if (videoUrl.isEmpty) return;
 
-  final completed = await Navigator.push<bool>(
+  final result = await Navigator.push<Map<String, dynamic>>(
     context,
     MaterialPageRoute(
       builder: (_) => LessonVideoPlayerScreen(
         title: title,
         videoUrl: videoUrl,
+        startAtSeconds: _watchedSeconds[lessonId] ?? 0,
       ),
     ),
   );
 
-  if (completed == true) {
-    await _saveLessonProgress(
-  lessonId,
-  completed: true,
-  watchedSeconds: 0,
-);
+  if (result == null) return;
+
+  final completed = result['completed'] == true;
+  final watchedSeconds =
+      int.tryParse(result['watched_seconds'].toString()) ?? 0;
+
+  await _saveLessonProgress(
+    lessonId,
+    completed: completed,
+    watchedSeconds: watchedSeconds,
+  );
+
+  setState(() {
+    _watchedSeconds[lessonId] = watchedSeconds;
+
+    if (completed) {
+      _progress[lessonId] = true;
+      _courseStarted = true;
+    }
+  });
+
+  if (completed) {
+    final completedLessons = _progress.values.where((v) => v).length;
+
+    if (completedLessons >= lessons.length) {
+      await _giveCompletionReward();
+    }
 
     final nextIndex = index + 1;
     if (mounted && nextIndex < lessons.length) {
@@ -590,12 +606,14 @@ Future<void> _loadCommentsCount() async {
   }
 }
 
+  // ── Build ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Scaffold(
         backgroundColor: Color(0xFF071739),
-        body: Center(child: CircularProgressIndicator(color: Color(0xFF6C94C6))),
+        body: Center(
+            child: CircularProgressIndicator(color: Color(0xFF6C94C6))),
       );
     }
 
@@ -603,7 +621,8 @@ Future<void> _loadCommentsCount() async {
       return const Scaffold(
         backgroundColor: Color(0xFF071739),
         body: Center(
-          child: Text('Course not found', style: TextStyle(color: Colors.white)),
+          child: Text('Course not found',
+              style: TextStyle(color: Colors.white)),
         ),
       );
     }
@@ -612,75 +631,77 @@ Future<void> _loadCommentsCount() async {
     final imageUrl = course!['image_url']?.toString() ?? '';
     final instructorName = course!['instructor_name']?.toString() ?? '';
     final instructorImage = course!['instructor_image']?.toString() ?? '';
-    final durationHours = course!['duration_hours'] ?? 0;
-    final rating = double.tryParse(course!['rating']?.toString() ?? '0') ?? 0.0;
+    final rating =
+        double.tryParse(course!['rating']?.toString() ?? '0') ?? 0.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFF2C3E50),
       body: Column(
         children: [
-        Stack(
-  children: [
-    Container(
-      height: 250,
-      width: double.infinity,
-      color: const Color(0xFF1a237e),
-      child: imageUrl.isNotEmpty
-          ? CachedNetworkImage(
-              imageUrl: imageUrl,
-              height: 250,
-              width: double.infinity,
-              fit: BoxFit.cover,
-              errorWidget: (c, u, e) =>
-                  const Icon(Icons.play_circle, size: 80, color: Colors.white54),
-              placeholder: (c, u) => Shimmer.fromColors(
-                baseColor: const Color(0xFF1A2F55),
-                highlightColor: const Color(0xFF2A4A7F),
-                child: Container(height: 250, color: Colors.white),
+          Stack(
+            children: [
+              Container(
+                height: 250,
+                width: double.infinity,
+                color: const Color(0xFF1a237e),
+                child: imageUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        height: 250,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                        errorWidget: (c, u, e) => const Icon(
+                            Icons.play_circle,
+                            size: 80,
+                            color: Colors.white54),
+                        placeholder: (c, u) => Shimmer.fromColors(
+                          baseColor: const Color(0xFF1A2F55),
+                          highlightColor: const Color(0xFF2A4A7F),
+                          child:
+                              Container(height: 250, color: Colors.white),
+                        ),
+                      )
+                    : const Icon(Icons.play_circle,
+                        size: 80, color: Colors.white54),
               ),
-            )
-          : const Icon(Icons.play_circle, size: 80, color: Colors.white54),
-    ),
-
-    Positioned(
-      top: 40,
-      left: 16,
-      child: GestureDetector(
-        onTap: () => Navigator.pop(context),
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: const BoxDecoration(
-            color: Color(0xFFE3C39D),
-            shape: BoxShape.circle,
+              Positioned(
+                top: 40,
+                left: 16,
+                child: GestureDetector(
+                  onTap: () => Navigator.pop(context),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFE3C39D),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.arrow_back, color: Colors.black),
+                  ),
+                ),
+              ),
+              if (_currentUser != null &&
+                  (_currentUser!['username'] ==
+                          course!['instructor_name'] ||
+                      _currentUser!['role'] == 'admin'))
+                Positioned(
+                  top: 40,
+                  right: 16,
+                  child: GestureDetector(
+                    onTap: _confirmDeleteCourse,
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.delete, color: Colors.white),
+                    ),
+                  ),
+                ),
+            ],
           ),
-          child: const Icon(Icons.arrow_back, color: Colors.black),
-        ),
-      ),
-    ),
-
-    if (_currentUser != null &&
-        (_currentUser!['username'] == course!['instructor_name'] ||
-            _currentUser!['role'] == 'admin'))
-      Positioned(
-        top: 40,
-        right: 16,
-        child: GestureDetector(
-          onTap: _confirmDeleteCourse,
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: const BoxDecoration(
-              color: Colors.red,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.delete, color: Colors.white),
-          ),
-        ),
-      ),
-  ],
-),
-
           Expanded(
             child: Container(
               color: const Color(0xFF4A6FA5).withValues(alpha: 0.5),
@@ -694,7 +715,8 @@ Future<void> _loadCommentsCount() async {
                         GestureDetector(
                           onTap: _courseStarted ? null : _startCourse,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
                             decoration: BoxDecoration(
                               color: const Color(0xFF2C3E50),
                               borderRadius: BorderRadius.circular(20),
@@ -702,7 +724,9 @@ Future<void> _loadCommentsCount() async {
                             child: Row(
                               children: [
                                 Icon(
-                                  _courseStarted ? Icons.percent : Icons.play_arrow,
+                                  _courseStarted
+                                      ? Icons.percent
+                                      : Icons.play_arrow,
                                   color: const Color(0xFFE3C39D),
                                   size: 20,
                                 ),
@@ -734,122 +758,121 @@ Future<void> _loadCommentsCount() async {
                       ],
                     ),
                   ),
-
                   Padding(
-  padding: const EdgeInsets.symmetric(horizontal: 12),
-  child: Row(
-    children: [
-      CircleAvatar(
-        radius: 22,
-        backgroundImage:
-            instructorImage.isNotEmpty ? NetworkImage(instructorImage) : null,
-        backgroundColor: const Color(0xFF2A4A6F),
-        child: instructorImage.isEmpty
-            ? const Icon(Icons.person, size: 20, color: Colors.white)
-            : null,
-      ),
-      const SizedBox(width: 8),
-
-      Expanded(
-        child: Text(
-          instructorName,
-          style: GoogleFonts.agbalumo(
-            color: Colors.black,
-            fontSize: 14,
-            fontWeight: FontWeight.bold,
-          ),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        ),
-      ),
-
-      const SizedBox(width: 8),
-      const Icon(Icons.ondemand_video, color: Color(0xFF2C3E50), size: 19),
-      const SizedBox(width: 3),
-      Text(
-        _durationLabel,
-        style: GoogleFonts.agbalumo(
-          color: Colors.black,
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-
-      const SizedBox(width: 8),
-      Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(5, (index) {
-          return GestureDetector(
-            onTap: () => _rateCourse(index + 1),
-            child: Icon(
-              index < selectedRating ? Icons.star : Icons.star_border,
-              color: Colors.orange,
-              size: 17,
-            ),
-          );
-        }),
-      ),
-      const SizedBox(width: 3),
-      Text(
-        rating.toStringAsFixed(1),
-        style: GoogleFonts.agbalumo(
-          color: Colors.black,
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-
-      const SizedBox(width: 8),
-      GestureDetector(
-  onTap: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CourseCommentsScreen(
-          courseId: widget.courseId,
-        ),
-      ),
-    );
-  },
-  child: const Icon(
-    Icons.chat_bubble,
-    color: Color(0xFF2E1B73),
-    size: 18,
-  ),
-),
-      const SizedBox(width: 3),
-      Text(
-        '$commentsCount',
-        style: GoogleFonts.agbalumo(
-          color: Colors.black,
-          fontSize: 13,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    ],
-  ),
-),
-Padding(
-  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
- 
-),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: GestureDetector(
+                      onTap: _openInstructorProfile,
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 22,
+                            backgroundImage: instructorImage.isNotEmpty
+                                ? NetworkImage(instructorImage)
+                                : null,
+                            backgroundColor: const Color(0xFF2A4A6F),
+                            child: instructorImage.isEmpty
+                                ? const Icon(Icons.person,
+                                    size: 20, color: Colors.white)
+                                : null,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              instructorName,
+                              style: GoogleFonts.agbalumo(
+                                color: Colors.black,
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Icon(Icons.ondemand_video,
+                              color: Color(0xFF2C3E50), size: 19),
+                          const SizedBox(width: 3),
+                          Text(
+                            _durationLabel,
+                            style: GoogleFonts.agbalumo(
+                              color: Colors.black,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: List.generate(5, (index) {
+                              return GestureDetector(
+                                onTap: () => _rateCourse(index + 1),
+                                child: Icon(
+                                  index < selectedRating
+                                      ? Icons.star
+                                      : Icons.star_border,
+                                  color: Colors.orange,
+                                  size: 17,
+                                ),
+                              );
+                            }),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            rating.toStringAsFixed(1),
+                            style: GoogleFonts.agbalumo(
+                              color: Colors.black,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => CourseCommentsScreen(
+                                    courseId: widget.courseId,
+                                  ),
+                                ),
+                              );
+                            },
+                            child: const Icon(
+                              Icons.chat_bubble,
+                              color: Color(0xFF2E1B73),
+                              size: 18,
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Text(
+                            '$commentsCount',
+                            style: GoogleFonts.agbalumo(
+                              color: Colors.black,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                   if (lessons.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                       child: LinearProgressIndicator(
                         value: _completedCount / lessons.length,
                         backgroundColor: Colors.white24,
-                        valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFFE3C39D)),
+                        valueColor: const AlwaysStoppedAnimation<Color>(
+                            Color(0xFFE3C39D)),
                       ),
                     ),
-
                   const SizedBox(height: 8),
                   const Divider(color: Colors.white24),
-
                   Expanded(
                     child: lessons.isEmpty
                         ? const Center(
-                            child: Text('No lessons yet', style: TextStyle(color: Colors.white54)),
+                            child: Text('No lessons yet',
+                                style: TextStyle(color: Colors.white54)),
                           )
                         : ListView.builder(
                             itemCount: lessons.length,
@@ -904,7 +927,8 @@ Padding(
                             color: Colors.black,
                           ),
                         )
-                      : const Icon(Icons.lock, color: Colors.white, size: 17),
+                      : const Icon(Icons.lock,
+                          color: Colors.white, size: 17),
             ),
           ),
           const SizedBox(width: 12),
@@ -925,35 +949,45 @@ Padding(
             ),
           ),
           Container(
-  width: 24,
-  height: 24,
-  decoration: BoxDecoration(
-    color: isCompleted ? const Color(0xFF4CAF50) : Colors.transparent,
-    borderRadius: BorderRadius.circular(6),
-    border: Border.all(color: Colors.white54),
-  ),
-  child: isCompleted
-      ? const Icon(Icons.check, color: Colors.white, size: 18)
-      : null,
-),
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: isCompleted
+                  ? const Color(0xFF4CAF50)
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.white54),
+            ),
+            child: isCompleted
+                ? const Icon(Icons.check, color: Colors.white, size: 18)
+                : null,
+          ),
         ],
       ),
     );
   }
 }
 
+// ══════════════════════════════════════════════════════════════
+// Lesson Video Player
+// ══════════════════════════════════════════════════════════════
+
 class LessonVideoPlayerScreen extends StatefulWidget {
   final String title;
   final String videoUrl;
 
-  const LessonVideoPlayerScreen({
-    super.key,
-    required this.title,
-    required this.videoUrl,
-  });
+  final int startAtSeconds;
+
+const LessonVideoPlayerScreen({
+  super.key,
+  required this.title,
+  required this.videoUrl,
+  this.startAtSeconds = 0,
+});
 
   @override
-  State<LessonVideoPlayerScreen> createState() => _LessonVideoPlayerScreenState();
+  State<LessonVideoPlayerScreen> createState() =>
+      _LessonVideoPlayerScreenState();
 }
 
 class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
@@ -962,29 +996,39 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
   bool _completed = false;
 
   @override
-  void initState() {
-    super.initState();
+void initState() {
+  super.initState();
 
-    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
-      ..initialize().then((_) {
-        if (!mounted) return;
-        setState(() => _isInitialized = true);
-        _controller.play();
-      });
+  _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+    ..initialize().then((_) async {
+      if (!mounted) return;
 
-    _controller.addListener(_videoListener);
-  }
+      if (widget.startAtSeconds > 0) {
+        await _controller.seekTo(
+          Duration(seconds: widget.startAtSeconds),
+        );
+      }
+
+      if (!mounted) return;
+
+      setState(() => _isInitialized = true);
+      _controller.play();
+    });
+
+  _controller.addListener(_videoListener);
+}
 
   void _videoListener() {
     if (!_controller.value.isInitialized || _completed) return;
-
     final position = _controller.value.position;
     final duration = _controller.value.duration;
-
     if (duration.inSeconds > 0 &&
         position.inSeconds >= duration.inSeconds - 1) {
       _completed = true;
-      Navigator.pop(context, true);
+      Navigator.pop(context, {
+  'completed': true,
+  'watched_seconds': duration.inSeconds,
+});
     }
   }
 
@@ -1000,17 +1044,26 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFF071739),
       appBar: AppBar(
-  backgroundColor: const Color(0xFF071739),
-  leading: IconButton(
-    icon: const Icon(Icons.arrow_back, color: Color(0xFFE3C39D)),
-    onPressed: () => Navigator.pop(context),
-  ),
-  title:  Text(
-  widget.title,
-  style: GoogleFonts.agbalumo(color: const Color(0xFFE3C39D)),
-  overflow: TextOverflow.ellipsis,
-),
-),
+        backgroundColor: const Color(0xFF071739),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Color(0xFFE3C39D)),
+          onPressed: () {
+  final seconds = _controller.value.isInitialized
+      ? _controller.value.position.inSeconds
+      : 0;
+
+  Navigator.pop(context, {
+    'completed': false,
+    'watched_seconds': seconds,
+  });
+},
+        ),
+        title: Text(
+          widget.title,
+          style: GoogleFonts.agbalumo(color: const Color(0xFFE3C39D)),
+          overflow: TextOverflow.ellipsis,
+        ),
+      ),
       body: Center(
         child: _isInitialized
             ? AspectRatio(

@@ -11,6 +11,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/post_comments_screen.dart';
 
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -22,7 +23,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> engineers = [];
   List<dynamic> posts = [];
   bool isLoading = true;
-
+List<dynamic> recommendedCourses = [];
+List<dynamic> recommendedArticles = [];
+List<dynamic> recommendedBooks = [];
   int _page = 0;
   final int _limit = 10;
   bool _hasMore = true;
@@ -73,6 +76,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<List<dynamic>> _enrichPosts(List<dynamic> rawPosts) async {
     final enrichedPosts = <dynamic>[];
+   
 
     for (final post in rawPosts) {
       final postId = post['id'];
@@ -133,22 +137,32 @@ class _HomeScreenState extends State<HomeScreen> {
 }
       _page = 0;
 
-      final results = await Future.wait([
-        http.get(Uri.parse('${AppConstants.baseUrl}/users/engineers')),
-        http.get(
-          Uri.parse(
-            '$supabaseUrl/rest/v1/posts'
-            '?select=*'
-            '&order=created_at.desc'
-            '&limit=$_limit'
-            '&offset=0',
-          ),
-          headers: {
-            'apikey': supabaseKey,
-            'Authorization': 'Bearer $supabaseKey',
-          },
-        ),
-      ]);
+      final token = await SessionManager.getToken();
+
+final results = await Future.wait([
+  http.get(Uri.parse('${AppConstants.baseUrl}/users/engineers')),
+
+  http.get(
+    Uri.parse(
+      '$supabaseUrl/rest/v1/posts'
+      '?select=*'
+      '&order=created_at.desc'
+      '&limit=$_limit'
+      '&offset=0',
+    ),
+    headers: {
+      'apikey': supabaseKey,
+      'Authorization': 'Bearer $supabaseKey',
+    },
+  ),
+
+  http.get(
+    Uri.parse('${AppConstants.baseUrl}/recommendations'),
+    headers: {
+      'Authorization': 'Bearer $token',
+    },
+  ),
+]);
 
       final allEngineers = results[0].statusCode == 200
     ? jsonDecode(results[0].body) as List<dynamic>
@@ -163,6 +177,10 @@ final engineersData = allEngineers
       final postsData = results[1].statusCode == 200
           ? jsonDecode(results[1].body) as List<dynamic>
           : <dynamic>[];
+      final recommendationsData = results[2].statusCode == 200
+    ? jsonDecode(results[2].body) as Map<String, dynamic>
+    : <String, dynamic>{};
+      
   
 
       final enrichedPosts = await _enrichPosts(postsData);
@@ -173,6 +191,9 @@ final engineersData = allEngineers
         posts = enrichedPosts;
         _hasMore = postsData.length == _limit;
         isLoading = false;
+        recommendedCourses = recommendationsData['courses'] ?? [];
+recommendedArticles = recommendationsData['articles'] ?? [];
+recommendedBooks = recommendationsData['books'] ?? [];
       });
     } catch (e) {
       debugPrint('Error loading data: $e');
@@ -187,12 +208,12 @@ final engineersData = allEngineers
   final isFollowing = followedEngineerIds.contains(engineerId);
 
   if (!isFollowing) {
-    // أضفه للمتابَعين فوراً (يتحول أخضر)
+    
     setState(() {
       followedEngineerIds.add(engineerId);
     });
 
-    // بعد ثانية يختفي
+   
     Future.delayed(const Duration(seconds: 1), () {
       if (mounted) {
         setState(() {
@@ -208,7 +229,7 @@ final engineersData = allEngineers
       });
     } catch (e) {
       debugPrint('Follow error: $e');
-      // تراجع عند الخطأ
+      
       if (mounted) {
         setState(() {
           followedEngineerIds.remove(engineerId);
@@ -216,7 +237,7 @@ final engineersData = allEngineers
       }
     }
   } else {
-    // إلغاء المتابعة
+   
     setState(() {
       followedEngineerIds.remove(engineerId);
     });
@@ -486,7 +507,7 @@ final engineersData = allEngineers
               padding: const EdgeInsets.all(16),
               children: [
                 Text(
-                  'Engineer',
+                  'Engineers',
                   style: GoogleFonts.agbalumo(
                     color: const Color(0xFF6C94C6),
                     fontSize: 24,

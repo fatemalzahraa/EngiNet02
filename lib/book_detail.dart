@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:enginet/engineer_profile.dart';
 
 class BookDetailScreen extends StatefulWidget {
   final String bookId;
@@ -56,6 +57,42 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
     _scrollController.dispose();
     super.dispose();
   }
+
+  Future<void> _openAuthorProfile() async {
+  final authorUsername =
+      book?['author_username']?.toString() ??
+      book?['author']?.toString() ??
+      '';
+
+  if (authorUsername.isEmpty) return;
+
+  try {
+    final owner = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', authorUsername)
+        .maybeSingle();
+
+    if (owner == null || owner['id'] == null) {
+      _showSnack('User profile not found');
+      return;
+    }
+
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EngineerProfileScreen(
+          targetUserId: owner['id'],
+        ),
+      ),
+    );
+  } catch (e) {
+    debugPrint('❌ open author profile error: $e');
+    _showSnack('Failed to open profile');
+  }
+}
 
   // ─── Init: fetch user once, then load everything in parallel ─────────────
   Future<void> _initData() async {
@@ -814,30 +851,30 @@ GestureDetector(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Author row
-                          Row(
-                            children: [
-                              CircleAvatar(
-                                radius: 22,
-                                backgroundImage: authorImage.isNotEmpty
-                                    ? NetworkImage(authorImage)
-                                    : null,
-                                backgroundColor:
-                                    const Color(0xFF6C94C6),
-                                child: authorImage.isEmpty
-                                    ? const Icon(Icons.person,
-                                        color: Colors.white)
-                                    : null,
-                              ),
-                              const SizedBox(width: 10),
-                              Text(
-                                author,
-                                style: GoogleFonts.agbalumo(
-                                  fontSize: 16,
-                                  color: Colors.black87,
-                                ),
-                              ),
-                            ],
-                          ),
+GestureDetector(
+  onTap: _openAuthorProfile,
+  child: Row(
+    children: [
+      CircleAvatar(
+        radius: 22,
+        backgroundImage:
+            authorImage.isNotEmpty ? NetworkImage(authorImage) : null,
+        backgroundColor: const Color(0xFF6C94C6),
+        child: authorImage.isEmpty
+            ? const Icon(Icons.person, color: Colors.white)
+            : null,
+      ),
+      const SizedBox(width: 10),
+      Text(
+        author,
+        style: GoogleFonts.agbalumo(
+          fontSize: 16,
+          color: Colors.black87,
+        ),
+      ),
+    ],
+  ),
+),
                           const SizedBox(height: 12),
 
                           // Title

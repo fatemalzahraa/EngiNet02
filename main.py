@@ -459,3 +459,57 @@ def mark_notifications_read(current_user: dict = Depends(get_current_user)):
         return {"message": "All notifications marked as read"}
     finally:
         db.close()
+    
+@app.get("/recommendations")
+def get_recommendations(current_user: dict = Depends(get_current_user)):
+    db = get_db()
+    try:
+        cursor = db.cursor()
+
+        cursor.execute(
+            "SELECT id FROM users WHERE email = %s",
+            (current_user["email"],),
+        )
+        user = cursor.fetchone()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        user_id = user["id"]
+
+        # courses not started yet, ordered by rating/newest
+        cursor.execute("""
+            SELECT c.*
+            FROM courses c
+            WHERE c.id NOT IN (
+                SELECT course_id FROM student_courses WHERE user_id = %s
+            )
+            ORDER BY COALESCE(c.rating, 0) DESC, c.created_at DESC
+            LIMIT 10
+        """, (user_id,))
+        courses = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT *
+            FROM articles
+            ORDER BY COALESCE(rating, 0) DESC, created_at DESC
+            LIMIT 10
+        """)
+        articles = cursor.fetchall()
+
+        cursor.execute("""
+            SELECT *
+            FROM books
+            ORDER BY COALESCE(likes, 0) DESC, created_at DESC
+            LIMIT 10
+        """)
+        books = cursor.fetchall()
+
+        return {
+            "courses": courses,
+            "articles": articles,
+            "books": books,
+        }
+
+    finally:
+        db.close()

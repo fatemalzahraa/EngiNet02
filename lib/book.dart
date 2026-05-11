@@ -5,7 +5,9 @@ import 'package:shimmer/shimmer.dart' show Shimmer;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'book_detail.dart';
 import 'package:enginet/core/session_manager.dart';
-
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:enginet/core/constants.dart';
 class BookScreen extends StatefulWidget {
   const BookScreen({super.key});
 
@@ -19,7 +21,9 @@ class _BookScreenState extends State<BookScreen> {
 
   List<dynamic> allBooks = [];
   List<dynamic> filteredBooks = [];
+  List<dynamic> recommendedBooks = [];
   bool isLoading = true;
+  bool isLoadingRecommended = true;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -27,6 +31,7 @@ class _BookScreenState extends State<BookScreen> {
     super.initState();
     _loadUser();
     loadBooks();
+    loadRecommendedBooks();
   }
 
   @override
@@ -34,55 +39,56 @@ class _BookScreenState extends State<BookScreen> {
     _searchController.dispose();
     super.dispose();
   }
+
   Future<void> _loadUser() async {
-  currentUsername = await SessionManager.getUsername();
-  if (mounted) setState(() {});
-}
+    currentUsername = await SessionManager.getUsername();
+    if (mounted) setState(() {});
+  }
 
   Future<void> _deleteBook(String id) async {
-  await supabase.from('books').delete().eq('id', id);
-  loadBooks();
-}
+    await supabase.from('books').delete().eq('id', id);
+    loadBooks();
+  }
 
-void _editBook(dynamic book) {
-  final titleController =
-      TextEditingController(text: book['title'] ?? '');
-  final descController =
-      TextEditingController(text: book['description'] ?? '');
+  void _editBook(dynamic book) {
+    final titleController =
+        TextEditingController(text: book['title'] ?? '');
+    final descController =
+        TextEditingController(text: book['description'] ?? '');
 
-  showDialog(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Edit Book'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          TextField(controller: titleController),
-          const SizedBox(height: 10),
-          TextField(controller: descController, maxLines: 3),
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Book'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: titleController),
+            const SizedBox(height: 10),
+            TextField(controller: descController, maxLines: 3),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              await supabase.from('books').update({
+                'title': titleController.text.trim(),
+                'description': descController.text.trim(),
+              }).eq('id', book['id']);
+
+              Navigator.pop(context);
+              loadBooks();
+            },
+            child: const Text('Save'),
+          ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () async {
-            await supabase.from('books').update({
-              'title': titleController.text.trim(),
-              'description': descController.text.trim(),
-            }).eq('id', book['id']);
-
-            Navigator.pop(context);
-            loadBooks();
-          },
-          child: const Text('Save'),
-        ),
-      ],
-    ),
-  );
-}
+    );
+  }
 
   Future<void> loadBooks() async {
     try {
@@ -104,6 +110,31 @@ void _editBook(dynamic book) {
     }
   }
 
+  Future<void> loadRecommendedBooks() async {
+  try {
+    final token = await SessionManager.getToken();
+
+    final res = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/recommendations'),
+      headers: {
+        'Authorization': 'Bearer $token',
+      },
+    );
+
+    final data = jsonDecode(res.body) as Map<String, dynamic>;
+
+    if (!mounted) return;
+    setState(() {
+      recommendedBooks = data['books'] ?? [];
+      isLoadingRecommended = false;
+    });
+  } catch (e) {
+    if (!mounted) return;
+    setState(() => isLoadingRecommended = false);
+    debugPrint("Error loading recommended Books: $e");
+  }
+}
+
   void filterBooks(String value) {
     setState(() {
       filteredBooks = allBooks.where((book) {
@@ -120,157 +151,302 @@ void _editBook(dynamic book) {
     return Scaffold(
       backgroundColor: const Color(0xFF071739),
       body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(
-                "Books",
-                style: GoogleFonts.agbalumo(
-                  fontSize: 40,
-                  color: const Color(0xFF6C94C6),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
-                controller: _searchController,
-                onChanged: filterBooks,
-                decoration: InputDecoration(
-                  hintText: "Search books...",
-                  prefixIcon: const Icon(Icons.search),
-                  filled: true,
-                  fillColor: Colors.white,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(16),
-                    borderSide: BorderSide.none,
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await loadBooks();
+            await loadRecommendedBooks();
+          },
+          child: CustomScrollView(
+            slivers: [
+              // ─── Header ───
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Text(
+                    "Books",
+                    style: GoogleFonts.agbalumo(
+                      fontSize: 40,
+                      color: const Color(0xFF6C94C6),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: isLoading
-                  ? const Center(
-                      child: CircularProgressIndicator(
-                          color: Color(0xFF6C94C6)))
-                  : filteredBooks.isEmpty
-                      ? const Center(
-                          child: Text("No books found",
-                              style: TextStyle(color: Colors.white)))
-                      : RefreshIndicator(
-                          onRefresh: loadBooks,
-                          child: GridView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: filteredBooks.length,
-                            gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              mainAxisSpacing: 16,
-                              crossAxisSpacing: 16,
-                              childAspectRatio: 0.55,
-                            ),
+
+              // ─── Search ───
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: TextField(
+                    controller: _searchController,
+                    onChanged: filterBooks,
+                    decoration: InputDecoration(
+                      hintText: "Search books...",
+                      prefixIcon: const Icon(Icons.search),
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide.none,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+              // ─── Recommended Books Section ───
+              if (recommendedBooks.isNotEmpty || isLoadingRecommended) ...[
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    child: Text(
+                      "Recommended Books",
+                      style: GoogleFonts.agbalumo(
+                        fontSize: 22,
+                        color: const Color(0xFF6C94C6),
+                      ),
+                    ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 220,
+                    child: isLoadingRecommended
+                        ? const Center(
+                            child: CircularProgressIndicator(
+                                color: Color(0xFF6C94C6)))
+                        : ListView.separated(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16),
+                            scrollDirection: Axis.horizontal,
+                            itemCount: recommendedBooks.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 12),
                             itemBuilder: (context, index) {
-                              final book = filteredBooks[index];
-                              final imageUrl =
-                                  book['image_url']?.toString() ?? '';
-                              final title =
-                                  book['title']?.toString() ?? '';
-                             final likes = book['likes'] ?? 0;
-                             final isOwner = book['author_username']?.toString() == currentUsername;
-                              
-
-                              // ✅ آمن مع UUID و int
-                              final bookId =
-                                  book['id']?.toString() ?? '';
-
-                              return GestureDetector(
-                                onTap: () {
-                                  if (bookId.isEmpty) return;
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) =>
-                                          BookDetailScreen(
-                                              bookId: bookId),
-                                    ),
-                                  );
-                                },
-                                child: Container(
-  decoration: BoxDecoration(
-    color: const Color(0xFFD8C6AF),
-    borderRadius: BorderRadius.circular(20),
-  ),
-  child: Column(
-    children: [
-      // 🔴 الصورة + زر ⋮ فوقها
-      Expanded(
-  child: Stack(
-    children: [
-      ClipRRect(
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-        ),
-        child: imageUrl.isNotEmpty
-            ? CachedNetworkImage(
-                imageUrl: imageUrl,
-                fit: BoxFit.cover,
-                width: double.infinity,
-              )
-            : const Icon(Icons.book, size: 60),
-      ),
-
-     if (isOwner)
-      Positioned(
-        top: 8,
-        right: 8,
-        child: PopupMenuButton<String>(
-          icon: const Icon(Icons.more_vert, color: Colors.black),
-          onSelected: (value) {
-            if (value == 'delete') {
-              _deleteBook(bookId);
-            } else if (value == 'edit') {
-              _editBook(book);
-            }
-          },
-          itemBuilder: (context) => const [
-            PopupMenuItem(value: 'edit', child: Text('Edit')),
-            PopupMenuItem(value: 'delete', child: Text('Delete')),
-          ],
-        ),
-      ),
-    ],
-  ),
-),
-
-      const SizedBox(height: 8),
-
-      Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: Text(
-          title,
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-      ),
-
-      const SizedBox(height: 6),
-
-      Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text("⭐ $likes"),
-      ),
-    ],
-  ),
-),
-                              );
+                              final book = recommendedBooks[index];
+                              return _buildRecommendedBookCard(book);
                             },
                           ),
+                  ),
+                ),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 8),
+                    child: Text(
+                      "All Books",
+                      style: GoogleFonts.agbalumo(
+                        fontSize: 22,
+                        color: const Color(0xFF6C94C6),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+
+              // ─── All Books Grid ───
+              if (isLoading)
+                const SliverToBoxAdapter(
+                  child: Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator(
+                          color: Color(0xFF6C94C6)),
+                    ),
+                  ),
+                )
+              else if (filteredBooks.isEmpty)
+                const SliverToBoxAdapter(
+                  child: Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: Text("No books found",
+                          style: TextStyle(color: Colors.white)),
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.all(16),
+                  sliver: SliverGrid(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
+                      childAspectRatio: 0.55,
+                    ),
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final book = filteredBooks[index];
+                        final imageUrl =
+                            book['image_url']?.toString() ?? '';
+                        final title = book['title']?.toString() ?? '';
+                        final likes = book['likes'] ?? 0;
+                        final isOwner =
+                            book['author_username']?.toString() ==
+                                currentUsername;
+                        final bookId = book['id']?.toString() ?? '';
+
+                        return GestureDetector(
+                          onTap: () {
+                            if (bookId.isEmpty) return;
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    BookDetailScreen(bookId: bookId),
+                              ),
+                            );
+                          },
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFD8C6AF),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: Stack(
+                                    children: [
+                                      ClipRRect(
+                                        borderRadius:
+                                            const BorderRadius.only(
+                                          topLeft: Radius.circular(20),
+                                          topRight: Radius.circular(20),
+                                        ),
+                                        child: imageUrl.isNotEmpty
+                                            ? CachedNetworkImage(
+                                                imageUrl: imageUrl,
+                                                fit: BoxFit.cover,
+                                                width: double.infinity,
+                                              )
+                                            : const Icon(Icons.book,
+                                                size: 60),
+                                      ),
+                                      if (isOwner)
+                                        Positioned(
+                                          top: 8,
+                                          right: 8,
+                                          child: PopupMenuButton<String>(
+                                            icon: const Icon(
+                                                Icons.more_vert,
+                                                color: Colors.black),
+                                            onSelected: (value) {
+                                              if (value == 'delete') {
+                                                _deleteBook(bookId);
+                                              } else if (value ==
+                                                  'edit') {
+                                                _editBook(book);
+                                              }
+                                            },
+                                            itemBuilder: (context) =>
+                                                const [
+                                              PopupMenuItem(
+                                                  value: 'edit',
+                                                  child: Text('Edit')),
+                                              PopupMenuItem(
+                                                  value: 'delete',
+                                                  child: Text('Delete')),
+                                            ],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8),
+                                  child: Text(
+                                    title,
+                                    textAlign: TextAlign.center,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.only(bottom: 8),
+                                  child: Text("⭐ $likes"),
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                      childCount: filteredBooks.length,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRecommendedBookCard(dynamic book) {
+    final imageUrl = book['image_url']?.toString() ?? '';
+    final title = book['title']?.toString() ?? '';
+    final bookId = book['id']?.toString() ?? '';
+
+    return GestureDetector(
+      onTap: () {
+        if (bookId.isEmpty) return;
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BookDetailScreen(bookId: bookId),
+          ),
+        );
+      },
+      child: Container(
+        width: 130,
+        decoration: BoxDecoration(
+          color: const Color(0xFFD8C6AF),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+                child: imageUrl.isNotEmpty
+                    ? CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover,
+                        width: double.infinity,
+                        errorWidget: (c, u, e) => const Icon(Icons.book,
+                            size: 40),
+                        placeholder: (c, u) => Shimmer.fromColors(
+                          baseColor: const Color(0xFFCCB89A),
+                          highlightColor: const Color(0xFFE8D8C0),
+                          child: Container(color: Colors.white),
                         ),
+                      )
+                    : const Icon(Icons.book, size: 40),
+              ),
+            ),
+            Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              child: Text(
+                title,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontWeight: FontWeight.bold, fontSize: 12),
+              ),
             ),
           ],
         ),

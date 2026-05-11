@@ -14,7 +14,8 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'add_course_screen.dart';
-
+import 'search_engineers_screen.dart';
+import 'package:enginet/leaderboard_screen.dart';
 class IndexPage extends StatefulWidget {
   final String title;
   const IndexPage({super.key, required this.title});
@@ -276,43 +277,63 @@ void dispose() {
           ),
         ),
         actions: [
-          IconButton(
-            onPressed: () async {
-    await Navigator.pushNamed(context, '/notifications');
-    _loadUnreadCount(); // تحديث بعد الرجوع
-  },
-  icon: Stack(
-    children: [
-      const Icon(Icons.notifications, color: Color(0xFFE3C39D)),
-      if (_unreadCount > 0)
-        Positioned(
-          right: 0,
-          top: 0,
-          child: Container(
-            padding: const EdgeInsets.all(4),
-            decoration: const BoxDecoration(
-              color: Colors.red,
-              shape: BoxShape.circle,
-            ),
-            constraints: const BoxConstraints(
-              minWidth: 16,
-              minHeight: 16,
-            ),
-            child: Text(
-              '$_unreadCount',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-              ),
-              textAlign: TextAlign.center,
-            ),
-          ),
+
+  IconButton(
+    onPressed: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const SearchEngineersScreen(),
         ),
-    ],
+      );
+    },
+    icon: const Icon(
+      Icons.search,
+      color: Color(0xFFE3C39D),
+    ),
   ),
+
+  IconButton(
+    onPressed: () async {
+      await Navigator.pushNamed(context, '/notifications');
+      _loadUnreadCount();
+    },
+    icon: Stack(
+      children: [
+        const Icon(
+          Icons.notifications,
+          color: Color(0xFFE3C39D),
+        ),
+
+        if (_unreadCount > 0)
+          Positioned(
+            right: 0,
+            top: 0,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Colors.red,
+                shape: BoxShape.circle,
+              ),
+              constraints: const BoxConstraints(
+                minWidth: 16,
+                minHeight: 16,
+              ),
+              child: Text(
+                '$_unreadCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
           ),
-        ],
+      ],
+    ),
+  ),
+],
       ),
 
       body: IndexedStack(index: _currentIndex, children: _pages),
@@ -381,6 +402,19 @@ void dispose() {
                 selected: _currentIndex == 2,
                 onTap: () => _onDrawerItemTapped(2),
               ),
+              ListTile(
+  leading: const Icon(Icons.leaderboard),
+  title: const Text('Leaderboard'),
+  onTap: () {
+    Navigator.pop(context);
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const LeaderboardScreen(),
+      ),
+    );
+  },
+),
               ListTile(
                 leading: const Icon(Icons.smart_toy),
                 title: const Text('AI Chat'),

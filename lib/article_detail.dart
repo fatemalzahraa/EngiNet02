@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'article_comments_screen.dart';
+import 'package:enginet/engineer_profile.dart';
 
 class ArticleDetailScreen extends StatefulWidget {
   final String articleId;
@@ -26,6 +27,8 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
   List<Map<String, dynamic>> comments = [];
   String? replyingToCommentId;
   String? replyingToUsername;
+  int myRating = 0;
+bool _isRating = false;
 
   // Debounce flags
   bool _isProcessingLike = false;
@@ -50,7 +53,54 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     _commentFocusNode.dispose();
     super.dispose();
   }
+Future<void> _openAuthorProfile() async {
+  final authorName = article?['author_name']?.toString() ?? '';
+  if (authorName.isEmpty) return;
 
+  try {
+    final owner = await supabase
+        .from('users')
+        .select('id')
+        .eq('username', authorName)
+        .maybeSingle();
+
+    if (owner == null || owner['id'] == null) {
+      _showSnack('User profile not found');
+      return;
+    }
+
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EngineerProfileScreen(
+          targetUserId: owner['id'],
+        ),
+      ),
+    );
+  } catch (e) {
+    debugPrint('❌ open author profile error: $e');
+    _showSnack('Failed to open profile');
+  }
+}
+
+Future<void> loadMyRating() async {
+  if (_currentUser == null) return;
+
+  final res = await supabase
+      .from('article_ratings')
+      .select('rating')
+      .eq('user_id', _currentUser!['id'])
+      .eq('article_id', _articleId)
+      .maybeSingle();
+
+  if (!mounted) return;
+
+  setState(() {
+    myRating = res?['rating'] ?? 0;
+  });
+}
   // ─── Init: fetch user once, then everything in parallel ──────────────────
   Future<void> _initData() async {
     if (_articleId == 0) {
@@ -61,11 +111,12 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
     try {
       _currentUser = await _fetchCurrentUser();
       await Future.wait([
-        loadArticle(),
-        loadComments(),
-        checkLike(),
-        checkSaved(),
-      ]);
+  loadArticle(),
+  loadComments(),
+  checkLike(),
+  checkSaved(),
+  loadMyRating(),
+]);
     } catch (e) {
       debugPrint('❌ _initData error: $e');
     }
@@ -353,6 +404,56 @@ Future<void> _deleteArticle() async {
     _showSnack('Failed to delete article');
   }
 }
+Future<void> rateArticle(int value) async {
+  if (_currentUser == null || article == null || _isRating) return;
+
+  setState(() {
+    _isRating = true;
+    myRating = value;
+  });
+
+  try {
+   await supabase.from('article_ratings').upsert(
+  {
+    'user_id': _currentUser!['id'],
+    'article_id': _articleId,
+    'rating': value,
+  },
+  onConflict: 'user_id,article_id',
+);
+
+    final ratingsRes = await supabase
+        .from('article_ratings')
+        .select('rating')
+        .eq('article_id', _articleId);
+
+    final ratings = List<Map<String, dynamic>>.from(ratingsRes);
+    final avg = ratings.isEmpty
+        ? 0.0
+        : ratings
+                .map((r) => (r['rating'] as num).toDouble())
+                .reduce((a, b) => a + b) /
+            ratings.length;
+
+    await supabase
+        .from('articles')
+        .update({'rating': avg})
+        .eq('id', _articleId);
+
+    if (!mounted) return;
+
+    setState(() {
+      article!['rating'] = avg;
+    });
+  } catch (e) {
+    debugPrint('❌ rateArticle error: $e');
+    _showSnack('Failed to rate article');
+  } finally {
+    if (mounted) {
+      setState(() => _isRating = false);
+    }
+  }
+}
 
   // ─── Build ────────────────────────────────────────────────────────────────
   @override
@@ -417,22 +518,24 @@ Future<void> _deleteArticle() async {
 
     const Spacer(),
 
-    GestureDetector(
-      onTap: _confirmDeleteArticle,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: const BoxDecoration(
-          color: Colors.red,
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(
-          Icons.delete,
-          color: Colors.white,
-          size: 20,
-        ),
+if (_currentUser != null &&
+    _currentUser!['username'] == article!['author_name'])
+  GestureDetector(
+    onTap: _confirmDeleteArticle,
+    child: Container(
+      width: 38,
+      height: 38,
+      decoration: const BoxDecoration(
+        color: Colors.red,
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(
+        Icons.delete,
+        color: Colors.white,
+        size: 20,
       ),
     ),
+  ),
   ],
 ),
             ),
@@ -459,34 +562,33 @@ Future<void> _deleteArticle() async {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Author
-                          Padding(
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                            child: Row(
-                              children: [
-                                CircleAvatar(
-                                  radius: 22,
-                                  backgroundImage: authorImage.isNotEmpty
-                                      ? NetworkImage(authorImage)
-                                      : null,
-                                  backgroundColor:
-                                      const Color(0xFF6C94C6),
-                                  child: authorImage.isEmpty
-                                      ? const Icon(Icons.person,
-                                          color: Colors.white)
-                                      : null,
-                                ),
-                                const SizedBox(width: 10),
-                                Text(
-                                  authorName,
-                                  style: GoogleFonts.agbalumo(
-                                    fontSize: 16,
-                                    color: Colors.black87,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+Padding(
+  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+  child: GestureDetector(
+    onTap: _openAuthorProfile,
+    child: Row(
+      children: [
+        CircleAvatar(
+          radius: 22,
+          backgroundImage:
+              authorImage.isNotEmpty ? NetworkImage(authorImage) : null,
+          backgroundColor: const Color(0xFF6C94C6),
+          child: authorImage.isEmpty
+              ? const Icon(Icons.person, color: Colors.white)
+              : null,
+        ),
+        const SizedBox(width: 10),
+        Text(
+          authorName,
+          style: GoogleFonts.agbalumo(
+            fontSize: 16,
+            color: Colors.black87,
+          ),
+        ),
+      ],
+    ),
+  ),
+),
 
                           // Cover image
                           if (imageUrl.isNotEmpty)
@@ -535,27 +637,34 @@ Future<void> _deleteArticle() async {
                                 ),
                                 const SizedBox(height: 8),
                                 Row(
-                                  children: [
-                                    ...List.generate(
-                                      5,
-                                      (i) => Icon(
-                                        i < rating.floor()
-                                            ? Icons.star
-                                            : Icons.star_border,
-                                        color: Colors.orange,
-                                        size: 16,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      rating.toStringAsFixed(1),
-                                      style: const TextStyle(
-                                        color: Colors.black87,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ],
-                                ),
+  children: [
+    ...List.generate(
+      5,
+      (i) {
+        final starValue = i + 1;
+
+        return GestureDetector(
+          onTap: () => rateArticle(starValue),
+          child: Icon(
+            starValue <= myRating
+                ? Icons.star
+                : Icons.star_border,
+            color: Colors.orange,
+            size: 24,
+          ),
+        );
+      },
+    ),
+    const SizedBox(width: 6),
+    Text(
+      ' ${rating.toStringAsFixed(1)}',
+      style: const TextStyle(
+        color: Colors.black87,
+        fontWeight: FontWeight.bold,
+      ),
+    ),
+  ],
+),
                               ],
                             ),
                           ),
