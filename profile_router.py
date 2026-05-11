@@ -3,9 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from supabase import create_client
 from pydantic import BaseModel
 from typing import Optional
-
-# Fixed: import from central dependencies (not from auth.py)
-from dependencies import get_current_user
+from dependencies import get_current_user, require_role
 from database import get_db
 
 router = APIRouter(prefix="/profile", tags=["Profile"]) 
