@@ -185,7 +185,7 @@ debugPrint("REC BODY: ${res.body}");
                               ),
                             ),
                             SizedBox(
-                              height: 180,
+                              height: 220,
                               child: isLoadingRecommended
                                   ? const Center(
                                       child: CircularProgressIndicator(
