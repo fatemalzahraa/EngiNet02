@@ -122,6 +122,10 @@ class _ArticleScreenState extends State<ArticleScreen> {
         'Authorization': 'Bearer $token',
       },
     );
+    if (res.statusCode != 200) {
+  debugPrint(res.body);
+  throw Exception(res.body);
+}
 
     final data = jsonDecode(res.body) as Map<String, dynamic>;
 

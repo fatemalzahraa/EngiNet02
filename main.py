@@ -461,11 +461,8 @@ def mark_notifications_read(current_user: dict = Depends(get_current_user)):
         db.close()
     
 @app.get("/recommendations")
-def get_recommendations(
-    current_user: dict = Depends(get_current_user)
-):
+def get_recommendations(current_user: dict = Depends(get_current_user)):
     db = get_db()
-
     try:
         cursor = db.cursor()
 
@@ -473,7 +470,6 @@ def get_recommendations(
             "SELECT id FROM users WHERE email = %s",
             (current_user["email"],),
         )
-
         user = cursor.fetchone()
 
         if not user:
@@ -481,59 +477,28 @@ def get_recommendations(
 
         user_id = user["id"]
 
-        # ─────────────────────────────
-        # Recommended Courses
-        # ─────────────────────────────
         cursor.execute("""
-            SELECT c.*
-            FROM courses c
-            ORDER BY
-                COALESCE(c.rating, 0) DESC,
-                COALESCE(c.likes, 0) DESC,
-                c.created_at DESC
+            SELECT *
+            FROM courses
+            ORDER BY COALESCE(rating, 0) DESC, created_at DESC
             LIMIT 10
         """)
-
         courses = cursor.fetchall()
 
-        # ─────────────────────────────
-        # Recommended Books
-        # ─────────────────────────────
         cursor.execute("""
-            SELECT DISTINCT b.*
-            FROM books b
-            LEFT JOIN saved_books sb
-                ON sb.book_id = b.id
-            ORDER BY
-                CASE
-                    WHEN sb.user_id = %s THEN 0
-                    ELSE 1
-                END,
-                COALESCE(b.likes, 0) DESC,
-                b.created_at DESC
+            SELECT *
+            FROM books
+            ORDER BY COALESCE(likes, 0) DESC, created_at DESC
             LIMIT 10
-        """, (user_id,))
-
+        """)
         books = cursor.fetchall()
 
-        # ─────────────────────────────
-        # Recommended Articles
-        # ─────────────────────────────
         cursor.execute("""
-            SELECT DISTINCT a.*
-            FROM articles a
-            LEFT JOIN saved_articles sa
-                ON sa.article_id = a.id
-            ORDER BY
-                CASE
-                    WHEN sa.user_id = %s THEN 0
-                    ELSE 1
-                END,
-                COALESCE(a.likes, 0) DESC,
-                a.created_at DESC
+            SELECT *
+            FROM articles
+            ORDER BY COALESCE(rating, 0) DESC, created_at DESC
             LIMIT 10
-        """, (user_id,))
-
+        """)
         articles = cursor.fetchall()
 
         return {
@@ -542,5 +507,7 @@ def get_recommendations(
             "articles": articles,
         }
 
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
