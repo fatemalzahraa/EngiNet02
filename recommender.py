@@ -1,4 +1,3 @@
-# recommender.py
 import implicit
 import numpy as np
 from scipy.sparse import csr_matrix
@@ -12,9 +11,8 @@ def train_model(db):
     interactions = cursor.fetchall()
     
     if len(interactions) < 10:
-        return None, None, None
+        return None, None, None, None, None, None
 
-    # بناء matrix
     users = list({r["user_id"] for r in interactions})
     items = list({r["item_id"] for r in interactions})
     user_idx = {u: i for i, u in enumerate(users)}
@@ -22,7 +20,7 @@ def train_model(db):
 
     rows = [user_idx[r["user_id"]] for r in interactions]
     cols = [item_idx[r["item_id"]] for r in interactions]
-    vals = [r["score"] for r in interactions]
+    vals = [float(r["score"]) for r in interactions]
 
     matrix = csr_matrix((vals, (rows, cols)), shape=(len(users), len(items)))
 
