@@ -2,6 +2,7 @@ import implicit
 import numpy as np
 from scipy.sparse import csr_matrix
 
+
 def train_model(db):
     cursor = db.cursor()
     cursor.execute("""
@@ -9,7 +10,7 @@ def train_model(db):
         FROM user_interactions
     """)
     interactions = cursor.fetchall()
-    
+
     if len(interactions) < 10:
         return None, None, None, None, None, None
 
