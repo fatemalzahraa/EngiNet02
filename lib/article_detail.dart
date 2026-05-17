@@ -1,3 +1,4 @@
+import 'package:enginet/add_article.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
@@ -6,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'article_comments_screen.dart';
 import 'package:enginet/engineer_profile.dart';
+import 'package:enginet/add_article.dart';
 
 class ArticleDetailScreen extends StatefulWidget {
   final String articleId;
@@ -485,6 +487,11 @@ Future<void> rateArticle(int value) async {
     final authorImage = article!['author_image']?.toString() ?? '';
     final rating =
         double.tryParse(article!['rating']?.toString() ?? '0') ?? 0.0;
+    final currentUsername =
+    _currentUser?['username']?.toString().trim().toLowerCase();
+
+final articleAuthor =
+    article?['author_name']?.toString().trim().toLowerCase();
 
     return Scaffold(
       backgroundColor: const Color(0xFF071739),
@@ -518,26 +525,57 @@ Future<void> rateArticle(int value) async {
 
     const Spacer(),
 
-if (_currentUser != null &&
-    _currentUser!['username'] == article!['author_name'])
-  GestureDetector(
-    onTap: _confirmDeleteArticle,
-    child: Container(
-      width: 38,
-      height: 38,
-      decoration: const BoxDecoration(
-        color: Colors.red,
-        shape: BoxShape.circle,
-      ),
-      child: const Icon(
-        Icons.delete,
-        color: Colors.white,
-        size: 20,
-      ),
+const Spacer(),
+
+if (_currentUser != null && currentUsername == articleAuthor)
+  Row(
+    children: [
+      GestureDetector(
+        onTap: () async {
+          if (article == null) return;
+
+          final updated = await Navigator.push(
+  context,
+  MaterialPageRoute(
+    builder: (_) => AddArticleScreen(
+      article: Map<String, dynamic>.from(article!),
     ),
   ),
-  ],
-),
+);
+if (updated == true && mounted) {
+  await loadArticle();
+}
+        },
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: const BoxDecoration(
+            color: Color(0xFFE3C39D),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.edit, color: Colors.black, size: 20),
+        ),
+      ),
+
+      const SizedBox(width: 8),
+
+      GestureDetector(
+        onTap: _confirmDeleteArticle,
+        child: Container(
+          width: 38,
+          height: 38,
+          decoration: const BoxDecoration(
+            color: Colors.red,
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.delete, color: Colors.white, size: 20),
+        ),
+      ),
+    ],
+  ),
+    ],
+  ),
+  
             ),
 
             // ── Body ─────────────────────────────────────────────────
@@ -692,16 +730,16 @@ Padding(
       const SizedBox(width: 16),
 
       GestureDetector(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => ArticleCommentsScreen(
-                articleId: widget.articleId,
-              ),
-            ),
-          ).then((_) => loadComments());
-        },
+       onTap: () {
+  Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => ArticleCommentsScreen(
+        articleId: widget.articleId,
+      ),
+    ),
+  ).then((_) => loadComments());
+},
         child: const Icon(
           Icons.chat_bubble,
           color: Color(0xFF5B7FA6),

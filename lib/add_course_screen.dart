@@ -9,7 +9,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
-import 'package:enginet/points_helper.dart';
 
 class AddCourseScreen extends StatefulWidget {
   const AddCourseScreen({super.key});
@@ -26,10 +25,20 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
 
   File? courseImage;
   String? courseImageName;
-
+  String? _selectedCategory;
   bool isSaving = false;
 
   List<VideoInput> videos = [VideoInput()];
+
+  final List<String> _categories = [
+    'Programming',
+    'Civil Engineering',
+    'Mechanical Engineering',
+    'Electrical Engineering',
+    'Mathematics',
+    'Physics',
+    'Other',
+  ];
 
   @override
   void dispose() {
@@ -51,7 +60,6 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
 
   Future<void> pickCourseImage() async {
     final result = await FilePicker.platform.pickFiles(type: FileType.image);
-
     if (result != null && result.files.single.path != null) {
       setState(() {
         courseImage = File(result.files.single.path!);
@@ -62,7 +70,6 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
 
   Future<void> pickVideo(int index) async {
     final result = await FilePicker.platform.pickFiles(type: FileType.video);
-
     if (result != null && result.files.single.path != null) {
       setState(() {
         videos[index].videoFile = File(result.files.single.path!);
@@ -71,13 +78,10 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
     }
   }
 
-  void addVideoField() {
-    setState(() => videos.add(VideoInput()));
-  }
+  void addVideoField() => setState(() => videos.add(VideoInput()));
 
   void removeVideoField(int index) {
     if (videos.length == 1) return;
-
     setState(() {
       videos[index].titleController.dispose();
       videos.removeAt(index);
@@ -86,17 +90,12 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
 
   Future<Map<String, dynamic>> getCurrentEngineerData() async {
     final username = await SessionManager.getUsername();
-
-    if (username == null || username.isEmpty) {
-      throw Exception('User not logged in');
-    }
-
+    if (username == null || username.isEmpty) throw Exception('User not logged in');
     final userData = await supabase
         .from('users')
         .select('username, profile_image')
         .eq('username', username)
         .maybeSingle();
-
     return {
       'username': userData?['username'] ?? username,
       'profile_image': userData?['profile_image'] ?? '',
@@ -107,30 +106,16 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
     final title = titleController.text.trim();
     final description = descriptionController.text.trim();
 
-    if (title.isEmpty) {
-      showMessage('Please enter course title');
-      return;
-    }
-
-    if (description.isEmpty) {
-      showMessage('Please enter course description');
-      return;
-    }
-
-    if (courseImage == null) {
-      showMessage('Please choose course image');
-      return;
-    }
+    if (title.isEmpty) { showMessage('Please enter course title'); return; }
+    if (description.isEmpty) { showMessage('Please enter course description'); return; }
+    if (courseImage == null) { showMessage('Please choose course image'); return; }
 
     for (int i = 0; i < videos.length; i++) {
       if (videos[i].titleController.text.trim().isEmpty) {
-        showMessage('Please enter title for video ${i + 1}');
-        return;
+        showMessage('Please enter title for video ${i + 1}'); return;
       }
-
       if (videos[i].videoFile == null) {
-        showMessage('Please choose video ${i + 1}');
-        return;
+        showMessage('Please choose video ${i + 1}'); return;
       }
     }
 
@@ -138,12 +123,8 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
 
     try {
       final engineer = await getCurrentEngineerData();
-
       final token = await SessionManager.getToken();
-      if (token == null || token.isEmpty) {
-        showMessage('Please login first');
-        return;
-      }
+      if (token == null || token.isEmpty) { showMessage('Please login first'); return; }
 
       final durations = <int>[];
       for (final video in videos) {
@@ -157,76 +138,46 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
       );
 
       request.headers['Authorization'] = 'Bearer $token';
-
       request.fields['title'] = title;
       request.fields['description'] = description;
-      request.fields['instructor_name'] =
-          engineer['username']?.toString() ?? '';
-      request.fields['instructor_image'] =
-          engineer['profile_image']?.toString() ?? '';
-
-      request.fields['video_titles_json'] = jsonEncode(
-        videos.map((v) => v.titleController.text.trim()).toList(),
-      );
-
+      request.fields['instructor_name'] = engineer['username']?.toString() ?? '';
+      request.fields['instructor_image'] = engineer['profile_image']?.toString() ?? '';
+      request.fields['video_titles_json'] = jsonEncode(videos.map((v) => v.titleController.text.trim()).toList());
       request.fields['video_durations_json'] = jsonEncode(durations);
+      if (_selectedCategory != null) request.fields['category'] = _selectedCategory!;
 
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'course_image',
-          courseImage!.path,
-          filename: courseImageName ?? 'course_image.jpg',
-        ),
-      );
+      request.files.add(await http.MultipartFile.fromPath(
+        'course_image', courseImage!.path, filename: courseImageName ?? 'course_image.jpg',
+      ));
 
       for (int i = 0; i < videos.length; i++) {
-        request.files.add(
-          await http.MultipartFile.fromPath(
-            'videos',
-            videos[i].videoFile!.path,
-            filename: videos[i].videoName ?? 'video_$i.mp4',
-          ),
-        );
+        request.files.add(await http.MultipartFile.fromPath(
+          'videos', videos[i].videoFile!.path, filename: videos[i].videoName ?? 'video_$i.mp4',
+        ));
       }
 
       final response = await request.send();
       final body = await response.stream.bytesToString();
 
-      debugPrint('ADD COURSE STATUS: ${response.statusCode}');
-      debugPrint('ADD COURSE BODY: $body');
-
-      if (response.statusCode != 200) {
-        throw Exception(body);
-      }
+      if (response.statusCode != 200) throw Exception(body);
 
       final email = await SessionManager.getEmail();
-
-      final userData = await supabase
-          .from('users')
-          .select('id')
-          .eq('email', email!)
-          .single();
-
+      final userData = await supabase.from('users').select('id').eq('email', email!).single();
       await addPoints(userData['id'], 10);
 
       if (!mounted) return;
-
       showMessage('Course added successfully');
       Navigator.pop(context, true);
     } catch (e) {
       debugPrint('Add course error: $e');
       showMessage('Error adding course');
     } finally {
-      if (mounted) {
-        setState(() => isSaving = false);
-      }
+      if (mounted) setState(() => isSaving = false);
     }
   }
 
   void showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   InputDecoration inputDecoration(String hint) {
@@ -235,10 +186,7 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
       hintStyle: const TextStyle(color: Colors.white54),
       filled: true,
       fillColor: const Color(0xFF1E3A5F),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: BorderSide.none,
-      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
     );
   }
 
@@ -256,23 +204,13 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
                     child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFE3C39D),
-                        shape: BoxShape.circle,
-                      ),
+                      width: 40, height: 40,
+                      decoration: const BoxDecoration(color: Color(0xFFE3C39D), shape: BoxShape.circle),
                       child: const Icon(Icons.arrow_back, color: Colors.black),
                     ),
                   ),
                   const SizedBox(width: 12),
-                  Text(
-                    'Add Course',
-                    style: GoogleFonts.agbalumo(
-                      fontSize: 30,
-                      color: const Color(0xFF6C94C6),
-                    ),
-                  ),
+                  Text('Add Course', style: GoogleFonts.agbalumo(fontSize: 30, color: const Color(0xFF6C94C6))),
                 ],
               ),
             ),
@@ -294,15 +232,34 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
                       decoration: inputDecoration('Course description'),
                     ),
                     const SizedBox(height: 14),
+
+                    // Category dropdown
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E3A5F),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: _selectedCategory,
+                          hint: const Text('Select category (optional)', style: TextStyle(color: Colors.white54)),
+                          isExpanded: true,
+                          dropdownColor: const Color(0xFF1E3A5F),
+                          style: const TextStyle(color: Colors.white, fontSize: 15),
+                          items: _categories.map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                          onChanged: (val) => setState(() => _selectedCategory = val),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
                     GestureDetector(
                       onTap: pickCourseImage,
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.all(18),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF4A6FA5),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
+                        decoration: BoxDecoration(color: const Color(0xFF4A6FA5), borderRadius: BorderRadius.circular(16)),
                         child: Row(
                           children: [
                             const Icon(Icons.image, color: Color(0xFFE3C39D)),
@@ -321,60 +278,31 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
                     const SizedBox(height: 22),
                     Row(
                       children: [
-                        Text(
-                          'Videos',
-                          style: GoogleFonts.agbalumo(
-                            fontSize: 24,
-                            color: const Color(0xFF6C94C6),
-                          ),
-                        ),
+                        Text('Videos', style: GoogleFonts.agbalumo(fontSize: 24, color: const Color(0xFF6C94C6))),
                         const Spacer(),
                         GestureDetector(
                           onTap: addVideoField,
                           child: Container(
-                            width: 38,
-                            height: 38,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFE3C39D),
-                              shape: BoxShape.circle,
-                            ),
+                            width: 38, height: 38,
+                            decoration: const BoxDecoration(color: Color(0xFFE3C39D), shape: BoxShape.circle),
                             child: const Icon(Icons.add, color: Colors.black),
                           ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    ...List.generate(
-                      videos.length,
-                      (index) => buildVideoCard(index),
-                    ),
+                    ...List.generate(videos.length, (index) => buildVideoCard(index)),
                     const SizedBox(height: 20),
                     GestureDetector(
                       onTap: isSaving ? null : saveCourse,
                       child: Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(vertical: 15),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE3C39D),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
+                        decoration: BoxDecoration(color: const Color(0xFFE3C39D), borderRadius: BorderRadius.circular(20)),
                         child: Center(
                           child: isSaving
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.black,
-                                  ),
-                                )
-                              : Text(
-                                  'Save Course',
-                                  style: GoogleFonts.agbalumo(
-                                    color: Colors.black,
-                                    fontSize: 18,
-                                  ),
-                                ),
+                              ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                              : Text('Save Course', style: GoogleFonts.agbalumo(color: Colors.black, fontSize: 18)),
                         ),
                       ),
                     ),
@@ -390,7 +318,6 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
 
   Widget buildVideoCard(int index) {
     final video = videos[index];
-
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(14),
@@ -403,13 +330,7 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
         children: [
           Row(
             children: [
-              Text(
-                'Video ${index + 1}',
-                style: const TextStyle(
-                  color: Color(0xFFE3C39D),
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              Text('Video ${index + 1}', style: const TextStyle(color: Color(0xFFE3C39D), fontWeight: FontWeight.bold)),
               const Spacer(),
               if (videos.length > 1)
                 GestureDetector(
@@ -430,10 +351,7 @@ class _AddCourseScreenState extends State<AddCourseScreen> {
             child: Container(
               width: double.infinity,
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFF2C3E50),
-                borderRadius: BorderRadius.circular(14),
-              ),
+              decoration: BoxDecoration(color: const Color(0xFF2C3E50), borderRadius: BorderRadius.circular(14)),
               child: Row(
                 children: [
                   const Icon(Icons.video_library, color: Color(0xFFE3C39D)),

@@ -42,11 +42,9 @@ def get_all_courses(search: Optional[str] = None):
         cursor = db.cursor()
         query = "SELECT * FROM courses WHERE 1=1"
         params = []
-
         if search:
             query += " AND title ILIKE %s"
             params.append(f"%{search}%")
-
         query += " ORDER BY created_at DESC"
         cursor.execute(query, params)
         return cursor.fetchall()
@@ -59,19 +57,12 @@ def get_course(course_id: int):
     db = get_db()
     try:
         cursor = db.cursor()
-
         cursor.execute("SELECT * FROM courses WHERE id = %s", (course_id,))
         course = cursor.fetchone()
-
         if not course:
             raise HTTPException(status_code=404, detail="Course not found")
-
-        cursor.execute(
-            "SELECT * FROM lessons WHERE course_id = %s ORDER BY order_index",
-            (course_id,),
-        )
+        cursor.execute("SELECT * FROM lessons WHERE course_id = %s ORDER BY order_index", (course_id,))
         lessons = cursor.fetchall()
-
         result = dict(course)
         result["lessons"] = lessons
         return result
@@ -87,41 +78,21 @@ def add_course(
     db = get_db()
     try:
         cursor = db.cursor()
-
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
         user = cursor.fetchone()
-
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-
         cursor.execute(
             """
-            INSERT INTO courses (
-                title, instructor_name, instructor_image, description,
-                category, image_url, duration_hours, rating
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-            RETURNING id
+            INSERT INTO courses (title, instructor_name, instructor_image, description, category, image_url, duration_hours, rating)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
             """,
-            (
-                course.title,
-                course.instructor_name,
-                course.instructor_image,
-                course.description,
-                course.category,
-                course.image_url,
-                course.duration_hours,
-                course.rating,
-            ),
+            (course.title, course.instructor_name, course.instructor_image, course.description,
+             course.category, course.image_url, course.duration_hours, course.rating),
         )
-
         new_id = cursor.fetchone()["id"]
         add_points(cursor, user["id"], 20)
         db.commit()
-
         return {"message": "Course added", "course_id": new_id}
     except Exception as e:
         db.rollback()
@@ -139,33 +110,18 @@ def add_lesson(
     db = get_db()
     try:
         cursor = db.cursor()
-
         cursor.execute("SELECT id FROM courses WHERE id = %s", (course_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Course not found")
-
         cursor.execute(
             """
-            INSERT INTO lessons (
-                course_id, title, video_url,
-                duration_minutes, duration_seconds, order_index
-            )
-            VALUES (%s,%s,%s,%s,%s,%s)
-            RETURNING id
+            INSERT INTO lessons (course_id, title, video_url, duration_minutes, duration_seconds, order_index)
+            VALUES (%s,%s,%s,%s,%s,%s) RETURNING id
             """,
-            (
-                course_id,
-                lesson.title,
-                lesson.video_url,
-                lesson.duration_minutes,
-                lesson.duration_seconds,
-                lesson.order_index,
-            ),
+            (course_id, lesson.title, lesson.video_url, lesson.duration_minutes, lesson.duration_seconds, lesson.order_index),
         )
-
         new_id = cursor.fetchone()["id"]
         db.commit()
-
         return {"message": "Lesson added", "lesson_id": new_id}
     except Exception as e:
         db.rollback()
@@ -182,6 +138,7 @@ async def create_course_with_videos(
     video_durations_json: str = Form("[]"),
     course_image: UploadFile = File(...),
     videos: List[UploadFile] = File(...),
+    category: Optional[str] = Form(None),  # ← أضفنا category هنا
     current_user: dict = Depends(require_role("engineer", "admin")),
 ):
     db = get_db()
@@ -192,17 +149,10 @@ async def create_course_with_videos(
         video_durations = json.loads(video_durations_json)
 
         if len(video_titles) != len(videos):
-            raise HTTPException(
-                status_code=400,
-                detail="Video titles count does not match videos count",
-            )
+            raise HTTPException(status_code=400, detail="Video titles count does not match videos count")
 
-        cursor.execute(
-            "SELECT id, username, profile_image FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
+        cursor.execute("SELECT id, username, profile_image FROM users WHERE email = %s", (current_user["email"],))
         user = cursor.fetchone()
-
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
@@ -213,14 +163,9 @@ async def create_course_with_videos(
         image_path = f"{user['id']}/{timestamp}_{image_name}"
 
         supabase_admin.storage.from_("course-images").upload(
-            image_path,
-            image_bytes,
-            {"content-type": course_image.content_type},
+            image_path, image_bytes, {"content-type": course_image.content_type},
         )
-
-        image_url = supabase_admin.storage.from_("course-images").get_public_url(
-            image_path
-        )
+        image_url = supabase_admin.storage.from_("course-images").get_public_url(image_path)
 
         total_duration_seconds = 0
         for d in video_durations:
@@ -233,19 +178,15 @@ async def create_course_with_videos(
 
         cursor.execute(
             """
-            INSERT INTO courses (
-                title, instructor_name, instructor_image, description,
-                category, image_url, duration_hours, rating
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-            RETURNING id
+            INSERT INTO courses (title, instructor_name, instructor_image, description, category, image_url, duration_hours, rating)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
             """,
             (
                 title,
                 user["username"],
                 user.get("profile_image") or "",
                 description,
-                "",
+                category or "",  # ← يحفظ الـ category الفعلي
                 image_url,
                 duration_hours,
                 0.0,
@@ -260,14 +201,9 @@ async def create_course_with_videos(
             video_path = f"{user['id']}/{course_id}/{timestamp}_{i + 1}_{video_name}"
 
             supabase_admin.storage.from_("course-videos").upload(
-                video_path,
-                video_bytes,
-                {"content-type": video.content_type},
+                video_path, video_bytes, {"content-type": video.content_type},
             )
-
-            video_url = supabase_admin.storage.from_("course-videos").get_public_url(
-                video_path
-            )
+            video_url = supabase_admin.storage.from_("course-videos").get_public_url(video_path)
 
             duration_seconds = (
                 int(video_durations[i])
@@ -277,29 +213,16 @@ async def create_course_with_videos(
 
             cursor.execute(
                 """
-                INSERT INTO lessons (
-                    course_id, title, video_url,
-                    duration_minutes, duration_seconds, order_index
-                )
+                INSERT INTO lessons (course_id, title, video_url, duration_minutes, duration_seconds, order_index)
                 VALUES (%s,%s,%s,%s,%s,%s)
                 """,
-                (
-                    course_id,
-                    video_titles[i],
-                    video_url,
-                    0,
-                    duration_seconds,
-                    i + 1,
-                ),
+                (course_id, video_titles[i], video_url, 0, duration_seconds, i + 1),
             )
 
         add_points(cursor, user["id"], 20)
         db.commit()
 
-        return {
-            "message": "Course added with videos",
-            "course_id": course_id,
-        }
+        return {"message": "Course added with videos", "course_id": course_id}
 
     except HTTPException:
         db.rollback()
@@ -319,32 +242,19 @@ def start_course(
     db = get_db()
     try:
         cursor = db.cursor()
-
         cursor.execute("SELECT id FROM courses WHERE id = %s", (course_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Course not found")
-
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
         user = cursor.fetchone()
-
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-
         cursor.execute(
-            """
-            INSERT INTO student_courses (user_id, course_id)
-            VALUES (%s, %s)
-            ON CONFLICT (user_id, course_id) DO NOTHING
-            """,
+            "INSERT INTO student_courses (user_id, course_id) VALUES (%s, %s) ON CONFLICT (user_id, course_id) DO NOTHING",
             (user["id"], course_id),
         )
-
         db.commit()
         return {"message": "Course started"}
-
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
@@ -360,14 +270,11 @@ def delete_course(
     db = get_db()
     try:
         cursor = db.cursor()
-
         cursor.execute("SELECT id FROM courses WHERE id = %s", (course_id,))
         if not cursor.fetchone():
             raise HTTPException(status_code=404, detail="Course not found")
-
         cursor.execute("DELETE FROM courses WHERE id = %s", (course_id,))
         db.commit()
-
         return {"message": "Course deleted"}
     except Exception as e:
         db.rollback()
