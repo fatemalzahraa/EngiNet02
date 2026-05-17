@@ -8,6 +8,7 @@ import 'package:enginet/core/session_manager.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:enginet/core/constants.dart';
+import 'add_article.dart';
 
 class ArticleScreen extends StatefulWidget {
   const ArticleScreen({super.key});
@@ -448,24 +449,7 @@ class _ArticleScreenState extends State<ArticleScreen> {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (isOwner)
-                        PopupMenuButton<String>(
-                          icon: const Icon(Icons.more_vert,
-                              color: Colors.white),
-                          onSelected: (value) {
-                            if (value == 'delete') {
-                              _deleteArticle(articleId);
-                            } else if (value == 'edit') {
-                              _editArticle(item);
-                            }
-                          },
-                          itemBuilder: (context) => const [
-                            PopupMenuItem(
-                                value: 'edit', child: Text('Edit')),
-                            PopupMenuItem(
-                                value: 'delete', child: Text('Delete')),
-                          ],
-                        ),
+                      
                     ],
                   ),
                   const SizedBox(height: 12),

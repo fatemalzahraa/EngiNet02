@@ -14,6 +14,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:enginet/add_article.dart';
 import 'package:enginet/add_book.dart';
 
+
 const _supabaseUrl = String.fromEnvironment(
   'SUPABASE_URL',
   defaultValue: 'https://ksfrsnbfdzgtkxhswobs.supabase.co',
@@ -49,7 +50,7 @@ class MyApp extends StatelessWidget {
         '/login': (context) => const LoginScreen(),
         '/register': (context) => const SignupScreen(),
         '/home': (context) => const IndexPage(title: 'Enginet'),
-        '//reset-password-link': (context) => const ResetPasswordScreen(),
+        '/reset-password-link': (context) => const ResetPasswordScreen(),
         '/student-profile': (context) => const StudentProfileScreen(),
         '/engineer-profile': (context) => const EngineerProfileScreen(),
         '/ai-chat': (context) => const AIChatScreen(),
