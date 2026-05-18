@@ -386,11 +386,16 @@ def get_recommendations(current_user: dict = Depends(get_current_user)):
             return get_popular_content(cursor)
 
         u_idx = user_idx[user_id]
-        user_vector = matrix[u_idx]
 
-        result = model.recommend(u_idx, user_vector, N=30, filter_already_liked_items=True)
+        result = model.recommend(
+            userid=u_idx,
+            user_items=matrix[u_idx],
+            N=30,
+            filter_already_liked_items=True,
+        )
 
         predictions = []
+
         if isinstance(result, tuple) and len(result) == 2:
             recommended_ids, scores = result
             for j in range(len(recommended_ids)):
@@ -402,14 +407,30 @@ def get_recommendations(current_user: dict = Depends(get_current_user)):
         predictions.sort(key=lambda x: x[1], reverse=True)
 
         courses, books, articles = [], [], []
+
         for item_id, score in predictions:
             content_type, content_id = item_id.split("_", 1)
+
             if content_type == "course" and len(courses) < 10:
                 courses.append(int(content_id))
             elif content_type == "book" and len(books) < 10:
                 books.append(int(content_id))
             elif content_type == "article" and len(articles) < 10:
                 articles.append(int(content_id))
+
+        if not courses:
+            cursor.execute("SELECT id FROM courses ORDER BY COALESCE(rating,0) DESC LIMIT 10")
+            courses = [r["id"] for r in cursor.fetchall()]
+
+        if not books:
+            cursor.execute("SELECT id FROM books ORDER BY COALESCE(likes,0) DESC LIMIT 10")
+            books = [r["id"] for r in cursor.fetchall()]
+
+        if not articles:
+            cursor.execute("SELECT id FROM articles ORDER BY COALESCE(rating,0) DESC LIMIT 10")
+            articles = [r["id"] for r in cursor.fetchall()]
+
+        print("Predictions:", predictions)
 
         return {
             "courses": fetch_by_ids(cursor, "courses", courses),
@@ -421,24 +442,6 @@ def get_recommendations(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
-
-
-def fetch_by_ids(cursor, table, ids):
-    if not ids:
-        return []
-    cursor.execute(f"SELECT * FROM {table} WHERE id = ANY(%s)", (ids,))
-    return cursor.fetchall()
-
-
-def get_popular_content(cursor):
-    cursor.execute("SELECT * FROM courses ORDER BY COALESCE(rating,0) DESC LIMIT 10")
-    courses = cursor.fetchall()
-    cursor.execute("SELECT * FROM books ORDER BY COALESCE(likes,0) DESC LIMIT 10")
-    books = cursor.fetchall()
-    cursor.execute("SELECT * FROM articles ORDER BY COALESCE(rating,0) DESC LIMIT 10")
-    articles = cursor.fetchall()
-    return {"courses": courses, "books": books, "articles": articles}
-
 
 @app.post("/interact")
 def record_interaction(

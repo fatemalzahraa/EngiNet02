@@ -199,57 +199,46 @@ class _BookScreenState extends State<BookScreen> {
 
               const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-              // ─── Recommended Books Section ───
-              if (recommendedBooks.isNotEmpty || isLoadingRecommended) ...[
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                    child: Text(
-                      "Recommended Books",
-                      style: GoogleFonts.agbalumo(
-                        fontSize: 22,
-                        color: const Color(0xFF6C94C6),
-                      ),
-                    ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: 220,
-                    child: isLoadingRecommended
-                        ? const Center(
-                            child: CircularProgressIndicator(
-                                color: Color(0xFF6C94C6)))
-                        : ListView.separated(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16),
-                            scrollDirection: Axis.horizontal,
-                            itemCount: recommendedBooks.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(width: 12),
-                            itemBuilder: (context, index) {
-                              final book = recommendedBooks[index];
-                              return _buildRecommendedBookCard(book);
-                            },
-                          ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
-                    child: Text(
-                      "All Books",
-                      style: GoogleFonts.agbalumo(
-                        fontSize: 22,
-                        color: const Color(0xFF6C94C6),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              // Recommended Books Section
+SliverToBoxAdapter(
+  child: Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+    child: Text(
+      "Recommended Books",
+      style: GoogleFonts.agbalumo(
+        fontSize: 22,
+        color: const Color(0xFF6C94C6),
+      ),
+    ),
+  ),
+),
 
+SliverToBoxAdapter(
+  child: SizedBox(
+    height: 220,
+    child: isLoadingRecommended
+        ? const Center(
+            child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
+          )
+        : recommendedBooks.isEmpty
+            ? const Center(
+                child: Text(
+                  "No recommendations yet",
+                  style: TextStyle(color: Colors.white),
+                ),
+              )
+            : ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                scrollDirection: Axis.horizontal,
+                itemCount: recommendedBooks.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 12),
+                itemBuilder: (context, index) {
+                  final book = recommendedBooks[index];
+                  return _buildRecommendedBookCard(book);
+                },
+              ),
+  ),
+),
               // ─── All Books Grid ───
               if (isLoading)
                 const SliverToBoxAdapter(

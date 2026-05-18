@@ -129,6 +129,8 @@ class _ArticleScreenState extends State<ArticleScreen> {
 }
 
     final data = jsonDecode(res.body) as Map<String, dynamic>;
+      debugPrint("ARTICLES DATA = ${data['articles']}");
+      debugPrint("ARTICLES COUNT = ${(data['articles'] ?? []).length}");
 
     if (!mounted) return;
     setState(() {
@@ -224,50 +226,54 @@ class _ArticleScreenState extends State<ArticleScreen> {
                       child: ListView(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         children: [
-                          // ─── Recommended Articles Section ───
-                          if (recommendedArticles.isNotEmpty || isLoadingRecommended) ...[
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12, top: 4),
-                              child: Text(
-                                "Recommended Articles",
-                                style: GoogleFonts.agbalumo(
-                                  fontSize: 22,
-                                  color: const Color(0xFF6C94C6),
-                                ),
-                              ),
-                            ),
-                            SizedBox(
-                              height: 220,
-                              child: isLoadingRecommended
-                                  ? const Center(
-                                      child: CircularProgressIndicator(
-                                          color: Color(0xFF6C94C6)))
-                                  : ListView.separated(
-                                      scrollDirection: Axis.horizontal,
-                                      itemCount: recommendedArticles.length,
-                                      separatorBuilder: (_, __) =>
-                                          const SizedBox(width: 12),
-                                      itemBuilder: (context, index) {
-                                        final item =
-                                            recommendedArticles[index];
-                                        return _buildRecommendedArticleCard(
-                                            item);
-                                      },
-                                    ),
-                            ),
-                            const SizedBox(height: 20),
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: Text(
-                                "All Articles",
-                                style: GoogleFonts.agbalumo(
-                                  fontSize: 22,
-                                  color: const Color(0xFF6C94C6),
-                                ),
-                              ),
-                            ),
-                          ],
+                         // ─── Recommended Articles Section ───
+Padding(
+  padding: const EdgeInsets.only(bottom: 12, top: 4),
+  child: Text(
+    "Recommended Articles",
+    style: GoogleFonts.agbalumo(
+      fontSize: 22,
+      color: const Color(0xFF6C94C6),
+    ),
+  ),
+),
 
+SizedBox(
+  height: 220,
+  child: isLoadingRecommended
+      ? const Center(
+          child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
+        )
+      : recommendedArticles.isEmpty
+          ? const Center(
+              child: Text(
+                "No recommendations yet",
+                style: TextStyle(color: Colors.white),
+              ),
+            )
+          : ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: recommendedArticles.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, index) {
+                final item = recommendedArticles[index];
+                return _buildRecommendedArticleCard(item);
+              },
+            ),
+),
+
+const SizedBox(height: 20),
+
+Padding(
+  padding: const EdgeInsets.only(bottom: 12),
+  child: Text(
+    "All Articles",
+    style: GoogleFonts.agbalumo(
+      fontSize: 22,
+      color: const Color(0xFF6C94C6),
+    ),
+  ),
+),
                           // ─── All Articles ───
                           if (filteredArticles.isEmpty)
                             const Center(
