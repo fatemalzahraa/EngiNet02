@@ -430,6 +430,12 @@ def get_recommendations(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
+def fetch_by_ids(cursor, table, ids):
+    if not ids:
+        return []
+
+    cursor.execute(f"SELECT * FROM {table} WHERE id = ANY(%s)", (ids,))
+    return cursor.fetchall()
 
 @app.post("/interact")
 def record_interaction(
