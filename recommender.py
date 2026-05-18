@@ -31,9 +31,12 @@ def train_model(db):
         n_items = len(item_idx)
 
         matrix = csr_matrix((data, (row_ids, col_ids)), shape=(n_users, n_items))
-
+        print("Matrix shape:", matrix.shape)
+        print("Users:", len(user_idx))
+        print("Items:", len(item_idx))
+       
         model = als.AlternatingLeastSquares(factors=50, iterations=20, use_gpu=False)
-        model.fit(matrix)
+        model.fit(matrix.T)
 
         users = {v: k for k, v in user_idx.items()}
         items = {v: k for k, v in item_idx.items()}
