@@ -36,7 +36,7 @@ def train_model(db):
         print("Items:", len(item_idx))
        
         model = als.AlternatingLeastSquares(factors=50, iterations=20, use_gpu=False)
-        model.fit(matrix.T)
+        model.fit(matrix)
 
         users = {v: k for k, v in user_idx.items()}
         items = {v: k for k, v in item_idx.items()}
