@@ -376,7 +376,6 @@ def get_recommendations(current_user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=404, detail="User not found")
 
         user_id = user["id"]
-
         model, users, items, user_idx, item_idx, matrix = train_model(db)
 
         if model is None:
@@ -388,14 +387,49 @@ def get_recommendations(current_user: dict = Depends(get_current_user)):
         u_idx = user_idx[user_id]
 
         result = model.recommend(
-            userid=[u_idx],
-            user_items=matrix[u_idx],
+            userid=u_idx,
+            user_items=matrix,
             N=30,
             filter_already_liked_items=True,
         )
         recommended_ids, scores = result
 
-        recommended_ids = reco
+        predictions = []
+        for j in range(len(recommended_ids)):
+            predictions.append(
+                (items[int(recommended_ids[j])], float(scores[j]))
+            )
+
+        courses, books, articles = [], [], []
+        for item_id, score in predictions:
+            content_type, content_id = item_id.split("_", 1)
+            if content_type == "course" and len(courses) < 10:
+                courses.append(int(content_id))
+            elif content_type == "book" and len(books) < 10:
+                books.append(int(content_id))
+            elif content_type == "article" and len(articles) < 10:
+                articles.append(int(content_id))
+
+        if not courses:
+            cursor.execute("SELECT id FROM courses ORDER BY COALESCE(rating,0) DESC LIMIT 10")
+            courses = [r["id"] for r in cursor.fetchall()]
+        if not books:
+            cursor.execute("SELECT id FROM books ORDER BY COALESCE(likes,0) DESC LIMIT 10")
+            books = [r["id"] for r in cursor.fetchall()]
+        if not articles:
+            cursor.execute("SELECT id FROM articles ORDER BY COALESCE(rating,0) DESC LIMIT 10")
+            articles = [r["id"] for r in cursor.fetchall()]
+
+        return {
+            "courses": fetch_by_ids(cursor, "courses", courses),
+            "books": fetch_by_ids(cursor, "books", books),
+            "articles": fetch_by_ids(cursor, "articles", articles),
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
 
 @app.post("/interact")
 def record_interaction(
