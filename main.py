@@ -387,11 +387,11 @@ def get_recommendations(current_user: dict = Depends(get_current_user)):
         u_idx = user_idx[user_id]
 
         result = model.recommend(
-            userid=u_idx,
-            user_items=matrix,
-            N=30,
-            filter_already_liked_items=True,
-        )
+          userid=u_idx,
+          user_items=matrix[u_idx],
+          N=30,
+          filter_already_liked_items=True,
+         )
         recommended_ids, scores = result
 
         predictions = []
