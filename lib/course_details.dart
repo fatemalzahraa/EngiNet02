@@ -25,8 +25,8 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 
   Map<String, dynamic>? course;
   List<dynamic> lessons = [];
- Map<int, bool> _progress = {};
-Map<int, int> _watchedSeconds = {};
+  Map<int, bool> _progress = {};
+  Map<int, int> _watchedSeconds = {};
 
   bool isLoading = true;
   bool _courseStarted = false;
@@ -36,7 +36,6 @@ Map<int, int> _watchedSeconds = {};
   int selectedRating = 0;
   bool _isProcessingLike = false;
   bool _isProcessingRating = false;
-  final TextEditingController _commentController = TextEditingController();
   List<Map<String, dynamic>> comments = [];
   int _totalDurationSeconds = 0;
   bool _isCalculatingDuration = false;
@@ -105,9 +104,9 @@ Map<int, int> _watchedSeconds = {};
 
       if (owner == null || owner['id'] == null) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('User profile not found')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('User profile not found')));
         return;
       }
 
@@ -167,8 +166,9 @@ Map<int, int> _watchedSeconds = {};
           .select('id')
           .eq('course_id', courseId);
 
-      final lessonIds =
-          (lessonRows as List).map((e) => e['id'] as int).toList();
+      final lessonIds = (lessonRows as List)
+          .map((e) => e['id'] as int)
+          .toList();
 
       if (lessonIds.isNotEmpty) {
         await supabase
@@ -191,9 +191,9 @@ Map<int, int> _watchedSeconds = {};
     } catch (e) {
       debugPrint('❌ deleteCourse error: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Delete failed: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
     }
   }
 
@@ -286,14 +286,11 @@ Map<int, int> _watchedSeconds = {};
             .eq('user_id', _currentUser!['id'])
             .eq('course_id', int.parse(widget.courseId));
       } else {
-        await supabase.from('course_ratings').upsert(
-          {
-            'user_id': _currentUser!['id'],
-            'course_id': int.parse(widget.courseId),
-            'rating': selectedRating,
-          },
-          onConflict: 'user_id,course_id',
-        );
+        await supabase.from('course_ratings').upsert({
+          'user_id': _currentUser!['id'],
+          'course_id': int.parse(widget.courseId),
+          'rating': selectedRating,
+        }, onConflict: 'user_id,course_id');
       }
 
       final allRatings = await supabase
@@ -335,30 +332,7 @@ Map<int, int> _watchedSeconds = {};
     }
   }
 
-  Future<void> _addComment() async {
-    if (_currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login first')),
-      );
-      return;
-    }
-    final text = _commentController.text.trim();
-    if (text.isEmpty) return;
-
-    try {
-      await supabase.from('course_comments').insert({
-        'course_id': int.parse(widget.courseId),
-        'comment_user_id': _currentUser!['id'],
-        'username': _currentUser!['username'],
-        'profile_image': _currentUser!['profile_image'],
-        'content': text,
-      });
-      _commentController.clear();
-      await _loadComments();
-    } catch (e) {
-      debugPrint('❌ ERROR COMMENT: $e');
-    }
-  }
+  
 
   // ── Lesson progress ───────────────────────────────────────────────────────
   Future<void> _saveLessonProgress(
@@ -367,8 +341,9 @@ Map<int, int> _watchedSeconds = {};
     required int watchedSeconds,
   }) async {
     final token = await SessionManager.getToken();
-
-if (token == null || token.isEmpty) return;
+    
+    if (token == null || token.isEmpty) return;
+    if (!mounted) return;
 
     final res = await http.post(
       Uri.parse(
@@ -429,8 +404,9 @@ if (token == null || token.isEmpty) return;
       final videoUrl = lesson['video_url']?.toString() ?? '';
       if (videoUrl.isEmpty) continue;
       try {
-        final controller =
-            VideoPlayerController.networkUrl(Uri.parse(videoUrl));
+        final controller = VideoPlayerController.networkUrl(
+          Uri.parse(videoUrl),
+        );
         await controller.initialize();
         totalSeconds += controller.value.duration.inSeconds;
         await controller.dispose();
@@ -453,7 +429,8 @@ if (token == null || token.isEmpty) return;
 
       final res = await http.get(
         Uri.parse(
-            '${AppConstants.baseUrl}/profile/lesson-progress/${widget.courseId}'),
+          '${AppConstants.baseUrl}/profile/lesson-progress/${widget.courseId}',
+        ),
         headers: {'Authorization': 'Bearer $token'},
       );
 
@@ -461,26 +438,25 @@ if (token == null || token.isEmpty) return;
         final Map<String, dynamic> data = jsonDecode(res.body);
         if (!mounted) return;
         setState(() {
-  _progress = {};
-  _watchedSeconds = {};
+          _progress = {};
+          _watchedSeconds = {};
 
-  data.forEach((k, v) {
-    final lessonId = int.parse(k);
+          data.forEach((k, v) {
+            final lessonId = int.parse(k);
 
-    if (v is Map) {
-      _progress[lessonId] =
-          v['completed'] == true || v['completed'] == 1;
-      _watchedSeconds[lessonId] =
-          int.tryParse(v['watched_seconds'].toString()) ?? 0;
-    } else {
-      _progress[lessonId] =
-          v == true || v == 1 || v.toString() == '1';
-      _watchedSeconds[lessonId] = 0;
-    }
-  });
+            if (v is Map) {
+              _progress[lessonId] =
+                  v['completed'] == true || v['completed'] == 1;
+              _watchedSeconds[lessonId] =
+                  int.tryParse(v['watched_seconds'].toString()) ?? 0;
+            } else {
+              _progress[lessonId] = v == true || v == 1 || v.toString() == '1';
+              _watchedSeconds[lessonId] = 0;
+            }
+          });
 
-  _courseStarted = _progress.isNotEmpty || _watchedSeconds.isNotEmpty;
-});
+          _courseStarted = _progress.isNotEmpty || _watchedSeconds.isNotEmpty;
+        });
       }
     } catch (e) {
       debugPrint('❌ Error loading progress: $e');
@@ -493,26 +469,23 @@ if (token == null || token.isEmpty) return;
       final token = await SessionManager.getToken();
       debugPrint('TOKEN USED = $token');
 
-if (token == null || token.isEmpty) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Please login first')),
-  );
-  return;
-}
+      if (token == null || token.isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Please login first')));
+        return;
+      }
 
       final res = await http.post(
-        Uri.parse(
-            '${AppConstants.baseUrl}/courses/${widget.courseId}/start'),
-        headers: {
-  'Authorization': 'Bearer $token',
-},
+        Uri.parse('${AppConstants.baseUrl}/courses/${widget.courseId}/start'),
+        headers: {'Authorization': 'Bearer $token'},
       );
 
       if (res.statusCode != 200) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Start failed: ${res.body}')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Start failed: ${res.body}')));
         return;
       }
 
@@ -521,9 +494,9 @@ if (token == null || token.isEmpty) {
     } catch (e) {
       debugPrint('❌ Error starting course: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error starting course: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error starting course: $e')));
     }
   }
 
@@ -537,74 +510,73 @@ if (token == null || token.isEmpty) {
 
   bool _canOpenLesson(int index) {
     if (index == 0) return true;
-    final previousLessonId =
-        lessons[index - 1]['id'] as int? ?? 0;
+    final previousLessonId = lessons[index - 1]['id'] as int? ?? 0;
     return _progress[previousLessonId] == true;
   }
 
   // ── Open lesson ───────────────────────────────────────────────────────────
   Future<void> _openLesson(int index) async {
-  if (!_canOpenLesson(index)) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Finish the previous video first')),
-    );
-    return;
-  }
+    if (!_canOpenLesson(index)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Finish the previous video first')),
+      );
+      return;
+    }
 
-  final lesson = lessons[index];
-  final lessonId = lesson['id'] as int? ?? 0;
-  final videoUrl = lesson['video_url']?.toString() ?? '';
-  final title = lesson['title']?.toString() ?? '';
+    final lesson = lessons[index];
+    final lessonId = lesson['id'] as int? ?? 0;
+    final videoUrl = lesson['video_url']?.toString() ?? '';
+    final title = lesson['title']?.toString() ?? '';
 
-  if (videoUrl.isEmpty) return;
+    if (videoUrl.isEmpty) return;
 
-  final result = await Navigator.push<Map<String, dynamic>>(
-    context,
-    MaterialPageRoute(
-      builder: (_) => LessonVideoPlayerScreen(
-        title: title,
-        videoUrl: videoUrl,
-        startAtSeconds: _watchedSeconds[lessonId] ?? 0,
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LessonVideoPlayerScreen(
+          title: title,
+          videoUrl: videoUrl,
+          startAtSeconds: _watchedSeconds[lessonId] ?? 0,
+        ),
       ),
-    ),
-  );
+    );
 
-  if (result == null) return;
+    if (result == null) return;
 
-  final completed = result['completed'] == true;
-  final watchedSeconds =
-      int.tryParse(result['watched_seconds'].toString()) ?? 0;
+    final completed = result['completed'] == true;
+    final watchedSeconds =
+        int.tryParse(result['watched_seconds'].toString()) ?? 0;
 
-  await _saveLessonProgress(
-    lessonId,
-    completed: completed,
-    watchedSeconds: watchedSeconds,
-  );
+    await _saveLessonProgress(
+      lessonId,
+      completed: completed,
+      watchedSeconds: watchedSeconds,
+    );
 
-  setState(() {
-    _watchedSeconds[lessonId] = watchedSeconds;
+    setState(() {
+      _watchedSeconds[lessonId] = watchedSeconds;
+
+      if (completed) {
+        _progress[lessonId] = true;
+        _courseStarted = true;
+      }
+    });
 
     if (completed) {
-      _progress[lessonId] = true;
-      _courseStarted = true;
-    }
-  });
+      final completedLessons = _progress.values.where((v) => v).length;
 
-  if (completed) {
-    final completedLessons = _progress.values.where((v) => v).length;
+      if (completedLessons >= lessons.length) {
+        await _giveCompletionReward();
+      }
 
-    if (completedLessons >= lessons.length) {
-      await _giveCompletionReward();
-    }
-
-    final nextIndex = index + 1;
-    if (mounted && nextIndex < lessons.length) {
-      Future.delayed(const Duration(milliseconds: 400), () {
-        if (mounted) _openLesson(nextIndex);
-      });
+      final nextIndex = index + 1;
+      if (mounted && nextIndex < lessons.length) {
+        Future.delayed(const Duration(milliseconds: 400), () {
+          if (mounted) _openLesson(nextIndex);
+        });
+      }
     }
   }
-}
 
   // ── Build ─────────────────────────────────────────────────────────────────
   @override
@@ -613,7 +585,8 @@ if (token == null || token.isEmpty) {
       return const Scaffold(
         backgroundColor: Color(0xFF071739),
         body: Center(
-            child: CircularProgressIndicator(color: Color(0xFF6C94C6))),
+          child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
+        ),
       );
     }
 
@@ -621,8 +594,10 @@ if (token == null || token.isEmpty) {
       return const Scaffold(
         backgroundColor: Color(0xFF071739),
         body: Center(
-          child: Text('Course not found',
-              style: TextStyle(color: Colors.white)),
+          child: Text(
+            'Course not found',
+            style: TextStyle(color: Colors.white),
+          ),
         ),
       );
     }
@@ -631,8 +606,7 @@ if (token == null || token.isEmpty) {
     final imageUrl = course!['image_url']?.toString() ?? '';
     final instructorName = course!['instructor_name']?.toString() ?? '';
     final instructorImage = course!['instructor_image']?.toString() ?? '';
-    final rating =
-        double.tryParse(course!['rating']?.toString() ?? '0') ?? 0.0;
+    final rating = double.tryParse(course!['rating']?.toString() ?? '0') ?? 0.0;
 
     return Scaffold(
       backgroundColor: const Color(0xFF2C3E50),
@@ -651,18 +625,21 @@ if (token == null || token.isEmpty) {
                         width: double.infinity,
                         fit: BoxFit.cover,
                         errorWidget: (c, u, e) => const Icon(
-                            Icons.play_circle,
-                            size: 80,
-                            color: Colors.white54),
+                          Icons.play_circle,
+                          size: 80,
+                          color: Colors.white54,
+                        ),
                         placeholder: (c, u) => Shimmer.fromColors(
                           baseColor: const Color(0xFF1A2F55),
                           highlightColor: const Color(0xFF2A4A7F),
-                          child:
-                              Container(height: 250, color: Colors.white),
+                          child: Container(height: 250, color: Colors.white),
                         ),
                       )
-                    : const Icon(Icons.play_circle,
-                        size: 80, color: Colors.white54),
+                    : const Icon(
+                        Icons.play_circle,
+                        size: 80,
+                        color: Colors.white54,
+                      ),
               ),
               Positioned(
                 top: 40,
@@ -681,8 +658,7 @@ if (token == null || token.isEmpty) {
                 ),
               ),
               if (_currentUser != null &&
-                  (_currentUser!['username'] ==
-                          course!['instructor_name'] ||
+                  (_currentUser!['username'] == course!['instructor_name'] ||
                       _currentUser!['role'] == 'admin'))
                 Positioned(
                   top: 40,
@@ -716,7 +692,9 @@ if (token == null || token.isEmpty) {
                           onTap: _courseStarted ? null : _startCourse,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 8),
+                              horizontal: 16,
+                              vertical: 8,
+                            ),
                             decoration: BoxDecoration(
                               color: const Color(0xFF2C3E50),
                               borderRadius: BorderRadius.circular(20),
@@ -771,8 +749,11 @@ if (token == null || token.isEmpty) {
                                 : null,
                             backgroundColor: const Color(0xFF2A4A6F),
                             child: instructorImage.isEmpty
-                                ? const Icon(Icons.person,
-                                    size: 20, color: Colors.white)
+                                ? const Icon(
+                                    Icons.person,
+                                    size: 20,
+                                    color: Colors.white,
+                                  )
                                 : null,
                           ),
                           const SizedBox(width: 8),
@@ -789,8 +770,11 @@ if (token == null || token.isEmpty) {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const Icon(Icons.ondemand_video,
-                              color: Color(0xFF2C3E50), size: 19),
+                          const Icon(
+                            Icons.ondemand_video,
+                            color: Color(0xFF2C3E50),
+                            size: 19,
+                          ),
                           const SizedBox(width: 3),
                           Text(
                             _durationLabel,
@@ -823,6 +807,31 @@ if (token == null || token.isEmpty) {
                               color: Colors.black,
                               fontSize: 13,
                               fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+
+                          GestureDetector(
+                            onTap: _toggleLike,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  isLiked
+                                      ? Icons.favorite
+                                      : Icons.favorite_border,
+                                  color: isLiked ? Colors.red : Colors.black,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  '${course!['likes'] ?? 0}',
+                                  style: GoogleFonts.agbalumo(
+                                    color: Colors.black,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -863,7 +872,8 @@ if (token == null || token.isEmpty) {
                         value: _completedCount / lessons.length,
                         backgroundColor: Colors.white24,
                         valueColor: const AlwaysStoppedAnimation<Color>(
-                            Color(0xFFE3C39D)),
+                          Color(0xFFE3C39D),
+                        ),
                       ),
                     ),
                   const SizedBox(height: 8),
@@ -871,8 +881,10 @@ if (token == null || token.isEmpty) {
                   Expanded(
                     child: lessons.isEmpty
                         ? const Center(
-                            child: Text('No lessons yet',
-                                style: TextStyle(color: Colors.white54)),
+                            child: Text(
+                              'No lessons yet',
+                              style: TextStyle(color: Colors.white54),
+                            ),
                           )
                         : ListView.builder(
                             itemCount: lessons.length,
@@ -911,24 +923,23 @@ if (token == null || token.isEmpty) {
               color: isCompleted
                   ? const Color(0xFF4CAF50)
                   : canOpen
-                      ? const Color(0xFFE3C39D)
-                      : Colors.grey,
+                  ? const Color(0xFFE3C39D)
+                  : Colors.grey,
               shape: BoxShape.circle,
             ),
             child: Center(
               child: isCompleted
                   ? const Icon(Icons.check, color: Colors.white, size: 18)
                   : canOpen
-                      ? Text(
-                          '${index + 1}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: Colors.black,
-                          ),
-                        )
-                      : const Icon(Icons.lock,
-                          color: Colors.white, size: 17),
+                  ? Text(
+                      '${index + 1}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.black,
+                      ),
+                    )
+                  : const Icon(Icons.lock, color: Colors.white, size: 17),
             ),
           ),
           const SizedBox(width: 12),
@@ -941,8 +952,8 @@ if (token == null || token.isEmpty) {
                   color: isCompleted
                       ? Colors.white54
                       : canOpen
-                          ? Colors.white
-                          : Colors.white38,
+                      ? Colors.white
+                      : Colors.white38,
                   fontSize: 14,
                 ),
               ),
@@ -952,9 +963,7 @@ if (token == null || token.isEmpty) {
             width: 24,
             height: 24,
             decoration: BoxDecoration(
-              color: isCompleted
-                  ? const Color(0xFF4CAF50)
-                  : Colors.transparent,
+              color: isCompleted ? const Color(0xFF4CAF50) : Colors.transparent,
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: Colors.white54),
             ),
@@ -978,12 +987,12 @@ class LessonVideoPlayerScreen extends StatefulWidget {
 
   final int startAtSeconds;
 
-const LessonVideoPlayerScreen({
-  super.key,
-  required this.title,
-  required this.videoUrl,
-  this.startAtSeconds = 0,
-});
+  const LessonVideoPlayerScreen({
+    super.key,
+    required this.title,
+    required this.videoUrl,
+    this.startAtSeconds = 0,
+  });
 
   @override
   State<LessonVideoPlayerScreen> createState() =>
@@ -996,27 +1005,25 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
   bool _completed = false;
 
   @override
-void initState() {
-  super.initState();
+  void initState() {
+    super.initState();
 
-  _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
-    ..initialize().then((_) async {
-      if (!mounted) return;
+    _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl))
+      ..initialize().then((_) async {
+        if (!mounted) return;
 
-      if (widget.startAtSeconds > 0) {
-        await _controller.seekTo(
-          Duration(seconds: widget.startAtSeconds),
-        );
-      }
+        if (widget.startAtSeconds > 0) {
+          await _controller.seekTo(Duration(seconds: widget.startAtSeconds));
+        }
 
-      if (!mounted) return;
+        if (!mounted) return;
 
-      setState(() => _isInitialized = true);
-      _controller.play();
-    });
+        setState(() => _isInitialized = true);
+        _controller.play();
+      });
 
-  _controller.addListener(_videoListener);
-}
+    _controller.addListener(_videoListener);
+  }
 
   void _videoListener() {
     if (!_controller.value.isInitialized || _completed) return;
@@ -1026,9 +1033,9 @@ void initState() {
         position.inSeconds >= duration.inSeconds - 1) {
       _completed = true;
       Navigator.pop(context, {
-  'completed': true,
-  'watched_seconds': duration.inSeconds,
-});
+        'completed': true,
+        'watched_seconds': duration.inSeconds,
+      });
     }
   }
 
@@ -1048,15 +1055,15 @@ void initState() {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFFE3C39D)),
           onPressed: () {
-  final seconds = _controller.value.isInitialized
-      ? _controller.value.position.inSeconds
-      : 0;
+            final seconds = _controller.value.isInitialized
+                ? _controller.value.position.inSeconds
+                : 0;
 
-  Navigator.pop(context, {
-    'completed': false,
-    'watched_seconds': seconds,
-  });
-},
+            Navigator.pop(context, {
+              'completed': false,
+              'watched_seconds': seconds,
+            });
+          },
         ),
         title: Text(
           widget.title,

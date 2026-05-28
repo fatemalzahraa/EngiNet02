@@ -22,6 +22,9 @@ from post_router import router as post_router
 from profile_router import router as profile_router
 from questions_router import router as question_router
 from recommender import train_model
+from recommendations_router import router as recommendations_router
+from search_router import router as search_router
+
 from dependencies import (
     SECRET_KEY,
     ALGORITHM,
@@ -44,6 +47,8 @@ app.include_router(course_router)
 app.include_router(profile_router)
 app.include_router(post_router)
 app.include_router(question_router)
+app.include_router(recommendations_router)
+app.include_router(search_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -85,26 +90,167 @@ def _delete_otp(email: str) -> None:
         db.commit()
     finally:
         db.close()
-
+def get_popular_content(cursor):
+    cursor.execute("SELECT * FROM courses ORDER BY COALESCE(rating,0) DESC LIMIT 10")
+    courses = cursor.fetchall()
+    cursor.execute("SELECT * FROM books ORDER BY COALESCE(likes,0) DESC LIMIT 10")
+    books = cursor.fetchall()
+    cursor.execute("SELECT * FROM articles ORDER BY COALESCE(rating,0) DESC LIMIT 10")
+    articles = cursor.fetchall()
+    return {"courses": courses, "books": books, "articles": articles}
 
 @app.post("/register")
 def register(user: User):
     db = get_db()
     try:
         cursor = db.cursor()
-        hashed = bcrypt.hashpw(user.password.encode(), bcrypt.gensalt()).decode()
+
+        hashed = bcrypt.hashpw(
+            user.password.encode(),
+            bcrypt.gensalt()
+        ).decode()
+
         try:
             cursor.execute(
-                "INSERT INTO users (username, email, password, role) VALUES (%s,%s,%s,%s)",
-                (user.username, user.email, hashed, user.role),
+                """
+                INSERT INTO users
+                (username, email, password, role)
+                VALUES (%s,%s,%s,%s)
+                RETURNING id
+                """,
+                (
+                    user.username,
+                    user.email,
+                    hashed,
+                    user.role,
+                ),
             )
+
+            new_user = cursor.fetchone()
             db.commit()
+
         except Exception:
-            raise HTTPException(status_code=400, detail="Username or email already exists")
+            raise HTTPException(
+                status_code=400,
+                detail="Username or email already exists"
+            )
+
     finally:
         db.close()
-    token = create_access_token({"sub": user.email, "role": user.role})
-    return {"message": "User created successfully", "access_token": token, "token_type": "bearer"}
+
+    token = create_access_token({
+        "sub": user.email,
+        "role": user.role
+    })
+
+    return {
+        "message": "User created successfully",
+        "user_id": new_user["id"],
+        "access_token": token,
+        "token_type": "bearer"
+    }
+
+class StudentProfileRequest(BaseModel):
+    university: str = ""
+    specialty: str = ""
+    study_year: str = ""
+    level: str = ""
+    interests: str = ""
+    preferred_language: str = ""
+
+
+@app.post("/student-profile")
+def create_student_profile(
+    data: StudentProfileRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+
+        cursor.execute("""
+            INSERT INTO student_profiles
+            (user_id, university, specialty, study_year, level, interests, preferred_language)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (user_id) DO UPDATE SET
+              university = EXCLUDED.university,
+              specialty = EXCLUDED.specialty,
+              study_year = EXCLUDED.study_year,
+              level = EXCLUDED.level,
+              interests = EXCLUDED.interests,
+              preferred_language = EXCLUDED.preferred_language
+        """, (
+            user["id"],
+            data.university,
+            data.specialty,
+            data.study_year,
+            data.level,
+            data.interests,
+            data.preferred_language,
+        ))
+
+        db.commit()
+        return {"message": "Student profile saved"}
+    finally:
+        db.close()
+
+
+class EngineerProfileRequest(BaseModel):
+    university: str = ""
+    specialty: str = ""
+    experience_years: int = 0
+    skills: str = ""
+    bio: str = ""
+    location: str = ""
+    linkedin: str = ""
+    github: str = ""
+    website: str = ""
+
+
+@app.post("/engineer-profile")
+def create_engineer_profile(
+    data: EngineerProfileRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    db = get_db()
+    try:
+        cursor = db.cursor()
+        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
+        user = cursor.fetchone()
+
+        cursor.execute("""
+            INSERT INTO engineer_profiles
+            (user_id, university, specialty, experience_years, skills, bio, location, linkedin, github, website)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            ON CONFLICT (user_id) DO UPDATE SET
+              university = EXCLUDED.university,
+              specialty = EXCLUDED.specialty,
+              experience_years = EXCLUDED.experience_years,
+              skills = EXCLUDED.skills,
+              bio = EXCLUDED.bio,
+              location = EXCLUDED.location,
+              linkedin = EXCLUDED.linkedin,
+              github = EXCLUDED.github,
+              website = EXCLUDED.website
+        """, (
+            user["id"],
+            data.university,
+            data.specialty,
+            data.experience_years,
+            data.skills,
+            data.bio,
+            data.location,
+            data.linkedin,
+            data.github,
+            data.website,
+        ))
+
+        db.commit()
+        return {"message": "Engineer profile saved"}
+    finally:
+        db.close()
 
 
 @app.post("/token")

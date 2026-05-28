@@ -6,9 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
-import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:convert';
 import 'package:enginet/core/constants.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -104,19 +102,29 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     setState(() => isSaving = true);
 
     final token = await SessionManager.getToken();
-    if (token == null || token.isEmpty) {
-      throw Exception('Please login again');
-    }
+  if (token == null || token.isEmpty) {
+  if (!mounted) return;
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Please login again')),
+  );
+
+  setState(() => isSaving = false);
+  return;
+}
 
     final newEmail = emailCtrl.text.trim();
 
-    if (!newEmail.contains('@') || !newEmail.contains('.')) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid email')),
-      );
-      setState(() => isSaving = false);
-      return;
-    }
+if (!newEmail.contains('@') || !newEmail.contains('.')) {
+  if (!mounted) return;
+
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(content: Text('Enter a valid email')),
+  );
+
+  setState(() => isSaving = false);
+  return;
+}
 
     bool validUrl(String value) {
       if (value.trim().isEmpty) return true;
@@ -126,6 +134,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (!validUrl(linkedinCtrl.text) ||
         !validUrl(githubCtrl.text) ||
         !validUrl(websiteCtrl.text)) {
+          if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Links must start with http:// or https://'),
@@ -285,7 +294,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
                   SwitchListTile(
                     value: showEmail,
-                    activeColor: const Color(0xFFE3C39D),
+                    activeThumbColor: const Color(0xFFE3C39D),
                     title: const Text(
                       'Show Email',
                       style: TextStyle(color: Colors.white),

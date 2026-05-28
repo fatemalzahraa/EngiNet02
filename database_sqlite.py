@@ -117,11 +117,61 @@ print("✅ Tablolar oluşturuldu!")
 
 # USERS
 users = [
-    ("admin",    "fa@gmail.com",          pwd.hash("12341234"),   "admin",    "Platform Administrator", None, 0,   None),
-    ("eng_jack", "jack@enginet.com",       pwd.hash("jack123"),    "engineer", "Senior Software Engineer", None, 450, "MIT"),
-    ("eng_sara", "sara@enginet.com",       pwd.hash("sara123"),    "engineer", "AI & ML Specialist", None, 380, "Stanford"),
-    ("eng_ali",  "ali@enginet.com",        pwd.hash("ali123"),     "engineer", "Civil Engineer", None, 290, "ITU"),
-    ("student1", "student1@enginet.com",   pwd.hash("student123"), "student",  "CS Student", None, 120, "GIBTÜ"),
+    (
+        "admin",
+        "fa@gmail.com",
+        bcrypt.hashpw("12341234".encode(), bcrypt.gensalt()).decode(),
+        "admin",
+        "Platform Administrator",
+        None,
+        0,
+        None
+    ),
+
+    (
+        "eng_jack",
+        "jack@enginet.com",
+        bcrypt.hashpw("jack123".encode(), bcrypt.gensalt()).decode(),
+        "engineer",
+        "Senior Software Engineer",
+        None,
+        450,
+        "MIT"
+    ),
+
+    (
+        "eng_sara",
+        "sara@enginet.com",
+        bcrypt.hashpw("sara123".encode(), bcrypt.gensalt()).decode(),
+        "engineer",
+        "AI & ML Specialist",
+        None,
+        380,
+        "Stanford"
+    ),
+
+    (
+        "eng_ali",
+        "ali@enginet.com",
+        bcrypt.hashpw("ali123".encode(), bcrypt.gensalt()).decode(),
+        "engineer",
+        "Civil Engineer",
+        None,
+        290,
+        "ITU"
+    ),
+
+    (
+        "student1",
+        "student1@enginet.com",
+        bcrypt.hashpw("student123".encode(), bcrypt.gensalt()).decode(),
+        "student",
+        "CS Student",
+        None,
+        120,
+        "GIBTÜ"
+    ),
+
 ]
 for u in users:
     try:

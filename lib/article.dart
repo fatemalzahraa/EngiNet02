@@ -8,7 +8,7 @@ import 'package:enginet/core/session_manager.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:enginet/core/constants.dart';
-import 'add_article.dart';
+
 
 class ArticleScreen extends StatefulWidget {
   const ArticleScreen({super.key});
@@ -48,51 +48,9 @@ class _ArticleScreenState extends State<ArticleScreen> {
     super.dispose();
   }
 
-  Future<void> _deleteArticle(String id) async {
-    await supabase.from('articles').delete().eq('id', id);
-    loadArticles();
-  }
 
-  void _editArticle(dynamic article) {
-    final titleController =
-        TextEditingController(text: article['title'] ?? '');
-    final contentController =
-        TextEditingController(text: article['content'] ?? '');
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Article'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: titleController),
-            const SizedBox(height: 10),
-            TextField(controller: contentController, maxLines: 4),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              await supabase.from('articles').update({
-                'title': titleController.text.trim(),
-                'content': contentController.text.trim(),
-              }).eq('id', article['id']);
-
-              Navigator.pop(context);
-              loadArticles();
-            },
-            child: const Text('Save'),
-          ),
-        ],
-      ),
-    );
-  }
-
+  
   Future<void> loadArticles() async {
     try {
       final data = await supabase
@@ -286,8 +244,7 @@ Padding(
                             )
                           else
                             ...filteredArticles
-                                .map((item) => _buildArticleCard(item))
-                                .toList(),
+                                .map((item) => _buildArticleCard(item)),
                         ],
                       ),
                     ),
@@ -378,7 +335,6 @@ Padding(
     final imageUrl = item['image_url']?.toString() ?? '';
     final authorName = item['author_name']?.toString() ?? '';
     final authorImage = item['author_image']?.toString() ?? '';
-    final isOwner = authorName == currentUsername;
     final rating =
         double.tryParse(item['rating']?.toString() ?? '0') ?? 0.0;
     final articleId = item['id']?.toString() ?? '';

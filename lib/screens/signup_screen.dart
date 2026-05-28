@@ -95,7 +95,11 @@ class _SignupScreenState extends State<SignupScreen> {
 
       if (!mounted) return;
       _showSnackBar('Account created successfully!');
-      Navigator.pushReplacementNamed(context, '/home');
+      if (_selectedRole == 'student') {
+          Navigator.pushReplacementNamed(context, '/student-questions');
+      } else {
+          Navigator.pushReplacementNamed(context, '/engineer-questions');
+      }
 
     } on AuthException catch (e) {
       _showSnackBar(e.message, isError: true);

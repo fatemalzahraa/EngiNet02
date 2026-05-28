@@ -13,12 +13,11 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:enginet/add_article.dart';
 import 'package:enginet/add_book.dart';
+import 'student_questions_screen.dart';
+import 'engineer_questions_screen.dart';
 
 
-const _supabaseUrl = String.fromEnvironment(
-  'SUPABASE_URL',
-  defaultValue: 'https://ksfrsnbfdzgtkxhswobs.supabase.co',
-);
+
 const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
 void main() async {
@@ -58,6 +57,8 @@ class MyApp extends StatelessWidget {
         '/notifications': (context) => const NotificationsScreen(),
         '/add-book': (context) => const AddBookScreen(),
         '/add-article': (context) => const AddArticleScreen(),
+        '/student-questions': (context) => const StudentQuestionsScreen(),
+        '/engineer-questions': (context) => const EngineerQuestionsScreen(),
       },
     );
   }

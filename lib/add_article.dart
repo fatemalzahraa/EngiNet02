@@ -57,20 +57,26 @@ void initState() {
 }
 
   Future<void> _pickImage() async {
-    try {
-      final XFile? pickedFile = await _picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 80,
-      );
-      if (pickedFile == null) return;
-      setState(() => _selectedImage = File(pickedFile.path));
-    } catch (e) {
-      debugPrint('Error picking image: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to pick image')),
-      );
-    }
+  try {
+    final XFile? pickedFile = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+
+    if (!mounted) return;
+    if (pickedFile == null) return;
+
+    setState(() => _selectedImage = File(pickedFile.path));
+  } catch (e) {
+    debugPrint('Error picking image: $e');
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Failed to pick image')),
+    );
   }
+}
 
   Future<void> _pickPdf() async {
     final result = await FilePicker.platform.pickFiles(

@@ -7,7 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'article_comments_screen.dart';
 import 'package:enginet/engineer_profile.dart';
-import 'package:enginet/add_article.dart';
+
 
 class ArticleDetailScreen extends StatefulWidget {
   final String articleId;
