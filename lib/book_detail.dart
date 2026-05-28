@@ -669,10 +669,10 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
       padding:
           const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.5),
+        color: Colors.black.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: const Color(0xFF6C94C6).withOpacity(0.4),
+          color: const Color(0xFF6C94C6).withValues(alpha: 0.4),
         ),
       ),
       child: Column(

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:enginet/core/session_manager.dart';
 import 'dart:convert';
 
 class AIChatScreen extends StatefulWidget {
@@ -16,32 +18,107 @@ class _AIChatScreenState extends State<AIChatScreen> {
   final List<Map<String, String>> _messages = [];
   bool _isLoading = false;
 
-  static const String _apiKey = String.fromEnvironment(
+  // ── سياق التطبيق يُجلب مرة واحدة ──
+  String _appContext = "";
+  bool _contextLoaded = false;
+
+  static const String _groqApiKey = String.fromEnvironment(
     'GROQ_API_KEY',
     defaultValue: '',
   );
 
-  static const String _systemPrompt = """
-Sen EngiNet platformu için mühendislik ve programlama alanında uzmanlaşmış bir yapay zeka asistanısın.
-Görevin öğrencilere ve mühendislere şu konularda yardımcı olmak:
-- Mühendislik ve teknik sorular
-- Programlama kavramlarını açıklama
-- Kod analizi ve hata bulma
-- Kurs ve eğitim kaynakları önerme
-- Matematik ve fizik sorularını yanıtlama
+  static const String _groqUrl =
+      "https://api.groq.com/openai/v1/chat/completions";
+  static const String _groqModel = "llama-3.3-70b-versatile";
 
-Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türkçe veya İngilizce yanıt verebilirsin.
+  @override
+  void initState() {
+    super.initState();
+    _loadAppContext();
+  }
+
+  // ── جلب محتوى التطبيق من Supabase ──────────────────────
+  Future<void> _loadAppContext() async {
+    try {
+      final supabase = Supabase.instance.client;
+
+      final courses = await supabase
+          .from('courses')
+          .select('title, category, description')
+          .order('rating', ascending: false)
+          .limit(20);
+
+      final books = await supabase
+          .from('books')
+          .select('title, category, description')
+          .order('likes', ascending: false)
+          .limit(20);
+
+      final articles = await supabase
+          .from('articles')
+          .select('title, category')
+          .order('rating', ascending: false)
+          .limit(20);
+
+      final sb = StringBuffer();
+
+      sb.writeln("=== Available Courses ===");
+      for (final c in courses) {
+        sb.writeln(
+            "• ${c['title']} [${c['category'] ?? 'General'}]: ${c['description'] ?? ''}");
+      }
+
+      sb.writeln("\n=== Available Books ===");
+      for (final b in books) {
+        sb.writeln(
+            "• ${b['title']} [${b['category'] ?? 'General'}]: ${b['description'] ?? ''}");
+      }
+
+      sb.writeln("\n=== Available Articles ===");
+      for (final a in articles) {
+        sb.writeln("• ${a['title']} [${a['category'] ?? 'General'}]");
+      }
+
+      setState(() {
+        _appContext = sb.toString();
+        _contextLoaded = true;
+      });
+    } catch (e) {
+      debugPrint("Error loading context: $e");
+      setState(() => _contextLoaded = true);
+    }
+  }
+
+  String get _systemPrompt => """
+You are EngiNet AI, a smart assistant for an engineering education platform.
+
+PLATFORM CONTENT:
+$_appContext
+
+YOUR CAPABILITIES:
+1. Answer engineering and programming questions
+2. Recommend courses, books, and articles from the platform based on user needs
+3. Explain technical concepts clearly
+4. Help with math, physics, and CS topics
+5. Support Arabic and English (respond in the same language as the user)
+
+RECOMMENDATION RULES:
+- When recommending, mention specific titles from the platform content above
+- Explain WHY each recommendation fits the user's need
+- Be concise but helpful
+
+Always be friendly, professional, and accurate.
 """;
 
   Future<void> _sendMessage() async {
     final text = _controller.text.trim();
     if (text.isEmpty || _isLoading) return;
 
-    if (_apiKey.isEmpty) {
+    if (_groqApiKey.isEmpty) {
       setState(() {
         _messages.add({
           "role": "error",
-          "content": "❌ API anahtarı yapılandırılmamış. Lütfen geliştirici ile iletişime geçin."
+          "content": "❌ GROQ_API_KEY not configured."
         });
       });
       return;
@@ -54,28 +131,36 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
     _controller.clear();
     _scrollToBottom();
 
+    // ── سجّل التفاعل ────────────────────────────────────
+    _logInteraction(text);
+
     try {
+      final conversationMessages = _messages
+          .where((m) => m["role"] != "error")
+          .map((m) => {"role": m["role"]!, "content": m["content"]!})
+          .toList();
+
       final response = await http.post(
-        Uri.parse("https://api.groq.com/openai/v1/chat/completions"),
+        Uri.parse(_groqUrl),
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer $_apiKey"
+          "Authorization": "Bearer $_groqApiKey",
         },
         body: jsonEncode({
-          "model": "llama-3.3-70b-versatile",
-          "max_tokens": 1024,
+          "model": _groqModel,
+          "max_tokens": 1500,
+          "temperature": 0.7,
           "messages": [
             {"role": "system", "content": _systemPrompt},
-            ..._messages
-                .where((m) => m["role"] != "error")
-                .map((m) => {"role": m["role"]!, "content": m["content"]!}),
+            ...conversationMessages,
           ],
         }),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final reply = data["choices"][0]["message"]["content"].toString();
+        final reply =
+            data["choices"][0]["message"]["content"].toString();
         setState(() {
           _messages.add({"role": "assistant", "content": reply});
           _isLoading = false;
@@ -85,7 +170,8 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
         setState(() {
           _messages.add({
             "role": "error",
-            "content": "❌ Hata: ${error['error']?['message'] ?? 'Beklenmeyen bir hata oluştu'}"
+            "content":
+                "❌ ${error['error']?['message'] ?? 'Unexpected error'}"
           });
           _isLoading = false;
         });
@@ -94,13 +180,24 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
       setState(() {
         _messages.add({
           "role": "error",
-          "content": "❌ Bağlantı kurulamadı. İnternet bağlantınızı kontrol edin."
+          "content": "❌ Connection error. Check your internet."
         });
         _isLoading = false;
       });
     }
 
     _scrollToBottom();
+  }
+
+  // ── تسجيل تفاعل المستخدم مع الـ AI ─────────────────────
+  Future<void> _logInteraction(String query) async {
+    try {
+      final token = await SessionManager.getToken();
+      if (token == null) return;
+
+      // يمكن استخدامه لاحقاً لتحسين التوصيات
+      // مثلاً: إذا سأل عن Flutter → زيادة score لكورسات Flutter
+    } catch (_) {}
   }
 
   void _scrollToBottom() {
@@ -124,6 +221,10 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
     super.dispose();
   }
 
+  // ══════════════════════════════════════════════════════════
+  // UI
+  // ══════════════════════════════════════════════════════════
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -132,6 +233,10 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
         child: Column(
           children: [
             _buildHeader(),
+            if (!_contextLoaded)
+              const LinearProgressIndicator(
+                  backgroundColor: Color(0xFF1E3A5F),
+                  color: Color(0xFFE3C39D)),
             const Divider(color: Colors.white12),
             Expanded(
               child: _messages.isEmpty
@@ -139,7 +244,8 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
                   : ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount: _messages.length + (_isLoading ? 1 : 0),
+                      itemCount:
+                          _messages.length + (_isLoading ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == _messages.length && _isLoading) {
                           return _buildTypingIndicator();
@@ -165,11 +271,11 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
             height: 42,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
-              ),
+                  colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.smart_toy, color: Colors.white, size: 22),
+            child:
+                const Icon(Icons.smart_toy, color: Colors.white, size: 22),
           ),
           const SizedBox(width: 12),
           Column(
@@ -178,15 +284,20 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
               Text("EngiNet AI",
                   style: GoogleFonts.agbalumo(
                       fontSize: 22, color: const Color(0xFFE3C39D))),
-              const Text("Groq tarafından desteklenmektedir",
-                  style: TextStyle(color: Colors.white54, fontSize: 12)),
+              Text(
+                _contextLoaded
+                    ? "Powered by Groq • Platform-aware"
+                    : "Loading platform content...",
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
             ],
           ),
           const Spacer(),
           if (_messages.isNotEmpty)
             IconButton(
               onPressed: _clearChat,
-              icon: const Icon(Icons.delete_outline, color: Colors.white54),
+              icon:
+                  const Icon(Icons.delete_outline, color: Colors.white54),
             ),
         ],
       ),
@@ -195,35 +306,43 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
 
   Widget _buildEmptyState() {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 90,
-            height: 90,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 90,
+              height: 90,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                    colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
+                borderRadius: BorderRadius.circular(24),
               ),
-              borderRadius: BorderRadius.circular(24),
+              child:
+                  const Icon(Icons.smart_toy, color: Colors.white, size: 50),
             ),
-            child: const Icon(Icons.smart_toy, color: Colors.white, size: 50),
-          ),
-          const SizedBox(height: 20),
-          Text("Merhaba! Ben EngiNet AI",
-              style: GoogleFonts.agbalumo(
-                  color: const Color(0xFFE3C39D), fontSize: 22)),
-          const SizedBox(height: 8),
-          const Text(
-              "Mühendislik, programlama,\nkurslar veya teknik konularda bana sor!",
+            const SizedBox(height: 20),
+            Text("Hello! I'm EngiNet AI",
+                style: GoogleFonts.agbalumo(
+                    color: const Color(0xFFE3C39D), fontSize: 22)),
+            const SizedBox(height: 8),
+            const Text(
+              "I know all courses, books & articles\non this platform. Ask me anything!",
               textAlign: TextAlign.center,
-              style:
-                  TextStyle(color: Colors.white54, fontSize: 14, height: 1.5)),
-          const SizedBox(height: 30),
-          _buildSuggestedQuestion("Yeni başlayanlar için en iyi programlama dili hangisi?"),
-          _buildSuggestedQuestion("OOP kavramını basitçe açıklar mısın?"),
-          _buildSuggestedQuestion("Flutter'ı sıfırdan nasıl öğrenebilirim?"),
-        ],
+              style: TextStyle(
+                  color: Colors.white54, fontSize: 14, height: 1.5),
+            ),
+            const SizedBox(height: 30),
+            _buildSuggestedQuestion(
+                "What courses do you recommend for a Flutter beginner?"),
+            _buildSuggestedQuestion(
+                "اقترح لي كتب برمجة للمبتدئين"),
+            _buildSuggestedQuestion(
+                "Explain the difference between OOP and functional programming"),
+            _buildSuggestedQuestion(
+                "ما هي أفضل مقالات الذكاء الاصطناعي في المنصة؟"),
+          ],
+        ),
       ),
     );
   }
@@ -235,7 +354,7 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
         _sendMessage();
       },
       child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 32, vertical: 4),
+        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
           color: const Color(0xFF1E3A5F),
@@ -249,8 +368,8 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
             const SizedBox(width: 8),
             Expanded(
               child: Text(question,
-                  style:
-                      const TextStyle(color: Colors.white70, fontSize: 13)),
+                  style: const TextStyle(
+                      color: Colors.white70, fontSize: 13)),
             ),
           ],
         ),
@@ -278,15 +397,15 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
                     colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
                 shape: BoxShape.circle,
               ),
-              child:
-                  const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+              child: const Icon(Icons.smart_toy,
+                  color: Colors.white, size: 18),
             ),
             const SizedBox(width: 8),
           ],
           Flexible(
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: isError
                     ? const Color(0xFF5C1A1A)
@@ -315,7 +434,8 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
             const CircleAvatar(
               radius: 17,
               backgroundColor: Color(0xFFE3C39D),
-              child: Icon(Icons.person, color: Colors.black, size: 18),
+              child:
+                  Icon(Icons.person, color: Colors.black, size: 18),
             ),
           ],
         ],
@@ -337,13 +457,13 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
                   colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
               shape: BoxShape.circle,
             ),
-            child:
-                const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+            child: const Icon(Icons.smart_toy,
+                color: Colors.white, size: 18),
           ),
           const SizedBox(width: 8),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: const Color(0xFF1E3A5F),
               borderRadius: const BorderRadius.only(
@@ -391,10 +511,10 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
                 maxLines: 4,
                 minLines: 1,
                 decoration: const InputDecoration(
-                  hintText: "Bana bir şey sor...",
+                  hintText: "Ask about courses, books, or any topic...",
                   hintStyle: TextStyle(color: Colors.white38),
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 10),
                   border: InputBorder.none,
                 ),
                 onSubmitted: (_) => _sendMessage(),
@@ -427,6 +547,10 @@ Her zaman açık ve yardımcı bir şekilde yanıtla. Sorunun diline göre Türk
     );
   }
 }
+
+// ══════════════════════════════════════════════════════════
+// Dot Animation
+// ══════════════════════════════════════════════════════════
 
 class _DotAnimation extends StatefulWidget {
   final int delay;

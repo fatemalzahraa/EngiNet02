@@ -29,7 +29,6 @@ class _IndexPageState extends State<IndexPage> {
   String _role = 'student';
   String _username = '';
   String _profileImage = '';
-  bool _profileLoaded = false;
   final _supabase = Supabase.instance.client;
 int _unreadCount = 0;
 RealtimeChannel? _notificationsChannel;
@@ -139,12 +138,12 @@ void dispose() {
         _role = role ?? 'student';
         _username = username ?? '';
         _profileImage = profileImage;
-        _profileLoaded = true;
+        
       });
     } catch (e) {
       debugPrint('❌ Error loading role: $e');
       if (!mounted) return;
-      setState(() => _profileLoaded = true);
+     
     }
   }
 
