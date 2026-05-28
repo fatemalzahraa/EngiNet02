@@ -24,20 +24,41 @@ class SettingsScreen extends StatelessWidget {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Delete Account'),
-        content: const Text(
+        backgroundColor: const Color(0xFF132F5C),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: Text(
+          'Delete Account',
+          style: GoogleFonts.poppins(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Text(
           'Are you sure you want to permanently delete your account?',
+          style: GoogleFonts.poppins(
+            color: Colors.white70,
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
+            child: Text(
+              'Cancel',
+              style: GoogleFonts.poppins(
+                color: Colors.white70,
+              ),
+            ),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, true),
-            child: const Text(
+            child: Text(
               'Delete',
-              style: TextStyle(color: Colors.red),
+              style: GoogleFonts.poppins(
+                color: Colors.red,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ],
@@ -91,7 +112,13 @@ class SettingsScreen extends StatelessWidget {
       if (!context.mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
+        SnackBar(
+          backgroundColor: Colors.red,
+          content: Text(
+            'Error: $e',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
       );
     }
   }
@@ -102,23 +129,78 @@ class SettingsScreen extends StatelessWidget {
     required VoidCallback onTap,
     Color color = const Color(0xFFE3C39D),
   }) {
+    final bool isDanger = color == Colors.red;
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.only(bottom: 18),
       decoration: BoxDecoration(
-        color: const Color(0xFFD8C09A),
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(24),
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFD8C09A),
+            const Color(0xFFE6D0AF),
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.18),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
-      child: ListTile(
-        leading: Icon(icon, color: color),
-        title: Text(
-          title,
-          style: const TextStyle(
-            color: Color(0xFF071739),
-            fontWeight: FontWeight.bold,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(24),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: 16,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: isDanger
+                        ? Colors.red.withOpacity(0.12)
+                        : const Color(0xFF071739).withOpacity(0.10),
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: isDanger
+                        ? Colors.red
+                        : const Color(0xFF071739),
+                    size: 28,
+                  ),
+                ),
+
+                const SizedBox(width: 16),
+
+                Expanded(
+                  child: Text(
+                    title,
+                    style: GoogleFonts.poppins(
+                      color: const Color(0xFF071739),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+
+                Icon(
+                  Icons.arrow_forward_ios_rounded,
+                  size: 18,
+                  color: const Color(0xFF071739).withOpacity(0.65),
+                ),
+              ],
+            ),
           ),
         ),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 18),
-        onTap: onTap,
       ),
     );
   }
@@ -127,62 +209,136 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF071739),
+
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: Colors.transparent,
         elevation: 0,
+        centerTitle: true,
+
         title: Text(
           'Settings',
           style: GoogleFonts.agbalumo(
             color: const Color(0xFFE3C39D),
+            fontSize: 30,
           ),
         ),
+
         iconTheme: const IconThemeData(
           color: Color(0xFFE3C39D),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-           _tile(
-  icon: Icons.person,
-  title: 'Edit Profile',
-  onTap: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const EditProfileScreen(),
-      ),
-    );
-  },
-),
 
-           _tile(
-  icon: Icons.lock_reset,
-  title: 'Reset Password',
-  onTap: () {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const ResetPasswordScreen(),
-      ),
-    );
-  },
-),
+      body: Container(
+        width: double.infinity,
 
-            _tile(
-              icon: Icons.logout,
-              title: 'Logout',
-              onTap: () => _logout(context),
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              Color(0xFF071739),
+              Color(0xFF0B2A5B),
+              Color(0xFF132F5C),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(22, 10, 22, 24),
+
+            child: Column(
+              children: [
+                const SizedBox(height: 10),
+
+                Container(
+                  padding: const EdgeInsets.all(22),
+
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: const Color(0xFFE3C39D).withOpacity(0.12),
+
+                    border: Border.all(
+                      color: const Color(0xFFE3C39D).withOpacity(0.30),
+                      width: 1.5,
+                    ),
+                  ),
+
+                  child: const Icon(
+                    Icons.settings_rounded,
+                    color: Color(0xFFE3C39D),
+                    size: 60,
+                  ),
+                ),
+
+                const SizedBox(height: 20),
+
+                Text(
+                  'Manage Your Account',
+                  style: GoogleFonts.poppins(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                Text(
+                  'Customize your profile, password and preferences',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.poppins(
+                    color: Colors.white.withOpacity(0.60),
+                    fontSize: 14,
+                    height: 1.5,
+                  ),
+                ),
+
+                const SizedBox(height: 40),
+
+                _tile(
+                  icon: Icons.person_rounded,
+                  title: 'Edit Profile',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const EditProfileScreen(),
+                      ),
+                    );
+                  },
+                ),
+
+                _tile(
+                  icon: Icons.lock_reset_rounded,
+                  title: 'Reset Password',
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ResetPasswordScreen(),
+                      ),
+                    );
+                  },
+                ),
+
+                _tile(
+                  icon: Icons.logout_rounded,
+                  title: 'Logout',
+                  onTap: () => _logout(context),
+                ),
+
+                const Spacer(),
+
+                _tile(
+                  icon: Icons.delete_forever_rounded,
+                  title: 'Delete Account',
+                  color: Colors.red,
+                  onTap: () => _deleteAccount(context),
+                ),
+              ],
             ),
-
-            _tile(
-              icon: Icons.delete_forever,
-              title: 'Delete Account',
-              color: Colors.red,
-              onTap: () => _deleteAccount(context),
-            ),
-          ],
+          ),
         ),
       ),
     );

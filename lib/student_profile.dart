@@ -40,6 +40,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   List<dynamic> savedArticles = [];
   List<dynamic> savedPosts = [];
   List<dynamic> myQuestions = [];
+  bool _realtimeStarted = false;
   
 
   @override
@@ -129,7 +130,22 @@ void _startRealtime(int userId) {
           .single();
 
       final userId = userRes['id'];
-      _startRealtime(userId);
+      if (!_realtimeStarted) {
+  _realtimeStarted = true;
+  _startRealtime(userId);
+}
+    final studentProfileList = await _supabase
+    .from('student_profiles')
+    .select()
+    .eq('user_id', userId);
+
+
+
+Map<String, dynamic>? studentProfileRes;
+
+if (studentProfileList.isNotEmpty) {
+  studentProfileRes = studentProfileList.first;
+}
 
       final followingRes = await _supabase
           .from('follows')
@@ -225,8 +241,13 @@ void _startRealtime(int userId) {
       }
 
       if (!mounted) return;
+    
       setState(() {
-        user = userRes;
+        user = {
+          ...userRes,
+         if (studentProfileRes != null) ...studentProfileRes,
+        'id': userRes['id'],
+};
         myCourses = uniqueCourses;
         isLoading = false;
         followingCount = engineersOnly.length;
@@ -1076,17 +1097,18 @@ void _startRealtime(int userId) {
                   ),
                 ),
               ),
-              if ((user?['specialty'] ?? '').toString().isNotEmpty)
-  Text(
-    'Specialty: ${user!['specialty']}',
-    style: const TextStyle(color: Colors.white70),
-  ),
+             
 
-if ((user?['skills'] ?? '').toString().isNotEmpty)
-  Text(
-    'Skills: ${user!['skills']}',
-    style: const TextStyle(color: Colors.white70),
-  ),
+Column(
+  children: [
+    _buildInfoLine('University', user?['university']),
+    _buildInfoLine('Specialty', user?['specialty']),
+    _buildInfoLine('Year', user?['study_year']),
+    _buildInfoLine('Level', user?['level']),
+    _buildInfoLine('Interests', user?['interests']),
+    _buildInfoLine('Language', user?['preferred_language']),
+  ],
+),
 
 if (user?['show_email'] == true)
   Text(
@@ -1173,4 +1195,22 @@ if (user?['show_email'] == true)
       ),
     );
   }
+}
+Widget _buildInfoLine(String label, dynamic value) {
+  final text = value?.toString() ?? '';
+  if (text.isEmpty) return const SizedBox.shrink();
+
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+    child: Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        '$label: $text',
+        style: const TextStyle(
+          color: Colors.white70,
+          fontSize: 14,
+        ),
+      ),
+    ),
+  );
 }
