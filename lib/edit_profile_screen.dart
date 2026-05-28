@@ -49,177 +49,256 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> loadUser() async {
-    try {
-      final email = await SessionManager.getEmail();
-
-      final user = await supabase
-          .from('users')
-          .select()
-          .eq('email', email!)
-          .single();
-
-      usernameCtrl.text = user['username'] ?? '';
-      emailCtrl.text = user['email'] ?? '';
-      bioCtrl.text = user['bio'] ?? '';
-      phoneCtrl.text = user['phone'] ?? '';
-      universityCtrl.text = user['university'] ?? '';
-      specialtyCtrl.text = user['specialty'] ?? '';
-      locationCtrl.text = user['location'] ?? '';
-      linkedinCtrl.text = user['linkedin'] ?? '';
-      githubCtrl.text = user['github'] ?? '';
-      websiteCtrl.text = user['website'] ?? '';
-      skillsCtrl.text = user['skills'] ?? '';
-
-      showEmail = user['show_email'] ?? false;
-
-      profileImage = user['profile_image'] ?? '';
-
-      if (!mounted) return;
-
-      setState(() {
-        isLoading = false;
-      });
-    } catch (e) {
-      debugPrint('LOAD USER ERROR: $e');
-    }
-  }
-
-  Future<void> pickImage() async {
-  final pickedFile = await picker.pickImage(
-    source: ImageSource.gallery,
-    imageQuality: 80,
-  );
-
-  if (pickedFile == null) return;
-
-  setState(() {
-    selectedImageFile = File(pickedFile.path);
-    profileImage = pickedFile.path;
-  });
-}
-  Future<void> saveProfile() async {
   try {
-    setState(() => isSaving = true);
+    final email = await SessionManager.getEmail();
 
-    final token = await SessionManager.getToken();
-  if (token == null || token.isEmpty) {
-  if (!mounted) return;
+    if (email == null) return;
 
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Please login again')),
-  );
+    final user = await supabase
+        .from('users')
+        .select()
+        .eq('email', email)
+        .maybeSingle();
 
-  setState(() => isSaving = false);
-  return;
-}
-
-    final newEmail = emailCtrl.text.trim();
-
-if (!newEmail.contains('@') || !newEmail.contains('.')) {
-  if (!mounted) return;
-
-  ScaffoldMessenger.of(context).showSnackBar(
-    const SnackBar(content: Text('Enter a valid email')),
-  );
-
-  setState(() => isSaving = false);
-  return;
-}
-
-    bool validUrl(String value) {
-      if (value.trim().isEmpty) return true;
-      return value.startsWith('http://') || value.startsWith('https://');
-    }
-
-    if (!validUrl(linkedinCtrl.text) ||
-        !validUrl(githubCtrl.text) ||
-        !validUrl(websiteCtrl.text)) {
-          if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Links must start with http:// or https://'),
-        ),
-      );
-      setState(() => isSaving = false);
+    if (user == null) {
+      if (!mounted) return;
+      setState(() => isLoading = false);
       return;
     }
 
-    final request = http.MultipartRequest(
-      'PUT',
-      Uri.parse('${AppConstants.baseUrl}/profile/update'),
-    );
+    final studentProfile = await supabase
+        .from('student_profiles')
+        .select()
+        .eq('user_id', user['id'])
+        .maybeSingle();
 
-    request.headers['Authorization'] = 'Bearer $token';
+    usernameCtrl.text = user['username'] ?? '';
+    emailCtrl.text = user['email'] ?? '';
+    bioCtrl.text = user['bio'] ?? '';
+    phoneCtrl.text = user['phone'] ?? '';
+    universityCtrl.text =
+        studentProfile?['university'] ?? user['university'] ?? '';
+    specialtyCtrl.text =
+        studentProfile?['specialty'] ?? user['specialty'] ?? '';
+    locationCtrl.text = user['location'] ?? '';
+    linkedinCtrl.text = user['linkedin'] ?? '';
+    githubCtrl.text = user['github'] ?? '';
+    websiteCtrl.text = user['website'] ?? '';
+    skillsCtrl.text = user['skills'] ?? '';
 
-    request.fields['username'] = usernameCtrl.text.trim();
-    request.fields['email'] = emailCtrl.text.trim();
-    request.fields['bio'] = bioCtrl.text.trim();
-    request.fields['phone'] = phoneCtrl.text.trim();
-    request.fields['university'] = universityCtrl.text.trim();
-    request.fields['specialty'] = specialtyCtrl.text.trim();
-    request.fields['location'] = locationCtrl.text.trim();
-    request.fields['linkedin'] = linkedinCtrl.text.trim();
-    request.fields['github'] = githubCtrl.text.trim();
-    request.fields['website'] = websiteCtrl.text.trim();
-    request.fields['skills'] = skillsCtrl.text.trim();
-    request.fields['show_email'] = showEmail.toString();
-
-    if (selectedImageFile != null) {
-      final ext = path.extension(selectedImageFile!.path).toLowerCase();
-      final subtype = ext == '.png' ? 'png' : 'jpeg';
-
-      request.files.add(
-        await http.MultipartFile.fromPath(
-          'image',
-          selectedImageFile!.path,
-          contentType: MediaType('image', subtype),
-        ),
-      );
-    }
-
-    final streamedResponse = await request.send();
-    final responseBody = await streamedResponse.stream.bytesToString();
-
-    if (streamedResponse.statusCode >= 400) {
-      throw Exception(responseBody);
-    }
+    showEmail = user['show_email'] ?? false;
+    profileImage = user['profile_image'] ?? '';
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile updated')),
-    );
-
-    Navigator.pop(context, true);
+    setState(() => isLoading = false);
   } catch (e) {
-    debugPrint('SAVE PROFILE ERROR: $e');
+    debugPrint('LOAD USER ERROR: $e');
 
     if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error: $e')),
-    );
-  } finally {
-    if (mounted) setState(() => isSaving = false);
+    setState(() => isLoading = false);
   }
 }
+
+  Future<void> pickImage() async {
+    final pickedFile = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+
+    if (pickedFile == null) return;
+
+    setState(() {
+      selectedImageFile = File(pickedFile.path);
+      profileImage = pickedFile.path;
+    });
+  }
+
+  Future<void> saveProfile() async {
+    try {
+      setState(() => isSaving = true);
+
+      final token = await SessionManager.getToken();
+
+      if (token == null || token.isEmpty) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please login again')),
+        );
+
+        setState(() => isSaving = false);
+        return;
+      }
+
+      final newEmail = emailCtrl.text.trim();
+
+      if (!newEmail.contains('@') || !newEmail.contains('.')) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter a valid email')),
+        );
+
+        setState(() => isSaving = false);
+        return;
+      }
+
+      bool validUrl(String value) {
+        if (value.trim().isEmpty) return true;
+        return value.startsWith('http://') ||
+            value.startsWith('https://');
+      }
+
+      if (!validUrl(linkedinCtrl.text) ||
+          !validUrl(githubCtrl.text) ||
+          !validUrl(websiteCtrl.text)) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Links must start with http:// or https://',
+            ),
+          ),
+        );
+
+        setState(() => isSaving = false);
+        return;
+      }
+
+      final request = http.MultipartRequest(
+        'PUT',
+        Uri.parse('${AppConstants.baseUrl}/profile/update'),
+      );
+
+      request.headers['Authorization'] = 'Bearer $token';
+
+      request.fields['username'] = usernameCtrl.text.trim();
+      request.fields['email'] = emailCtrl.text.trim();
+      request.fields['bio'] = bioCtrl.text.trim();
+      request.fields['phone'] = phoneCtrl.text.trim();
+      request.fields['university'] = universityCtrl.text.trim();
+      request.fields['specialty'] = specialtyCtrl.text.trim();
+      request.fields['location'] = locationCtrl.text.trim();
+      request.fields['linkedin'] = linkedinCtrl.text.trim();
+      request.fields['github'] = githubCtrl.text.trim();
+      request.fields['website'] = websiteCtrl.text.trim();
+      request.fields['skills'] = skillsCtrl.text.trim();
+      request.fields['show_email'] = showEmail.toString();
+
+      if (selectedImageFile != null) {
+        final ext =
+            path.extension(selectedImageFile!.path).toLowerCase();
+
+        final subtype = ext == '.png' ? 'png' : 'jpeg';
+
+        request.files.add(
+          await http.MultipartFile.fromPath(
+            'image',
+            selectedImageFile!.path,
+            contentType: MediaType('image', subtype),
+          ),
+        );
+      }
+
+      final streamedResponse = await request.send();
+
+      final responseBody =
+          await streamedResponse.stream.bytesToString();
+
+      if (streamedResponse.statusCode >= 400) {
+        throw Exception(responseBody);
+      }
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: const Color(0xFFE3C39D),
+          content: Text(
+            'Profile updated successfully',
+            style: GoogleFonts.poppins(
+              color: Colors.black,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      );
+
+      Navigator.pop(context, true);
+    } catch (e) {
+      debugPrint('SAVE PROFILE ERROR: $e');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red,
+          content: Text(
+            'Error: $e',
+            style: GoogleFonts.poppins(),
+          ),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isSaving = false);
+    }
+  }
 
   Widget field(
     TextEditingController ctrl,
     String hint,
+    IconData icon,
   ) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 14),
+      margin: const EdgeInsets.only(bottom: 18),
+
       decoration: BoxDecoration(
-        color: const Color(0xFFD8C09A),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(22),
+
+        gradient: LinearGradient(
+          colors: [
+            const Color(0xFFD8C09A),
+            const Color(0xFFE6D0AF),
+          ],
+        ),
+
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 14,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
+
       child: TextField(
         controller: ctrl,
+
+        style: GoogleFonts.poppins(
+          color: const Color(0xFF071739),
+          fontWeight: FontWeight.w600,
+        ),
+
         decoration: InputDecoration(
-          hintText: hint,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.all(16),
+
+          hintText: hint,
+
+          hintStyle: GoogleFonts.poppins(
+            color: const Color(0xFF071739).withOpacity(0.55),
+          ),
+
+          prefixIcon: Icon(
+            icon,
+            color: const Color(0xFF071739),
+          ),
+
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 18,
+            vertical: 18,
+          ),
         ),
       ),
     );
@@ -229,107 +308,264 @@ if (!newEmail.contains('@') || !newEmail.contains('.')) {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF071739),
+
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        centerTitle: true,
+
         title: Text(
           'Edit Profile',
           style: GoogleFonts.agbalumo(
             color: const Color(0xFFE3C39D),
+            fontSize: 28,
           ),
         ),
+
         iconTheme: const IconThemeData(
           color: Color(0xFFE3C39D),
         ),
       ),
+
       body: isLoading
           ? const Center(
-              child: CircularProgressIndicator(),
+              child: CircularProgressIndicator(
+                color: Color(0xFFE3C39D),
+              ),
             )
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  GestureDetector(
-                    onTap: pickImage,
-                    child: CircleAvatar(
-                      radius: 55,
-                      backgroundColor: const Color(0xFFD8C09A),
-                    backgroundImage: selectedImageFile != null
-    ? FileImage(selectedImageFile!)
-    : profileImage.isNotEmpty
-        ? CachedNetworkImageProvider(profileImage)
-        : null,
-                      child: profileImage.isEmpty
-                          ? const Icon(
-                              Icons.person,
-                              size: 55,
-                              color: Colors.white,
-                            )
-                          : null,
-                    ),
-                  ),
+          : Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    Color(0xFF071739),
+                    Color(0xFF0B2A5B),
+                    Color(0xFF132F5C),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
 
-                  const SizedBox(height: 12),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(22, 10, 22, 30),
 
-                  Text(
-                    'Tap to change photo',
-                    style: GoogleFonts.agbalumo(
-                      color: const Color(0xFFE3C39D),
-                    ),
-                  ),
+                child: Column(
+                  children: [
+                    const SizedBox(height: 10),
 
-                  const SizedBox(height: 24),
+                    GestureDetector(
+                      onTap: pickImage,
 
-                  field(usernameCtrl, 'Username'),
-                  field(emailCtrl, 'Email'),
-                  field(phoneCtrl, 'Phone'),
-                  field(bioCtrl, 'Bio'),
-                  field(universityCtrl, 'University'),
-                  field(specialtyCtrl, 'Specialty'),
-                  field(locationCtrl, 'Location'),
-                  field(linkedinCtrl, 'LinkedIn'),
-                  field(githubCtrl, 'GitHub'),
-                  field(websiteCtrl, 'Website'),
-                  field(skillsCtrl, 'Skills'),
+                      child: Stack(
+                        alignment: Alignment.bottomRight,
 
-                  SwitchListTile(
-                    value: showEmail,
-                    activeThumbColor: const Color(0xFFE3C39D),
-                    title: const Text(
-                      'Show Email',
-                      style: TextStyle(color: Colors.white),
-                    ),
-                    onChanged: (v) {
-                      setState(() {
-                        showEmail = v;
-                      });
-                    },
-                  ),
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.22),
+                                  blurRadius: 18,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
+                            ),
 
-                  const SizedBox(height: 20),
+                            child: CircleAvatar(
+                              radius: 62,
+                              backgroundColor:
+                                  const Color(0xFFD8C09A),
 
-                  SizedBox(
-                    width: double.infinity,
-                    height: 54,
-                    child: ElevatedButton(
-                      onPressed:
-                          isSaving ? null : saveProfile,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            const Color(0xFFE3C39D),
-                      ),
-                      child: isSaving
-                          ? const CircularProgressIndicator()
-                          : const Text(
-                              'Save Changes',
-                              style: TextStyle(
-                                color: Colors.black,
-                                fontWeight: FontWeight.bold,
+                              backgroundImage:
+                                  selectedImageFile != null
+                                      ? FileImage(
+                                          selectedImageFile!,
+                                        )
+                                      : profileImage.isNotEmpty
+                                          ? CachedNetworkImageProvider(
+                                              profileImage,
+                                            )
+                                          : null,
+
+                              child: profileImage.isEmpty
+                                  ? const Icon(
+                                      Icons.person,
+                                      size: 62,
+                                      color: Colors.white,
+                                    )
+                                  : null,
+                            ),
+                          ),
+
+                          Container(
+                            padding: const EdgeInsets.all(10),
+
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE3C39D),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFF071739),
+                                width: 2,
                               ),
                             ),
+
+                            child: const Icon(
+                              Icons.camera_alt_rounded,
+                              size: 20,
+                              color: Color(0xFF071739),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+
+                    const SizedBox(height: 16),
+
+                    Text(
+                      'Tap to change photo',
+                      style: GoogleFonts.poppins(
+                        color: const Color(0xFFE3C39D),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+
+                    const SizedBox(height: 36),
+
+                    field(
+                      usernameCtrl,
+                      'Username',
+                      Icons.person_rounded,
+                    ),
+
+                    field(
+                      emailCtrl,
+                      'Email',
+                      Icons.email_rounded,
+                    ),
+
+                    field(
+                      phoneCtrl,
+                      'Phone',
+                      Icons.phone_rounded,
+                    ),
+
+                    field(
+                      bioCtrl,
+                      'Bio',
+                      Icons.edit_note_rounded,
+                    ),
+
+                    field(
+                      universityCtrl,
+                      'University',
+                      Icons.school_rounded,
+                    ),
+
+                    field(
+                      specialtyCtrl,
+                      'Specialty',
+                      Icons.workspace_premium_rounded,
+                    ),
+
+                    field(
+                      locationCtrl,
+                      'Location',
+                      Icons.location_on_rounded,
+                    ),
+
+                    field(
+                      linkedinCtrl,
+                      'LinkedIn',
+                      Icons.link_rounded,
+                    ),
+
+                    field(
+                      githubCtrl,
+                      'GitHub',
+                      Icons.code_rounded,
+                    ),
+
+                    field(
+                      websiteCtrl,
+                      'Website',
+                      Icons.language_rounded,
+                    ),
+
+                    field(
+                      skillsCtrl,
+                      'Skills',
+                      Icons.psychology_rounded,
+                    ),
+
+                    Container(
+                      margin: const EdgeInsets.only(top: 8),
+
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.06),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+
+                      child: SwitchListTile(
+                        value: showEmail,
+
+                        activeColor: const Color(0xFFE3C39D),
+
+                        title: Text(
+                          'Show Email',
+                          style: GoogleFonts.poppins(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+
+                        onChanged: (v) {
+                          setState(() {
+                            showEmail = v;
+                          });
+                        },
+                      ),
+                    ),
+
+                    const SizedBox(height: 28),
+
+                    SizedBox(
+                      width: double.infinity,
+                      height: 58,
+
+                      child: ElevatedButton(
+                        onPressed:
+                            isSaving ? null : saveProfile,
+
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor:
+                              const Color(0xFFE3C39D),
+
+                          shape: RoundedRectangleBorder(
+                            borderRadius:
+                                BorderRadius.circular(20),
+                          ),
+
+                          elevation: 8,
+                        ),
+
+                        child: isSaving
+                            ? const CircularProgressIndicator(
+                                color: Color(0xFF071739),
+                              )
+                            : Text(
+                                'Save Changes',
+                                style: GoogleFonts.poppins(
+                                  color: const Color(0xFF071739),
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
     );
