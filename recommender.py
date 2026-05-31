@@ -1,28 +1,23 @@
 """
 recommender.py - نظام توصيات هجين
-يجمع بين:
-1. Collaborative Filtering (ALS) - عندما يوجد بيانات كافية
-2. Content-Based Filtering - يعتمد على الكاتيغوري والتقييم
-3. Popular Items - للمستخدمين الجدد (Cold Start)
+1. Collaborative Filtering (ALS)
+2. Content-Based Filtering
+3. Popular Items (Cold Start)
 """
 
 import numpy as np
 from scipy.sparse import csr_matrix
+
 
 # ──────────────────────────────────────────────
 # ALS Training
 # ──────────────────────────────────────────────
 
 def train_model(db):
-    """تدريب نموذج ALS من user_interactions"""
     try:
         from implicit import als
 
-        cursor = db.cursor()
-        cursor.execute(
-            "SELECT user_id, content_type, content_id, score FROM user_interactions"
-        )
-        rows = cursor.fetchall()
+        rows = db.table("user_interactions").select("user_id, content_type, content_id, score").execute().data
 
         if not rows:
             return None, None, None, None, None, None
@@ -43,16 +38,12 @@ def train_model(db):
             row_ids.append(user_idx[user_id])
             col_ids.append(item_idx[item_id])
 
-        n_users = len(user_idx)
-        n_items = len(item_idx)
-
         matrix = csr_matrix(
-            (data, (row_ids, col_ids)), shape=(n_users, n_items)
+            (data, (row_ids, col_ids)),
+            shape=(len(user_idx), len(item_idx))
         )
 
-        model = als.AlternatingLeastSquares(
-            factors=50, iterations=20, use_gpu=False
-        )
+        model = als.AlternatingLeastSquares(factors=50, iterations=20, use_gpu=False)
         model.fit(matrix)
 
         users_rev = {v: k for k, v in user_idx.items()}
@@ -66,85 +57,55 @@ def train_model(db):
 
 
 # ──────────────────────────────────────────────
-# Content-Based Recommendations
+# Content-Based Filtering
 # ──────────────────────────────────────────────
 
 def get_content_based(db, user_id: int, limit: int = 5):
-    """
-    يوصي بناءً على:
-    - الكاتيغوريات التي تفاعل معها المستخدم
-    - المحتوى ذي التقييم العالي في نفس الكاتيغوريات
-    """
-    cursor = db.cursor()
+    # جلب التفاعلات السابقة
+    interactions = db.table("user_interactions").select("content_type, content_id").eq("user_id", user_id).execute().data
+    seen = {(r["content_type"], r["content_id"]) for r in interactions}
 
-    # ── الكاتيغوريات التي يهتم بها المستخدم ──
-    cursor.execute("""
-        SELECT DISTINCT
-            CASE ui.content_type
-                WHEN 'course'  THEN c.category
-                WHEN 'book'    THEN b.category
-                WHEN 'article' THEN a.category
-            END AS category
-        FROM user_interactions ui
-        LEFT JOIN courses  c ON ui.content_type = 'course'  AND ui.content_id = c.id
-        LEFT JOIN books    b ON ui.content_type = 'book'    AND ui.content_id = b.id
-        LEFT JOIN articles a ON ui.content_type = 'article' AND ui.content_id = a.id
-        WHERE ui.user_id = %s
-          AND (c.category IS NOT NULL OR b.category IS NOT NULL OR a.category IS NOT NULL)
-    """, (user_id,))
+    content_ids = {"course": [], "book": [], "article": []}
+    for r in interactions:
+        content_ids[r["content_type"]].append(r["content_id"])
 
-    categories = [r["category"] for r in cursor.fetchall() if r["category"]]
+    # جلب الكاتيغوريات
+    categories = set()
 
-    # ── المحتوى الذي تفاعل معه المستخدم مسبقاً ──
-    cursor.execute(
-        "SELECT content_type, content_id FROM user_interactions WHERE user_id = %s",
-        (user_id,)
-    )
-    seen = {(r["content_type"], r["content_id"]) for r in cursor.fetchall()}
+    if content_ids["course"]:
+        rows = db.table("courses").select("category").in_("id", content_ids["course"]).execute().data
+        categories.update(r["category"] for r in rows if r.get("category"))
 
-    courses, books, articles = [], [], []
+    if content_ids["book"]:
+        rows = db.table("books").select("category").in_("id", content_ids["book"]).execute().data
+        categories.update(r["category"] for r in rows if r.get("category"))
 
-    if categories:
-        placeholders = ",".join(["%s"] * len(categories))
+    if content_ids["article"]:
+        rows = db.table("articles").select("category").in_("id", content_ids["article"]).execute().data
+        categories.update(r["category"] for r in rows if r.get("category"))
 
-        # كورسات مقترحة
-        cursor.execute(f"""
-            SELECT id, title, image_url, rating, category, 'course' AS type
-            FROM courses
-            WHERE category IN ({placeholders})
-            ORDER BY rating DESC NULLS LAST
-            LIMIT %s
-        """, (*categories, limit * 2))
-        courses = [
-            dict(r) for r in cursor.fetchall()
-            if ("course", r["id"]) not in seen
-        ][:limit]
+    if not categories:
+        return [], [], []
 
-        # كتب مقترحة
-        cursor.execute(f"""
-            SELECT id, title, image_url, rating, category, 'book' AS type
-            FROM books
-            WHERE category IN ({placeholders})
-            ORDER BY rating DESC NULLS LAST, likes DESC NULLS LAST
-            LIMIT %s
-        """, (*categories, limit * 2))
-        books = [
-            dict(r) for r in cursor.fetchall()
-            if ("book", r["id"]) not in seen
-        ][:limit]
+    cat_list = list(categories)
 
-        # مقالات مقترحة
-        cursor.execute(f"""
-            SELECT id, title, image_url, rating, category, 'article' AS type
-            FROM articles
-            WHERE category IN ({placeholders})
-            ORDER BY rating DESC NULLS LAST
-            LIMIT %s
-        """, (*categories, limit * 2))
-        articles = [
-            dict(r) for r in cursor.fetchall()
-            if ("article", r["id"]) not in seen
-        ][:limit]
+    courses = [
+        r for r in db.table("courses").select("id, title, image_url, rating, category")
+        .in_("category", cat_list).order("rating", desc=True).limit(limit * 2).execute().data
+        if ("course", r["id"]) not in seen
+    ][:limit]
+
+    books = [
+        r for r in db.table("books").select("id, title, image_url, rating, category")
+        .in_("category", cat_list).order("rating", desc=True).limit(limit * 2).execute().data
+        if ("book", r["id"]) not in seen
+    ][:limit]
+
+    articles = [
+        r for r in db.table("articles").select("id, title, image_url, rating, category")
+        .in_("category", cat_list).order("rating", desc=True).limit(limit * 2).execute().data
+        if ("article", r["id"]) not in seen
+    ][:limit]
 
     return courses, books, articles
 
@@ -154,33 +115,9 @@ def get_content_based(db, user_id: int, limit: int = 5):
 # ──────────────────────────────────────────────
 
 def get_popular(db, limit: int = 5):
-    """أكثر المحتوى تفاعلاً - للمستخدمين الجدد"""
-    cursor = db.cursor()
-
-    cursor.execute("""
-        SELECT id, title, image_url, rating, category
-        FROM courses
-        ORDER BY rating DESC NULLS LAST, likes DESC NULLS LAST
-        LIMIT %s
-    """, (limit,))
-    courses = [dict(r) for r in cursor.fetchall()]
-
-    cursor.execute("""
-        SELECT id, title, image_url, rating, category
-        FROM books
-        ORDER BY rating DESC NULLS LAST, likes DESC NULLS LAST
-        LIMIT %s
-    """, (limit,))
-    books = [dict(r) for r in cursor.fetchall()]
-
-    cursor.execute("""
-        SELECT id, title, image_url, rating, category
-        FROM articles
-        ORDER BY rating DESC NULLS LAST
-        LIMIT %s
-    """, (limit,))
-    articles = [dict(r) for r in cursor.fetchall()]
-
+    courses = db.table("courses").select("id, title, image_url, rating, category").order("rating", desc=True).limit(limit).execute().data
+    books = db.table("books").select("id, title, image_url, rating, category").order("likes", desc=True).limit(limit).execute().data
+    articles = db.table("articles").select("id, title, image_url, rating, category").order("rating", desc=True).limit(limit).execute().data
     return courses, books, articles
 
 
@@ -188,18 +125,13 @@ def get_popular(db, limit: int = 5):
 # ALS Recommendations
 # ──────────────────────────────────────────────
 
-def get_als_recommendations(
-    model, user_idx, item_idx, items_rev, matrix, user_id: int, limit: int = 10
-):
-    """توصيات ALS للمستخدم"""
+def get_als_recommendations(model, user_idx, item_idx, items_rev, matrix, user_id: int, limit: int = 10):
     try:
         if model is None or user_id not in user_idx:
             return [], [], []
 
         idx = user_idx[user_id]
-        recommended_ids, _ = model.recommend(
-            idx, matrix[idx], N=limit, filter_already_liked_items=True
-        )
+        recommended_ids, _ = model.recommend(idx, matrix[idx], N=limit, filter_already_liked_items=True)
 
         courses, books, articles = [], [], []
         for item_idx_val in recommended_ids:

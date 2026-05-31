@@ -1,14 +1,11 @@
 import os
-import psycopg
-from psycopg.rows import dict_row
+from supabase import create_client, Client
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 
-def get_db():
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is not configured.")
-    conn = psycopg.connect(
-        DATABASE_URL + "?sslmode=require",
-        row_factory=dict_row,
-    )
-    return conn
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    raise RuntimeError("SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is not configured.")
+
+def get_db() -> Client:
+    return create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
