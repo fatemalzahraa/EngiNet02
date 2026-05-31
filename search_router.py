@@ -1,6 +1,5 @@
 """
 search_router.py - بحث ذكي بـ Groq API
-يفهم المعنى وليس فقط الكلمات
 """
 
 import os
@@ -20,82 +19,47 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 
 class SearchRequest(BaseModel):
     query: str
-    types: list[str] = ["courses", "books", "articles"]  # ما يريد البحث فيه
+    types: list[str] = ["courses", "books", "articles"]
 
 
-# ── مساعد: جلب كل المحتوى من DB ────────────────────────────
-def _fetch_all_content(cursor):
-    cursor.execute("SELECT id, title, description, category FROM courses")
-    courses = [dict(r) for r in cursor.fetchall()]
-
-    cursor.execute("SELECT id, title, description, category FROM books")
-    books = [dict(r) for r in cursor.fetchall()]
-
-    cursor.execute("SELECT id, title, content, category FROM articles")
-    articles = [
-        {
-            "id": r["id"],
-            "title": r["title"],
-            "description": r["content"][:200] if r["content"] else "",
-            "category": r["category"],
-        }
-        for r in cursor.fetchall()
-    ]
-
+def _fetch_all_content(db):
+    courses  = db.table("courses").select("id, title, description, category").execute().data
+    books    = db.table("books").select("id, title, description, category").execute().data
+    articles_raw = db.table("articles").select("id, title, content, category").execute().data
+    articles = [{"id": r["id"], "title": r["title"], "category": r["category"],
+                 "description": (r.get("content") or "")[:200]} for r in articles_raw]
     return courses, books, articles
 
 
-# ── مساعد: بناء context للـ Groq ───────────────────────────
 def _build_context(courses, books, articles, types):
     lines = []
-
     if "courses" in types:
         lines.append("=== COURSES ===")
         for c in courses:
-            lines.append(
-                f"[course:{c['id']}] {c['title']} | category: {c['category']} | {c['description'] or ''}"
-            )
-
+            lines.append(f"[course:{c['id']}] {c['title']} | {c['category']} | {c.get('description','')}")
     if "books" in types:
         lines.append("=== BOOKS ===")
         for b in books:
-            lines.append(
-                f"[book:{b['id']}] {b['title']} | category: {b['category']} | {b['description'] or ''}"
-            )
-
+            lines.append(f"[book:{b['id']}] {b['title']} | {b['category']} | {b.get('description','')}")
     if "articles" in types:
         lines.append("=== ARTICLES ===")
         for a in articles:
-            lines.append(
-                f"[article:{a['id']}] {a['title']} | category: {a['category']} | {a['description'] or ''}"
-            )
-
+            lines.append(f"[article:{a['id']}] {a['title']} | {a['category']} | {a.get('description','')}")
     return "\n".join(lines)
 
 
-# ── POST /search/smart ──────────────────────────────────────
 @router.post("/smart")
-async def smart_search(
-    body: SearchRequest,
-    current_user: dict = Depends(get_current_user),
-):
+async def smart_search(body: SearchRequest, current_user: dict = Depends(get_current_user)):
     if not GROQ_API_KEY:
-        raise HTTPException(
-            status_code=503,
-            detail="GROQ_API_KEY not configured",
-        )
-
+        raise HTTPException(status_code=503, detail="GROQ_API_KEY not configured")
     if not body.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
 
     db = get_db()
-    try:
-        cursor = db.cursor()
-        courses, books, articles = _fetch_all_content(cursor)
+    courses, books, articles = _fetch_all_content(db)
+    context = _build_context(courses, books, articles, body.types)
 
-        context = _build_context(courses, books, articles, body.types)
-
-        prompt = f"""You are a smart search engine for an engineering education platform called EngiNet.
+    prompt = f"""You are a smart search engine for an engineering education platform called EngiNet.
 
 Available content:
 {context}
@@ -110,150 +74,59 @@ Instructions:
 
 Return format:
 {{
-  "courses": [{{ "id": 1, "reason": "why relevant" }}],
-  "books":   [{{ "id": 2, "reason": "why relevant" }}],
-  "articles": [{{ "id": 3, "reason": "why relevant" }}]
-}}
+  "courses": [{{"id": 1, "reason": "why relevant"}}],
+  "books":   [{{"id": 2, "reason": "why relevant"}}],
+  "articles": [{{"id": 3, "reason": "why relevant"}}]
+}}"""
 
-If nothing relevant found for a type, return empty array [].
-"""
-
-        async with httpx.AsyncClient(timeout=30) as client:
-            response = await client.post(
-                GROQ_URL,
-                headers={
-                    "Authorization": f"Bearer {GROQ_API_KEY}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": GROQ_MODEL,
-                    "max_tokens": 1000,
-                    "temperature": 0.1,
-                    "messages": [{"role": "user", "content": prompt}],
-                },
-            )
-
-        if response.status_code != 200:
-            raise HTTPException(
-                status_code=502,
-                detail=f"Groq API error: {response.text}",
-            )
-
-        raw = response.json()["choices"][0]["message"]["content"].strip()
-
-        # تنظيف الـ JSON
-        if "```json" in raw:
-            raw = raw.split("```json")[1].split("```")[0].strip()
-        elif "```" in raw:
-            raw = raw.split("```")[1].split("```")[0].strip()
-
-        ai_result = json.loads(raw)
-
-        # ── جلب تفاصيل النتائج من DB ─────────────────────
-        def enrich_courses(ids):
-            if not ids:
-                return []
-            phs = ",".join(["%s"] * len(ids))
-            cursor.execute(
-                f"SELECT id, title, image_url, rating, category, description FROM courses WHERE id IN ({phs})",
-                ids,
-            )
-            rows = {r["id"]: dict(r) for r in cursor.fetchall()}
-            return [
-                {**rows[x["id"]], "match_reason": x.get("reason", "")}
-                for x in ai_result.get("courses", [])
-                if x["id"] in rows
-            ]
-
-        def enrich_books(ids):
-            if not ids:
-                return []
-            phs = ",".join(["%s"] * len(ids))
-            cursor.execute(
-                f"SELECT id, title, image_url, rating, category, description FROM books WHERE id IN ({phs})",
-                ids,
-            )
-            rows = {r["id"]: dict(r) for r in cursor.fetchall()}
-            return [
-                {**rows[x["id"]], "match_reason": x.get("reason", "")}
-                for x in ai_result.get("books", [])
-                if x["id"] in rows
-            ]
-
-        def enrich_articles(ids):
-            if not ids:
-                return []
-            phs = ",".join(["%s"] * len(ids))
-            cursor.execute(
-                f"SELECT id, title, image_url, rating, category FROM articles WHERE id IN ({phs})",
-                ids,
-            )
-            rows = {r["id"]: dict(r) for r in cursor.fetchall()}
-            return [
-                {**rows[x["id"]], "match_reason": x.get("reason", "")}
-                for x in ai_result.get("articles", [])
-                if x["id"] in rows
-            ]
-
-        course_ids = [x["id"] for x in ai_result.get("courses", [])]
-        book_ids = [x["id"] for x in ai_result.get("books", [])]
-        article_ids = [x["id"] for x in ai_result.get("articles", [])]
-
-        return {
-            "query": body.query,
-            "courses": enrich_courses(course_ids),
-            "books": enrich_books(book_ids),
-            "articles": enrich_articles(article_ids),
-            "total": len(course_ids) + len(book_ids) + len(article_ids),
-        }
-
-    except json.JSONDecodeError:
-        raise HTTPException(
-            status_code=502, detail="AI returned invalid response"
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.post(
+            GROQ_URL,
+            headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+            json={"model": GROQ_MODEL, "max_tokens": 1000, "temperature": 0.1,
+                  "messages": [{"role": "user", "content": prompt}]},
         )
-    finally:
-        db.close()
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Groq API error: {response.text}")
+
+    raw = response.json()["choices"][0]["message"]["content"].strip()
+    if "```json" in raw:
+        raw = raw.split("```json")[1].split("```")[0].strip()
+    elif "```" in raw:
+        raw = raw.split("```")[1].split("```")[0].strip()
+
+    try:
+        ai_result = json.loads(raw)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=502, detail="AI returned invalid response")
+
+    def enrich(table, ai_list):
+        ids = [x["id"] for x in ai_list]
+        if not ids:
+            return []
+        rows = {r["id"]: r for r in db.table(table).select("id, title, image_url, rating, category, description").in_("id", ids).execute().data}
+        return [{**rows[x["id"]], "match_reason": x.get("reason", "")} for x in ai_list if x["id"] in rows]
+
+    return {
+        "query": body.query,
+        "courses":  enrich("courses",  ai_result.get("courses", [])),
+        "books":    enrich("books",    ai_result.get("books", [])),
+        "articles": enrich("articles", ai_result.get("articles", [])),
+    }
 
 
-# ── GET /search/simple?q=... ────────────────────────────────
 @router.get("/simple")
-def simple_search(
-    q: str,
-    current_user: dict = Depends(get_current_user),
-):
-    """بحث عادي كـ fallback"""
+def simple_search(q: str, current_user: dict = Depends(get_current_user)):
     if not q.strip():
         raise HTTPException(status_code=400, detail="Query required")
 
     db = get_db()
-    try:
-        cursor = db.cursor()
-        pattern = f"%{q}%"
 
-        cursor.execute(
-            "SELECT id, title, image_url, rating, category FROM courses WHERE title ILIKE %s OR description ILIKE %s LIMIT 5",
-            (pattern, pattern),
-        )
-        courses = [dict(r) for r in cursor.fetchall()]
+    # Supabase ilike filter
+    courses  = db.table("courses").select("id, title, image_url, rating, category").ilike("title", f"%{q}%").limit(5).execute().data
+    books    = db.table("books").select("id, title, image_url, rating, category").ilike("title", f"%{q}%").limit(5).execute().data
+    articles = db.table("articles").select("id, title, image_url, rating, category").ilike("title", f"%{q}%").limit(5).execute().data
 
-        cursor.execute(
-            "SELECT id, title, image_url, rating, category FROM books WHERE title ILIKE %s OR description ILIKE %s LIMIT 5",
-            (pattern, pattern),
-        )
-        books = [dict(r) for r in cursor.fetchall()]
-
-        cursor.execute(
-            "SELECT id, title, image_url, rating, category FROM articles WHERE title ILIKE %s OR content ILIKE %s LIMIT 5",
-            (pattern, pattern),
-        )
-        articles = [dict(r) for r in cursor.fetchall()]
-
-        return {
-            "query": q,
-            "courses": courses,
-            "books": books,
-            "articles": articles,
-            "total": len(courses) + len(books) + len(articles),
-        }
-    finally:
-        db.close()
+    return {"query": q, "courses": courses, "books": books, "articles": articles,
+            "total": len(courses) + len(books) + len(articles)}

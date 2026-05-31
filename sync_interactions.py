@@ -1,101 +1,113 @@
 """
 sync_interactions.py
-يملأ جدول user_interactions من البيانات الموجودة في قاعدة البيانات
+يملأ جدول user_interactions من البيانات الموجودة
 """
 
 from database import get_db
 
 
+def _upsert(db, records: list):
+    if not records:
+        return 0
+    db.table("user_interactions").upsert(records, on_conflict="user_id,content_type,content_id").execute()
+    return len(records)
+
+
 def sync_interactions():
     db = get_db()
-    cursor = db.cursor()
-
     print("🔄 بدء مزامنة التفاعلات...")
+    total_synced = 0
 
-    steps = [
-        ("course_ratings", """
-            INSERT INTO user_interactions (user_id, content_type, content_id, interaction_type, score)
-            SELECT user_id, 'course', course_id, 'rating', rating::float
-            FROM course_ratings
-            ON CONFLICT (user_id, content_type, content_id)
-            DO UPDATE SET score = EXCLUDED.score
-        """),
-        ("book_ratings", """
-            INSERT INTO user_interactions (user_id, content_type, content_id, interaction_type, score)
-            SELECT user_id, 'book', book_id, 'rating', rating::float
-            FROM book_ratings
-            ON CONFLICT (user_id, content_type, content_id)
-            DO UPDATE SET score = EXCLUDED.score
-        """),
-        ("student_courses", """
-            INSERT INTO user_interactions (user_id, content_type, content_id, interaction_type, score)
-            SELECT user_id, 'course', course_id, 'enroll', 4.0
-            FROM student_courses
-            ON CONFLICT (user_id, content_type, content_id)
-            DO UPDATE SET score = GREATEST(user_interactions.score, 4.0)
-        """),
-        ("bookmarks", """
-            INSERT INTO user_interactions (user_id, content_type, content_id, interaction_type, score)
-            SELECT user_id, 'book', book_id, 'bookmark', 3.0
-            FROM bookmarks
-            ON CONFLICT (user_id, content_type, content_id)
-            DO UPDATE SET score = GREATEST(user_interactions.score, 3.0)
-        """),
-        ("article_bookmarks", """
-            INSERT INTO user_interactions (user_id, content_type, content_id, interaction_type, score)
-            SELECT user_id, 'article', article_id, 'bookmark', 3.0
-            FROM article_bookmarks
-            ON CONFLICT (user_id, content_type, content_id)
-            DO UPDATE SET score = GREATEST(user_interactions.score, 3.0)
-        """),
-        ("book_likes", """
-            INSERT INTO user_interactions (user_id, content_type, content_id, interaction_type, score)
-            SELECT user_id, 'book', book_id, 'like', 2.0
-            FROM likes WHERE book_id IS NOT NULL
-            ON CONFLICT (user_id, content_type, content_id)
-            DO UPDATE SET score = GREATEST(user_interactions.score, 2.0)
-        """),
-        ("article_likes", """
-            INSERT INTO user_interactions (user_id, content_type, content_id, interaction_type, score)
-            SELECT user_id, 'article', article_id, 'like', 2.0
-            FROM likes WHERE article_id IS NOT NULL
-            ON CONFLICT (user_id, content_type, content_id)
-            DO UPDATE SET score = GREATEST(user_interactions.score, 2.0)
-        """),
-        ("course_likes", """
-            INSERT INTO user_interactions (user_id, content_type, content_id, interaction_type, score)
-            SELECT user_id, 'course', course_id, 'like', 2.0
-            FROM course_likes
-            ON CONFLICT (user_id, content_type, content_id)
-            DO UPDATE SET score = GREATEST(user_interactions.score, 2.0)
-        """),
-        ("lesson_progress", """
-            INSERT INTO user_interactions (user_id, content_type, content_id, interaction_type, score)
-            SELECT lp.user_id, 'course', l.course_id, 'watch', 3.5
-            FROM lesson_progress lp
-            JOIN lessons l ON l.id = lp.lesson_id
-            WHERE lp.is_completed = true
-            ON CONFLICT (user_id, content_type, content_id)
-            DO UPDATE SET score = GREATEST(user_interactions.score, 3.5)
-        """),
-    ]
+    # ── course_ratings ──
+    try:
+        rows = db.table("course_ratings").select("user_id, course_id, rating").execute().data
+        records = [{"user_id": r["user_id"], "content_type": "course", "content_id": r["course_id"],
+                    "interaction_type": "rating", "score": float(r["rating"])} for r in rows]
+        n = _upsert(db, records)
+        print(f"  ✅ course_ratings: {n}")
+        total_synced += n
+    except Exception as e:
+        print(f"  ⚠️  course_ratings: {e}")
 
-    for name, query in steps:
-        try:
-            cursor.execute(query)
-            print(f"  ✅ {name}: {cursor.rowcount} سجل")
-        except Exception as e:
-            print(f"  ⚠️  {name}: {e}")
+    # ── book_ratings ──
+    try:
+        rows = db.table("book_ratings").select("user_id, book_id, rating").execute().data
+        records = [{"user_id": r["user_id"], "content_type": "book", "content_id": r["book_id"],
+                    "interaction_type": "rating", "score": float(r["rating"])} for r in rows]
+        n = _upsert(db, records)
+        print(f"  ✅ book_ratings: {n}")
+        total_synced += n
+    except Exception as e:
+        print(f"  ⚠️  book_ratings: {e}")
 
-    db.commit()
+    # ── student_courses (enroll) ──
+    try:
+        rows = db.table("student_courses").select("user_id, course_id").execute().data
+        records = [{"user_id": r["user_id"], "content_type": "course", "content_id": r["course_id"],
+                    "interaction_type": "enroll", "score": 4.0} for r in rows]
+        n = _upsert(db, records)
+        print(f"  ✅ student_courses: {n}")
+        total_synced += n
+    except Exception as e:
+        print(f"  ⚠️  student_courses: {e}")
 
-    cursor.execute("SELECT COUNT(*) as total FROM user_interactions")
-    total = cursor.fetchone()["total"]
-    cursor.execute("SELECT COUNT(DISTINCT user_id) as users FROM user_interactions")
-    users = cursor.fetchone()["users"]
+    # ── bookmarks ──
+    try:
+        rows = db.table("bookmarks").select("user_id, book_id").execute().data
+        records = [{"user_id": r["user_id"], "content_type": "book", "content_id": r["book_id"],
+                    "interaction_type": "bookmark", "score": 3.0} for r in rows]
+        n = _upsert(db, records)
+        print(f"  ✅ bookmarks: {n}")
+        total_synced += n
+    except Exception as e:
+        print(f"  ⚠️  bookmarks: {e}")
+
+    # ── article_bookmarks ──
+    try:
+        rows = db.table("article_bookmarks").select("user_id, article_id").execute().data
+        records = [{"user_id": r["user_id"], "content_type": "article", "content_id": r["article_id"],
+                    "interaction_type": "bookmark", "score": 3.0} for r in rows]
+        n = _upsert(db, records)
+        print(f"  ✅ article_bookmarks: {n}")
+        total_synced += n
+    except Exception as e:
+        print(f"  ⚠️  article_bookmarks: {e}")
+
+    # ── book_likes ──
+    try:
+        rows = db.table("book_likes").select("user_id, book_id").execute().data
+        records = [{"user_id": r["user_id"], "content_type": "book", "content_id": r["book_id"],
+                    "interaction_type": "like", "score": 2.0} for r in rows]
+        n = _upsert(db, records)
+        print(f"  ✅ book_likes: {n}")
+        total_synced += n
+    except Exception as e:
+        print(f"  ⚠️  book_likes: {e}")
+
+    # ── lesson_progress ──
+    try:
+        rows = db.table("lesson_progress").select("user_id, lesson_id").eq("is_completed", True).execute().data
+        lesson_ids = list({r["lesson_id"] for r in rows})
+        if lesson_ids:
+            lessons = db.table("lessons").select("id, course_id").in_("id", lesson_ids).execute().data
+            lesson_map = {l["id"]: l["course_id"] for l in lessons}
+            records = [{"user_id": r["user_id"], "content_type": "course",
+                        "content_id": lesson_map[r["lesson_id"]],
+                        "interaction_type": "watch", "score": 3.5}
+                       for r in rows if r["lesson_id"] in lesson_map]
+            n = _upsert(db, records)
+            print(f"  ✅ lesson_progress: {n}")
+            total_synced += n
+    except Exception as e:
+        print(f"  ⚠️  lesson_progress: {e}")
+
+    # ── إجمالي ──
+    stats = db.table("user_interactions").select("user_id", count="exact").execute()
+    total = stats.count or 0
+    users_stats = db.table("user_interactions").select("user_id").execute().data
+    users = len({r["user_id"] for r in users_stats})
 
     print(f"\n📊 إجمالي التفاعلات: {total} | المستخدمين: {users}")
-    db.close()
     return total, users
 
 
