@@ -83,6 +83,56 @@ def _enrich_articles(cursor, ids: list[int]) -> list[dict]:
     )
     return [dict(r) for r in cursor.fetchall()]
 
+def _get_search_based_books(cursor, user_id: int, limit: int = 5) -> list[dict]:
+    cursor.execute(
+        """
+        SELECT query
+        FROM search_history
+        WHERE user_id = %s
+        ORDER BY created_at DESC
+        LIMIT 5
+        """,
+        (user_id,),
+    )
+
+    searches = cursor.fetchall()
+    if not searches:
+        return []
+
+    keywords = []
+    for row in searches:
+        q = (row["query"] or "").strip()
+        if len(q) >= 2:
+            keywords.append(q)
+
+    if not keywords:
+        return []
+
+    conditions = []
+    params = []
+
+    for kw in keywords:
+        like = f"%{kw}%"
+        conditions.append(
+            "(title ILIKE %s OR author ILIKE %s OR category ILIKE %s OR description ILIKE %s)"
+        )
+        params.extend([like, like, like, like])
+
+    params.append(limit)
+
+    cursor.execute(
+        f"""
+        SELECT id, title, image_url, rating, category
+        FROM books
+        WHERE {" OR ".join(conditions)}
+        ORDER BY COALESCE(rating, 0) DESC, COALESCE(likes, 0) DESC
+        LIMIT %s
+        """,
+        params,
+    )
+
+    return [dict(r) for r in cursor.fetchall()]
+
 
 # ── GET /recommendations ────────────────────────────────────
 @router.get("/")
@@ -123,6 +173,7 @@ def get_recommendations(
 
         # ── حالة 2: Content-Based ───────────────────────────
         cb_courses, cb_books, cb_articles = get_content_based(db, user_id, limit)
+        search_books = _get_search_based_books(cursor, user_id, limit)
 
         # ── حالة 3: ALS إذا الموديل محمّل ──────────────────
         cached = _load_model()
@@ -156,7 +207,7 @@ def get_recommendations(
             return merged[:limit]
 
         final_courses = merge(als_courses, cb_courses)
-        final_books = merge(als_books, cb_books)
+        final_books = merge(search_books, merge(als_books, cb_books))
         final_articles = merge(als_articles, cb_articles)
 
         # ── إذا النتائج فاضية → Popular ─────────────────────
@@ -169,7 +220,9 @@ def get_recommendations(
                 "articles": articles,
             }
 
-        strategy = "hybrid" if cached and cached.get("model") else "content_based"
+        strategy = "hybrid_search_based" if search_books else (
+    "hybrid" if cached and cached.get("model") else "content_based"
+)
 
         return {
             "strategy": strategy,

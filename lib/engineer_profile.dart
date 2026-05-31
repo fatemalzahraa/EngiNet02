@@ -105,6 +105,16 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
         .select()
         .eq('id', targetId)
         .single();
+    final engineerProfileList = await _supabase
+    .from('engineer_profiles')
+    .select()
+    .eq('user_id', targetId);
+
+Map<String, dynamic>? engineerProfileRes;
+
+if (engineerProfileList.isNotEmpty) {
+  engineerProfileRes = engineerProfileList.first;
+}
 
     final targetUsername = userRes['username'];
 
@@ -149,7 +159,11 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
     if (!mounted) return;
 
     setState(() {
-      user = userRes;
+      user = {
+  ...userRes,
+  if (engineerProfileRes != null) ...engineerProfileRes,
+  'id': userRes['id'],
+};
       posts = postsRes as List;
       books = booksRes as List;
       articles = articlesRes as List;
@@ -211,6 +225,7 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
   void showEditDialog() {
   final bioController = TextEditingController(text: user?['bio'] ?? '');
   String? tempSelectedImageUrl;
+  
 
   showDialog(
     context: context,
@@ -483,17 +498,26 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                 
               ),
             ),
-           if ((user?['specialty'] ?? '').toString().isNotEmpty)
-  Text(
-    'Specialty: ${user!['specialty']}',
-    style: const TextStyle(color: Colors.white70),
+           Padding(
+  padding: const EdgeInsets.symmetric(horizontal: 20),
+  child: Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _buildInfoLine('University', user?['university']),
+      _buildInfoLine('Specialty', user?['specialty']),
+      _buildInfoLine('Experience', user?['experience_years']),
+      _buildInfoLine('Skills', user?['skills']),
+      _buildInfoLine('Location', user?['location']),
+      _buildInfoLine('LinkedIn', user?['linkedin']),
+      _buildInfoLine('GitHub', user?['github']),
+      _buildInfoLine('Website', user?['website']),
+    ],
   ),
+),
 
-if ((user?['skills'] ?? '').toString().isNotEmpty)
-  Text(
-    'Skills: ${user!['skills']}',
-    style: const TextStyle(color: Colors.white70),
-  ),
+
+
+
 
 
 
@@ -678,24 +702,26 @@ if (user?['show_email'] == true)
   }
 
   Widget _buildBooksList() {
-    if (books.isEmpty) {
-      return const Center(
-        child: Text('No books', style: TextStyle(color: Colors.white54)),
-      );
-    }
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: books.length,
-      itemBuilder: (context, index) {
-        final book = books[index];
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          decoration: BoxDecoration(
-            color: const Color(0xFFD8C09A),
-            borderRadius: BorderRadius.circular(16),
-          ),
+  if (books.isEmpty) {
+    return const Center(
+      child: Text('No books', style: TextStyle(color: Colors.white54)),
+    );
+  }
+
+  return ListView.builder(
+    padding: const EdgeInsets.all(16),
+    itemCount: books.length,
+    itemBuilder: (context, index) {
+      final book = books[index];
+
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Material(
+          color: const Color(0xFFD8C09A),
+          borderRadius: BorderRadius.circular(16),
           child: ListTile(
-            leading: book['image_url'] != null && book['image_url'].isNotEmpty
+            leading: book['image_url'] != null &&
+                    book['image_url'].toString().isNotEmpty
                 ? ClipRRect(
                     borderRadius: BorderRadius.circular(8),
                     child: CachedNetworkImage(
@@ -703,7 +729,8 @@ if (user?['show_email'] == true)
                       width: 50,
                       height: 60,
                       fit: BoxFit.cover,
-                      errorWidget: (c, u, e) => const Icon(Icons.book, size: 40),
+                      errorWidget: (c, u, e) =>
+                          const Icon(Icons.book, size: 40),
                       placeholder: (c, u) => Shimmer.fromColors(
                         baseColor: const Color(0xFF1A2F55),
                         highlightColor: const Color(0xFF2A4A7F),
@@ -718,17 +745,21 @@ if (user?['show_email'] == true)
                 : const Icon(Icons.book, size: 40),
             title: Text(
               book['title'] ?? '',
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
             ),
             subtitle: Text(
               book['author'] ?? '',
               style: const TextStyle(fontSize: 12),
             ),
           ),
-        );
-      },
-    );
-  }
+        ),
+      );
+    },
+  );
+}
 
   Widget _buildArticlesList() {
     if (articles.isEmpty) {
@@ -784,4 +815,22 @@ if (user?['show_email'] == true)
       },
     );
   }
+}
+
+
+
+Widget _buildInfoLine(String label, dynamic value) {
+  final text = value?.toString() ?? '';
+  if (text.isEmpty) return const SizedBox.shrink();
+
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 3),
+    child: Text(
+      '$label: $text',
+      style: const TextStyle(
+        color: Colors.white70,
+        fontSize: 14,
+      ),
+    ),
+  );
 }

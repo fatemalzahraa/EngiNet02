@@ -138,17 +138,46 @@ class _BookScreenState extends State<BookScreen> {
     debugPrint("Error loading recommended Books: $e");
   }
 }
+Future<void> saveSearch(String query) async {
+  if (query.trim().length < 2) return;
 
-  void filterBooks(String value) {
-    setState(() {
-      filteredBooks = allBooks.where((book) {
-        return (book['title'] ?? '')
-            .toString()
-            .toLowerCase()
-            .contains(value.toLowerCase());
-      }).toList();
+  try {
+    final email = await SessionManager.getEmail();
+    if (email == null) return;
+
+    final user = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .single();
+
+    await supabase.from('search_history').insert({
+      'user_id': user['id'],
+      'query': query.trim(),
     });
+  } catch (e) {
+    debugPrint("Search save error: $e");
   }
+}
+void filterBooks(String value) {
+  saveSearch(value);
+
+  setState(() {
+    filteredBooks = allBooks.where((book) {
+      final title = (book['title'] ?? '').toString().toLowerCase();
+      final author = (book['author'] ?? '').toString().toLowerCase();
+      final category = (book['category'] ?? '').toString().toLowerCase();
+      final search = value.toLowerCase();
+
+      return title.contains(search) ||
+          author.contains(search) ||
+          category.contains(search);
+    }).toList();
+  });
+}
+
+
+
 
   @override
   Widget build(BuildContext context) {
