@@ -15,12 +15,17 @@ class AIChatScreen extends StatefulWidget {
 class _AIChatScreenState extends State<AIChatScreen> {
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
-  final List<Map<String, String>> _messages = [];
+
+  // Her mesaj artık: role, content, ve opsiyonel cards listesi içeriyor
+  final List<Map<String, dynamic>> _messages = [];
   bool _isLoading = false;
 
-  // ── سياق التطبيق يُجلب مرة واحدة ──
   String _appContext = "";
   bool _contextLoaded = false;
+
+  // Tüm platform içerikleri (kart gösterimi için)
+  List<Map<String, dynamic>> _allCourses = [];
+  List<Map<String, dynamic>> _allBooks = [];
 
   static const String _groqApiKey = String.fromEnvironment(
     'GROQ_API_KEY',
@@ -37,20 +42,40 @@ class _AIChatScreenState extends State<AIChatScreen> {
     _loadAppContext();
   }
 
-  // ── جلب محتوى التطبيق من Supabase ──────────────────────
+  // ── JWT'den user_id çıkar ───────────────────────────────
+  int? _extractUserIdFromToken(String token) {
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return null;
+      String payload = parts[1];
+      final mod = payload.length % 4;
+      if (mod != 0) payload += '=' * (4 - mod);
+      payload = payload.replaceAll('-', '+').replaceAll('_', '/');
+      final decoded = utf8.decode(base64.decode(payload));
+      final map = jsonDecode(decoded) as Map<String, dynamic>;
+      // JWT'de genellikle 'sub' veya 'user_id' olur
+      final id = map['user_id'] ?? map['sub'];
+      if (id == null) return null;
+      return int.tryParse(id.toString());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ── Platform içeriğini Supabase'den çek ─────────────────
   Future<void> _loadAppContext() async {
     try {
       final supabase = Supabase.instance.client;
 
       final courses = await supabase
           .from('courses')
-          .select('title, category, description')
+          .select('id, title, category, description, rating')
           .order('rating', ascending: false)
           .limit(20);
 
       final books = await supabase
           .from('books')
-          .select('title, category, description')
+          .select('id, title, category, description, likes')
           .order('likes', ascending: false)
           .limit(20);
 
@@ -59,6 +84,9 @@ class _AIChatScreenState extends State<AIChatScreen> {
           .select('title, category')
           .order('rating', ascending: false)
           .limit(20);
+
+      _allCourses = List<Map<String, dynamic>>.from(courses);
+      _allBooks = List<Map<String, dynamic>>.from(books);
 
       final sb = StringBuffer();
 
@@ -79,6 +107,9 @@ class _AIChatScreenState extends State<AIChatScreen> {
         sb.writeln("• ${a['title']} [${a['category'] ?? 'General'}]");
       }
 
+      // Eski mesaj geçmişini yükle
+      await _loadChatHistory();
+
       setState(() {
         _appContext = sb.toString();
         _contextLoaded = true;
@@ -87,6 +118,81 @@ class _AIChatScreenState extends State<AIChatScreen> {
       debugPrint("Error loading context: $e");
       setState(() => _contextLoaded = true);
     }
+  }
+
+  // ── Supabase'den eski sohbet geçmişini yükle ────────────
+  Future<void> _loadChatHistory() async {
+    try {
+      final token = await SessionManager.getToken();
+      if (token == null) return;
+      final userId = _extractUserIdFromToken(token);
+      if (userId == null) return;
+
+      final supabase = Supabase.instance.client;
+      final history = await supabase
+          .from('ai_chat_history')
+          .select('role, content')
+          .eq('user_id', userId)
+          .order('created_at', ascending: true)
+          .limit(50);
+
+      setState(() {
+        _messages.clear();
+        for (final row in history) {
+          _messages.add({
+            "role": row['role'] as String,
+            "content": row['content'] as String,
+            "cards": <Map<String, dynamic>>[],
+          });
+        }
+      });
+
+      _scrollToBottom();
+    } catch (e) {
+      debugPrint("Error loading chat history: $e");
+    }
+  }
+
+  // ── Mesajı Supabase'e kaydet ─────────────────────────────
+  Future<void> _saveMsgToSupabase(String role, String content) async {
+    try {
+      final token = await SessionManager.getToken();
+      if (token == null) return;
+      final userId = _extractUserIdFromToken(token);
+      if (userId == null) return;
+
+      await Supabase.instance.client.from('ai_chat_history').insert({
+        'user_id': userId,
+        'role': role,
+        'content': content,
+      });
+    } catch (e) {
+      debugPrint("Error saving message: $e");
+    }
+  }
+
+  // ── AI cevabından bahsedilen kurs/kitapları çıkar ────────
+  List<Map<String, dynamic>> _extractMentionedCards(String reply) {
+    final cards = <Map<String, dynamic>>[];
+    final replyLower = reply.toLowerCase();
+
+    for (final course in _allCourses) {
+      final title = (course['title'] as String? ?? '').toLowerCase();
+      if (title.isNotEmpty && replyLower.contains(title)) {
+        cards.add({...course, 'type': 'course'});
+        if (cards.length >= 3) break;
+      }
+    }
+
+    for (final book in _allBooks) {
+      final title = (book['title'] as String? ?? '').toLowerCase();
+      if (title.isNotEmpty && replyLower.contains(title)) {
+        cards.add({...book, 'type': 'book'});
+        if (cards.length >= 5) break;
+      }
+    }
+
+    return cards;
   }
 
   String get _systemPrompt => """
@@ -103,7 +209,7 @@ YOUR CAPABILITIES:
 5. Support Arabic and English (respond in the same language as the user)
 
 RECOMMENDATION RULES:
-- When recommending, mention specific titles from the platform content above
+- When recommending, mention specific titles from the platform content above (use EXACT titles)
 - Explain WHY each recommendation fits the user's need
 - Be concise but helpful
 
@@ -118,26 +224,27 @@ Always be friendly, professional, and accurate.
       setState(() {
         _messages.add({
           "role": "error",
-          "content": "❌ GROQ_API_KEY not configured."
+          "content": "❌ GROQ_API_KEY not configured.",
+          "cards": [],
         });
       });
       return;
     }
 
     setState(() {
-      _messages.add({"role": "user", "content": text});
+      _messages.add({"role": "user", "content": text, "cards": []});
       _isLoading = true;
     });
     _controller.clear();
     _scrollToBottom();
 
-    // ── سجّل التفاعل ────────────────────────────────────
-    _logInteraction(text);
+    // Kullanıcı mesajını kaydet
+    _saveMsgToSupabase("user", text);
 
     try {
       final conversationMessages = _messages
           .where((m) => m["role"] != "error")
-          .map((m) => {"role": m["role"]!, "content": m["content"]!})
+          .map((m) => {"role": m["role"] as String, "content": m["content"] as String})
           .toList();
 
       final response = await http.post(
@@ -159,19 +266,29 @@ Always be friendly, professional, and accurate.
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final reply =
-            data["choices"][0]["message"]["content"].toString();
+        final reply = data["choices"][0]["message"]["content"].toString();
+
+        // AI cevabındaki kurs/kitap kartlarını çıkar
+        final cards = _extractMentionedCards(reply);
+
         setState(() {
-          _messages.add({"role": "assistant", "content": reply});
+          _messages.add({
+            "role": "assistant",
+            "content": reply,
+            "cards": cards,
+          });
           _isLoading = false;
         });
+
+        // AI cevabını kaydet
+        _saveMsgToSupabase("assistant", reply);
       } else {
         final error = jsonDecode(response.body);
         setState(() {
           _messages.add({
             "role": "error",
-            "content":
-                "❌ ${error['error']?['message'] ?? 'Unexpected error'}"
+            "content": "❌ ${error['error']?['message'] ?? 'Unexpected error'}",
+            "cards": [],
           });
           _isLoading = false;
         });
@@ -180,24 +297,14 @@ Always be friendly, professional, and accurate.
       setState(() {
         _messages.add({
           "role": "error",
-          "content": "❌ Connection error. Check your internet."
+          "content": "❌ Connection error. Check your internet.",
+          "cards": [],
         });
         _isLoading = false;
       });
     }
 
     _scrollToBottom();
-  }
-
-  // ── تسجيل تفاعل المستخدم مع الـ AI ─────────────────────
-  Future<void> _logInteraction(String query) async {
-    try {
-      final token = await SessionManager.getToken();
-      if (token == null) return;
-
-      // يمكن استخدامه لاحقاً لتحسين التوصيات
-      // مثلاً: إذا سأل عن Flutter → زيادة score لكورسات Flutter
-    } catch (_) {}
   }
 
   void _scrollToBottom() {
@@ -212,7 +319,24 @@ Always be friendly, professional, and accurate.
     });
   }
 
-  void _clearChat() => setState(() => _messages.clear());
+  // ── Sohbeti temizle (Supabase'den de sil) ───────────────
+  Future<void> _clearChat() async {
+    try {
+      final token = await SessionManager.getToken();
+      if (token != null) {
+        final userId = _extractUserIdFromToken(token);
+        if (userId != null) {
+          await Supabase.instance.client
+              .from('ai_chat_history')
+              .delete()
+              .eq('user_id', userId);
+        }
+      }
+    } catch (e) {
+      debugPrint("Error clearing history: $e");
+    }
+    setState(() => _messages.clear());
+  }
 
   @override
   void dispose() {
@@ -244,8 +368,7 @@ Always be friendly, professional, and accurate.
                   : ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.all(16),
-                      itemCount:
-                          _messages.length + (_isLoading ? 1 : 0),
+                      itemCount: _messages.length + (_isLoading ? 1 : 0),
                       itemBuilder: (context, index) {
                         if (index == _messages.length && _isLoading) {
                           return _buildTypingIndicator();
@@ -274,8 +397,7 @@ Always be friendly, professional, and accurate.
                   colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
               shape: BoxShape.circle,
             ),
-            child:
-                const Icon(Icons.smart_toy, color: Colors.white, size: 22),
+            child: const Icon(Icons.smart_toy, color: Colors.white, size: 22),
           ),
           const SizedBox(width: 12),
           Column(
@@ -296,8 +418,8 @@ Always be friendly, professional, and accurate.
           if (_messages.isNotEmpty)
             IconButton(
               onPressed: _clearChat,
-              icon:
-                  const Icon(Icons.delete_outline, color: Colors.white54),
+              icon: const Icon(Icons.delete_outline, color: Colors.white54),
+              tooltip: "Clear chat",
             ),
         ],
       ),
@@ -318,8 +440,7 @@ Always be friendly, professional, and accurate.
                     colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
                 borderRadius: BorderRadius.circular(24),
               ),
-              child:
-                  const Icon(Icons.smart_toy, color: Colors.white, size: 50),
+              child: const Icon(Icons.smart_toy, color: Colors.white, size: 50),
             ),
             const SizedBox(height: 20),
             Text("Hello! I'm EngiNet AI",
@@ -329,14 +450,12 @@ Always be friendly, professional, and accurate.
             const Text(
               "I know all courses, books & articles\non this platform. Ask me anything!",
               textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: Colors.white54, fontSize: 14, height: 1.5),
+              style: TextStyle(color: Colors.white54, fontSize: 14, height: 1.5),
             ),
             const SizedBox(height: 30),
             _buildSuggestedQuestion(
                 "What courses do you recommend for a Flutter beginner?"),
-            _buildSuggestedQuestion(
-                "اقترح لي كتب برمجة للمبتدئين"),
+            _buildSuggestedQuestion("اقترح لي كتب برمجة للمبتدئين"),
             _buildSuggestedQuestion(
                 "Explain the difference between OOP and functional programming"),
             _buildSuggestedQuestion(
@@ -368,8 +487,7 @@ Always be friendly, professional, and accurate.
             const SizedBox(width: 8),
             Expanded(
               child: Text(question,
-                  style: const TextStyle(
-                      color: Colors.white70, fontSize: 13)),
+                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
             ),
           ],
         ),
@@ -377,65 +495,170 @@ Always be friendly, professional, and accurate.
     );
   }
 
-  Widget _buildMessageBubble(Map<String, String> msg) {
+  Widget _buildMessageBubble(Map<String, dynamic> msg) {
     final isUser = msg["role"] == "user";
     final isError = msg["role"] == "error";
+    final cards = (msg["cards"] as List<Map<String, dynamic>>?) ?? [];
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment:
-            isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+      child: Column(
+        crossAxisAlignment:
+            isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          if (!isUser) ...[
-            Container(
-              width: 34,
-              height: 34,
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                    colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
-                shape: BoxShape.circle,
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment:
+                isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+            children: [
+              if (!isUser) ...[
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(
+                        colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.smart_toy,
+                      color: Colors.white, size: 18),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isError
+                        ? const Color(0xFF5C1A1A)
+                        : isUser
+                            ? const Color(0xFF4A6FA5)
+                            : const Color(0xFF1E3A5F),
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(16),
+                      topRight: const Radius.circular(16),
+                      bottomLeft: Radius.circular(isUser ? 16 : 4),
+                      bottomRight: Radius.circular(isUser ? 4 : 16),
+                    ),
+                  ),
+                  child: Text(
+                    msg["content"] as String? ?? '',
+                    style: TextStyle(
+                      color: isError ? Colors.red[300] : Colors.white,
+                      fontSize: 14,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
               ),
-              child: const Icon(Icons.smart_toy,
-                  color: Colors.white, size: 18),
+              if (isUser) ...[
+                const SizedBox(width: 8),
+                const CircleAvatar(
+                  radius: 17,
+                  backgroundColor: Color(0xFFE3C39D),
+                  child: Icon(Icons.person, color: Colors.black, size: 18),
+                ),
+              ],
+            ],
+          ),
+
+          // ── Kurs/Kitap Kartları ──────────────────────────
+          if (cards.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 110,
+              child: ListView.builder(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.only(left: 42),
+                itemCount: cards.length,
+                itemBuilder: (context, i) => _buildContentCard(cards[i]),
+              ),
             ),
-            const SizedBox(width: 8),
           ],
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: isError
-                    ? const Color(0xFF5C1A1A)
-                    : isUser
-                        ? const Color(0xFF4A6FA5)
-                        : const Color(0xFF1E3A5F),
-                borderRadius: BorderRadius.only(
-                  topLeft: const Radius.circular(16),
-                  topRight: const Radius.circular(16),
-                  bottomLeft: Radius.circular(isUser ? 16 : 4),
-                  bottomRight: Radius.circular(isUser ? 4 : 16),
+        ],
+      ),
+    );
+  }
+
+  // ── Kurs veya Kitap Kartı ────────────────────────────────
+  Widget _buildContentCard(Map<String, dynamic> item) {
+    final isCourse = item['type'] == 'course';
+    final title = item['title'] as String? ?? '';
+    final category = item['category'] as String? ?? 'General';
+    final description = item['description'] as String? ?? '';
+
+    return Container(
+      width: 200,
+      margin: const EdgeInsets.only(right: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0D2240),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isCourse
+              ? const Color(0xFF4A6FA5)
+              : const Color(0xFFE3C39D).withOpacity(0.5),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                isCourse ? Icons.play_circle_outline : Icons.menu_book,
+                color: isCourse
+                    ? const Color(0xFF6C94C6)
+                    : const Color(0xFFE3C39D),
+                size: 16,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  isCourse ? "Course" : "Book",
+                  style: TextStyle(
+                    color: isCourse
+                        ? const Color(0xFF6C94C6)
+                        : const Color(0xFFE3C39D),
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-              child: Text(
-                msg["content"] ?? '',
-                style: TextStyle(
-                  color: isError ? Colors.red[300] : Colors.white,
-                  fontSize: 14,
-                  height: 1.5,
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E3A5F),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  category,
+                  style: const TextStyle(color: Colors.white54, fontSize: 10),
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              height: 1.3,
             ),
           ),
-          if (isUser) ...[
-            const SizedBox(width: 8),
-            const CircleAvatar(
-              radius: 17,
-              backgroundColor: Color(0xFFE3C39D),
-              child:
-                  Icon(Icons.person, color: Colors.black, size: 18),
+          if (description.isNotEmpty) ...[
+            const SizedBox(height: 4),
+            Text(
+              description,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white38, fontSize: 11),
             ),
           ],
         ],
@@ -457,13 +680,13 @@ Always be friendly, professional, and accurate.
                   colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.smart_toy,
-                color: Colors.white, size: 18),
+            child:
+                const Icon(Icons.smart_toy, color: Colors.white, size: 18),
           ),
           const SizedBox(width: 8),
           Container(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 12),
+            padding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: const Color(0xFF1E3A5F),
               borderRadius: const BorderRadius.only(
@@ -513,8 +736,8 @@ Always be friendly, professional, and accurate.
                 decoration: const InputDecoration(
                   hintText: "Ask about courses, books, or any topic...",
                   hintStyle: TextStyle(color: Colors.white38),
-                  contentPadding: EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
+                  contentPadding:
+                      EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                   border: InputBorder.none,
                 ),
                 onSubmitted: (_) => _sendMessage(),

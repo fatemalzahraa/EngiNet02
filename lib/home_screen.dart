@@ -11,7 +11,6 @@ import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/post_comments_screen.dart';
 
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -23,9 +22,9 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> engineers = [];
   List<dynamic> posts = [];
   bool isLoading = true;
-List<dynamic> recommendedCourses = [];
-List<dynamic> recommendedArticles = [];
-List<dynamic> recommendedBooks = [];
+  List<dynamic> recommendedCourses = [];
+  List<dynamic> recommendedArticles = [];
+  List<dynamic> recommendedBooks = [];
   int _page = 0;
   final int _limit = 10;
   bool _hasMore = true;
@@ -70,13 +69,12 @@ List<dynamic> recommendedBooks = [];
         .maybeSingle();
 
     currentUserId = userRes?['id'];
-    currentUsername = userRes?['username']?.toString() ??
-        await SessionManager.getUsername();
+    currentUsername =
+        userRes?['username']?.toString() ?? await SessionManager.getUsername();
   }
 
   Future<List<dynamic>> _enrichPosts(List<dynamic> rawPosts) async {
     final enrichedPosts = <dynamic>[];
-   
 
     for (final post in rawPosts) {
       final postId = post['id'];
@@ -120,144 +118,207 @@ List<dynamic> recommendedBooks = [];
   }
 
   Future<void> loadData() async {
-    try {
-      final supabaseUrl = dotenv.env['SUPABASE_URL']!;
-      final supabaseKey = dotenv.env['SUPABASE_ANON_KEY']!;
+  try {
+    await _loadCurrentUser();
 
-      await _loadCurrentUser();
-      if (currentUserId != null) {
-  final followsRes = await _supabase
-      .from('follows')
-      .select('following_id')
-      .eq('follower_id', currentUserId!);
-
-  followedEngineerIds = (followsRes as List)
-      .map((e) => e['following_id'] as int)
-      .toSet();
-}
-      _page = 0;
-
-      final token = await SessionManager.getToken();
-
-final results = await Future.wait([
-  http.get(Uri.parse('${AppConstants.baseUrl}/users/engineers')),
-
-  http.get(
-    Uri.parse(
-      '$supabaseUrl/rest/v1/posts'
-      '?select=*'
-      '&order=created_at.desc'
-      '&limit=$_limit'
-      '&offset=0',
-    ),
-    headers: {
-      'apikey': supabaseKey,
-      'Authorization': 'Bearer $supabaseKey',
-    },
-  ),
-
-  http.get(
-    Uri.parse('${AppConstants.baseUrl}/recommendations'),
-    headers: {
-      'Authorization': 'Bearer $token',
-    },
-  ),
-]);
-
-      final allEngineers = results[0].statusCode == 200
-    ? jsonDecode(results[0].body) as List<dynamic>
-    : <dynamic>[];
-
-final engineersData = allEngineers
-    .where((e) =>
-        !followedEngineerIds.contains(e['id'] as int?) &&
-        e['id'] != currentUserId)
-    .toList();
-
-      final postsData = results[1].statusCode == 200
-          ? jsonDecode(results[1].body) as List<dynamic>
-          : <dynamic>[];
-      final recommendationsData = results[2].statusCode == 200
-    ? jsonDecode(results[2].body) as Map<String, dynamic>
-    : <String, dynamic>{};
-      
-  
-
-      final enrichedPosts = await _enrichPosts(postsData);
-
-      if (!mounted) return;
-      setState(() {
-        engineers = engineersData;
-        posts = enrichedPosts;
-        _hasMore = postsData.length == _limit;
-        isLoading = false;
-        recommendedCourses = recommendationsData['courses'] ?? [];
-recommendedArticles = recommendationsData['articles'] ?? [];
-recommendedBooks = recommendationsData['books'] ?? [];
-      });
-    } catch (e) {
-      debugPrint('Error loading data: $e');
-      if (!mounted) return;
-      setState(() => isLoading = false);
-    }
-  }
-
-  Future<void> toggleFollowEngineer(int engineerId) async {
-  if (currentUserId == null) return;
-
-  final isFollowing = followedEngineerIds.contains(engineerId);
-
-  if (!isFollowing) {
-    
-    setState(() {
-      followedEngineerIds.add(engineerId);
-    });
-
-   
-    Future.delayed(const Duration(seconds: 1), () {
-      if (mounted) {
-        setState(() {
-          engineers.removeWhere((e) => e['id'] == engineerId);
-        });
-      }
-    });
-
-    try {
-      await _supabase.from('follows').insert({
-        'follower_id': currentUserId!,
-        'following_id': engineerId,
-      });
-    } catch (e) {
-      debugPrint('Follow error: $e');
-      
-      if (mounted) {
-        setState(() {
-          followedEngineerIds.remove(engineerId);
-        });
-      }
-    }
-  } else {
-   
-    setState(() {
-      followedEngineerIds.remove(engineerId);
-    });
-
-    try {
-      await _supabase
+    if (currentUserId != null) {
+      final followsRes = await _supabase
           .from('follows')
-          .delete()
-          .eq('follower_id', currentUserId!)
-          .eq('following_id', engineerId);
-    } catch (e) {
-      debugPrint('Unfollow error: $e');
-      if (mounted) {
-        setState(() {
-          followedEngineerIds.add(engineerId);
+          .select('following_id')
+          .eq('follower_id', currentUserId!);
+
+      followedEngineerIds = (followsRes as List)
+          .map((e) => e['following_id'] as int)
+          .toSet();
+    }
+
+    _page = 0;
+
+    // ── Öğrencinin ilgi alanlarını al ──
+    List<String> studentInterests = [];
+    String studentSpecialty = '';
+
+    if (currentUserId != null) {
+      try {
+        final profileRes = await _supabase
+            .from('student_profiles')
+            .select('interests, specialty')
+            .eq('user_id', currentUserId!)
+            .maybeSingle();
+
+        if (profileRes != null) {
+          studentSpecialty = profileRes['specialty']?.toString() ?? '';
+          final interestsStr = profileRes['interests']?.toString() ?? '';
+          studentInterests = interestsStr
+              .split(',')
+              .map((e) => e.trim().toLowerCase())
+              .where((e) => e.isNotEmpty)
+              .toList();
+        }
+      } catch (e) {
+        debugPrint('Student profile fetch error: $e');
+      }
+    }
+
+    // ── Tüm mühendisleri al ──
+    final allEngineersRes = await _supabase
+        .from('users')
+        .select('id, username, profile_image, points, university')
+        .eq('role', 'engineer');
+
+    List<dynamic> allEngineers = allEngineersRes as List;
+
+    // ── İlgi alanına göre filtrele ──
+    List<dynamic> matchedEngineers = [];
+    List<dynamic> otherEngineers = [];
+
+    if (studentInterests.isNotEmpty || studentSpecialty.isNotEmpty) {
+      // Mühendis profillerini al
+      final engineerIds = allEngineers
+          .map((e) => e['id'] as int)
+          .toList();
+
+      final engProfiles = engineerIds.isNotEmpty
+          ? await _supabase
+              .from('engineer_profiles')
+              .select('user_id, specialty, skills')
+              .inFilter('user_id', engineerIds)
+          : [];
+
+      final profileMap = {
+        for (var p in engProfiles) p['user_id'] as int: p
+      };
+
+      for (final eng in allEngineers) {
+        final engId = eng['id'] as int;
+        if (followedEngineerIds.contains(engId) || engId == currentUserId) {
+          continue;
+        }
+
+        final profile = profileMap[engId];
+        if (profile == null) {
+          otherEngineers.add(eng);
+          continue;
+        }
+
+        final engSpecialty = (profile['specialty'] ?? '').toString().toLowerCase();
+        final engSkills = (profile['skills'] ?? '').toString().toLowerCase();
+
+        final isMatch = studentInterests.any((interest) =>
+            engSpecialty.contains(interest) || engSkills.contains(interest)) ||
+            (studentSpecialty.isNotEmpty &&
+                engSpecialty.contains(studentSpecialty.toLowerCase()));
+
+        if (isMatch) {
+          matchedEngineers.add(eng);
+        } else {
+          otherEngineers.add(eng);
+        }
+      }
+    } else {
+      otherEngineers = allEngineers
+          .where((e) =>
+              !followedEngineerIds.contains(e['id'] as int) &&
+              e['id'] != currentUserId)
+          .toList();
+    }
+
+    // Matched önce, sonra diğerleri
+    final engineersData = [...matchedEngineers, ...otherEngineers];
+
+    // ── Posts ──
+    final supabaseUrl = dotenv.env['SUPABASE_URL']!;
+    final supabaseKey = dotenv.env['SUPABASE_ANON_KEY']!;
+
+    final postsRes = await http.get(
+      Uri.parse(
+        '$supabaseUrl/rest/v1/posts'
+        '?select=*'
+        '&order=created_at.desc'
+        '&limit=$_limit'
+        '&offset=0',
+      ),
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': 'Bearer $supabaseKey',
+      },
+    );
+
+    final postsData = postsRes.statusCode == 200
+        ? jsonDecode(postsRes.body) as List<dynamic>
+        : <dynamic>[];
+
+    final enrichedPosts = await _enrichPosts(postsData);
+
+    if (!mounted) return;
+    setState(() {
+      engineers = engineersData;
+      posts = enrichedPosts;
+      _hasMore = postsData.length == _limit;
+      isLoading = false;
+      recommendedCourses = [];
+      recommendedArticles = [];
+      recommendedBooks = [];
+    });
+  } catch (e) {
+    debugPrint('Error loading data: $e');
+    if (!mounted) return;
+    setState(() => isLoading = false);
+  }
+}
+  Future<void> toggleFollowEngineer(int engineerId) async {
+    if (currentUserId == null) return;
+
+    final isFollowing = followedEngineerIds.contains(engineerId);
+
+    if (!isFollowing) {
+      setState(() {
+        followedEngineerIds.add(engineerId);
+      });
+
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) {
+          setState(() {
+            engineers.removeWhere((e) => e['id'] == engineerId);
+          });
+        }
+      });
+
+      try {
+        await _supabase.from('follows').insert({
+          'follower_id': currentUserId!,
+          'following_id': engineerId,
         });
+      } catch (e) {
+        debugPrint('Follow error: $e');
+
+        if (mounted) {
+          setState(() {
+            followedEngineerIds.remove(engineerId);
+          });
+        }
+      }
+    } else {
+      setState(() {
+        followedEngineerIds.remove(engineerId);
+      });
+
+      try {
+        await _supabase
+            .from('follows')
+            .delete()
+            .eq('follower_id', currentUserId!)
+            .eq('following_id', engineerId);
+      } catch (e) {
+        debugPrint('Unfollow error: $e');
+        if (mounted) {
+          setState(() {
+            followedEngineerIds.add(engineerId);
+          });
+        }
       }
     }
   }
-}
 
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore) return;
@@ -307,10 +368,7 @@ recommendedBooks = recommendationsData['books'] ?? [];
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Edit Post'),
-        content: TextField(
-          controller: controller,
-          maxLines: 4,
-        ),
+        content: TextField(controller: controller, maxLines: 4),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
@@ -337,51 +395,49 @@ recommendedBooks = recommendationsData['books'] ?? [];
   }
 
   Future<void> _deletePost(int postId, int index) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Delete Post'),
-      content: const Text('Are you sure you want to delete this post?'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text(
-            'Delete',
-            style: TextStyle(color: Colors.red),
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Post'),
+        content: const Text('Are you sure you want to delete this post?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
           ),
-        ),
-      ],
-    ),
-  );
-
-  if (confirmed != true) return;
-
-  try {
-    await _supabase.from('posts').delete().eq('id', postId);
-
-    if (!mounted) return;
-
-    setState(() {
-      posts.removeAt(index);
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Post deleted')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
-  } catch (e) {
-    debugPrint('Delete error: $e');
 
-    if (!mounted) return;
+    if (confirmed != true) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Failed to delete post')),
-    );
+    try {
+      await _supabase.from('posts').delete().eq('id', postId);
+
+      if (!mounted) return;
+
+      setState(() {
+        posts.removeAt(index);
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Post deleted')));
+    } catch (e) {
+      debugPrint('Delete error: $e');
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Failed to delete post')));
+    }
   }
-}
+
   Future<void> _sendPostLikeNotification(dynamic post, dynamic postId) async {
     if (currentUserId == null) return;
 
@@ -432,8 +488,9 @@ recommendedBooks = recommendationsData['books'] ?? [];
 
     setState(() {
       posts[index]['is_liked'] = !wasLiked;
-      posts[index]['likes'] =
-          wasLiked ? (oldLikes > 0 ? oldLikes - 1 : 0) : oldLikes + 1;
+      posts[index]['likes'] = wasLiked
+          ? (oldLikes > 0 ? oldLikes - 1 : 0)
+          : oldLikes + 1;
     });
 
     try {
@@ -444,17 +501,18 @@ recommendedBooks = recommendationsData['books'] ?? [];
             .eq('user_id', currentUserId!)
             .eq('post_id', postId);
       } else {
-  await _supabase.from('likes').insert({
-    'user_id': currentUserId!,
-    'post_id': postId,
-  });
+        await _supabase.from('likes').insert({
+          'user_id': currentUserId!,
+          'post_id': postId,
+        });
 
-  await _sendPostLikeNotification(post, postId);
-}
+        await _sendPostLikeNotification(post, postId);
+      }
 
-      await _supabase.from('posts').update({
-        'likes': posts[index]['likes'],
-      }).eq('id', postId);
+      await _supabase
+          .from('posts')
+          .update({'likes': posts[index]['likes']})
+          .eq('id', postId);
     } catch (e) {
       debugPrint('Like post error: $e');
       if (!mounted) return;
@@ -716,10 +774,7 @@ recommendedBooks = recommendationsData['books'] ?? [];
               decoration: BoxDecoration(
                 color: const Color(0xFFD8C09A),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: const Color(0xFFE3C39D),
-                  width: 2,
-                ),
+                border: Border.all(color: const Color(0xFFE3C39D), width: 2),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -773,30 +828,33 @@ recommendedBooks = recommendationsData['books'] ?? [];
               ),
             ),
             Positioned(
-  bottom: 55,
-  right: 15,
-  child: GestureDetector(
-    onTap: () {
-      if (userId != null) toggleFollowEngineer(userId);
-    },
-    child: Container(
-      width: 28,
-      height: 28,
-      decoration: BoxDecoration(
-        color: isFollowing
-            ? const Color(0xFF4CAF50)
-            : const Color.fromARGB(255, 88, 16, 15),
-        shape: BoxShape.circle,
-        border: Border.all(color: const Color(0xFFD8C09A), width: 2),
-      ),
-      child: Icon(
-        isFollowing ? Icons.check : Icons.add,
-        size: 16,
-        color: Colors.white,
-      ),
-    ),
-  ),
-),
+              bottom: 55,
+              right: 15,
+              child: GestureDetector(
+                onTap: () {
+                  if (userId != null) toggleFollowEngineer(userId);
+                },
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: isFollowing
+                        ? const Color(0xFF4CAF50)
+                        : const Color.fromARGB(255, 88, 16, 15),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: const Color(0xFFD8C09A),
+                      width: 2,
+                    ),
+                  ),
+                  child: Icon(
+                    isFollowing ? Icons.check : Icons.add,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -869,14 +927,14 @@ recommendedBooks = recommendationsData['books'] ?? [];
           if (postImageUrl.isNotEmpty) ...[
             const SizedBox(height: 10),
             Container(
-  width: double.infinity,
-  height: 220,
-  color: const Color(0xFFF5ECD7),
-  child: CachedNetworkImage(
-    imageUrl: postImageUrl,
-    fit: BoxFit.contain,
-  ),
-),
+              width: double.infinity,
+              height: 220,
+              color: const Color(0xFFF5ECD7),
+              child: CachedNetworkImage(
+                imageUrl: postImageUrl,
+                fit: BoxFit.contain,
+              ),
+            ),
           ],
           if (linkedCourse != null) ...[
             const SizedBox(height: 10),
@@ -890,7 +948,8 @@ recommendedBooks = recommendationsData['books'] ?? [];
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: linkedCourse['image_url'] != null &&
+                    child:
+                        linkedCourse['image_url'] != null &&
                             linkedCourse['image_url'].toString().isNotEmpty
                         ? CachedNetworkImage(
                             imageUrl: linkedCourse['image_url'].toString(),
@@ -1012,10 +1071,7 @@ recommendedBooks = recommendationsData['books'] ?? [];
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(
-          color: const Color(0xFFE3C39D),
-          width: 1.5,
-        ),
+        border: Border.all(color: const Color(0xFFE3C39D), width: 1.5),
       ),
       child: ClipOval(
         child: imageUrl.isNotEmpty
@@ -1024,11 +1080,8 @@ recommendedBooks = recommendationsData['books'] ?? [];
                 width: size,
                 height: size,
                 fit: BoxFit.cover,
-                errorWidget: (c, u, e) => const Icon(
-                  Icons.person,
-                  color: Colors.white54,
-                  size: 22,
-                ),
+                errorWidget: (c, u, e) =>
+                    const Icon(Icons.person, color: Colors.white54, size: 22),
                 placeholder: (c, u) => Shimmer.fromColors(
                   baseColor: const Color(0xFF1A2F55),
                   highlightColor: const Color(0xFF2A4A7F),
@@ -1041,13 +1094,9 @@ recommendedBooks = recommendationsData['books'] ?? [];
               )
             : Container(
                 color: const Color(0xFF4A6FA5),
-                child: const Icon(
-                  Icons.person,
-                  color: Colors.white,
-                  size: 22,
-                ),
+                child: const Icon(Icons.person, color: Colors.white, size: 22),
               ),
       ),
     );
   }
-} 
+}
