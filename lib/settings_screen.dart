@@ -86,6 +86,7 @@ class SettingsScreen extends StatelessWidget {
       await supabase.from('bookmarks').delete().eq('user_id', userId);
       await supabase.from('article_bookmarks').delete().eq('user_id', userId);
       await supabase.from('likes').delete().eq('user_id', userId);
+      await supabase.from('comments').delete().eq('comment_user_id', userId);
       await supabase.from('comments').delete().eq('user_id', userId);
       await supabase.from('answers').delete().eq('user_id', userId);
       await supabase.from('questions').delete().eq('user_id', userId);
