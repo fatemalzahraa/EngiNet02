@@ -98,7 +98,13 @@ def register(user: User):
         raise HTTPException(status_code=400, detail="Username or email already exists")
 
     new_user = result.data[0]
-    token = create_access_token({"sub": user.email, "role": user.role})
+
+    # user_id artık JWT içine de ekleniyor
+    token = create_access_token({
+        "sub": user.email,
+        "role": user.role,
+        "user_id": new_user["id"],
+    })
 
     return {
         "message": "User created successfully",
@@ -125,12 +131,18 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()):
     if not bcrypt.checkpw(form_data.password.encode(), user["password"].encode()):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
 
-    token = create_access_token({"sub": user["email"], "role": user["role"]})
+    # user_id artık hem JWT içinde hem response'da
+    token = create_access_token({
+        "sub": user["email"],
+        "role": user["role"],
+        "user_id": user["id"],
+    })
     return {
         "access_token": token,
         "token_type": "bearer",
         "role": user["role"],
         "username": user["username"],
+        "user_id": user["id"],
     }
 
 

@@ -5,9 +5,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'course_details.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:enginet/core/constants.dart';
 
 class CourseScreen extends StatefulWidget {
   const CourseScreen({super.key});
@@ -54,29 +51,67 @@ class _CourseScreenState extends State<CourseScreen> {
     }
   }
 
-  Future<void> loadRecommendedCourses() async {
+ Future<void> loadRecommendedCourses() async {
   try {
-    final token = await SessionManager.getToken();
-    debugPrint("TOKEN: $token");
+    List<dynamic> result = [];
 
-    final res = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/recommendations'),
-      headers: {
-        'Authorization': 'Bearer $token',
-      },
-    );
-    debugPrint("REC STATUS: ${res.statusCode}");
-debugPrint("REC BODY: ${res.body}");
-if (res.statusCode != 200) {
-  debugPrint(res.body);
-  throw Exception(res.body);
-}
+    final email = await SessionManager.getEmail();
+    if (email != null) {
+      final userRow = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', email)
+          .single();
 
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final userId = userRow['id'] as int;
+
+      final userInteractions = await supabase
+          .from('user_interactions')
+          .select('content_id')
+          .eq('content_type', 'course')
+          .eq('user_id', userId)
+          .limit(5);
+
+      if (userInteractions.isNotEmpty) {
+        final interactedIds = userInteractions
+            .map((e) => e['content_id'])
+            .toList();
+
+        final categories = await supabase
+            .from('courses')
+            .select('category')
+            .inFilter('id', interactedIds);
+
+        final catList = categories
+            .map((e) => e['category']?.toString())
+            .where((c) => c != null)
+            .toSet()
+            .toList();
+
+        if (catList.isNotEmpty) {
+          result = await supabase
+              .from('courses')
+              .select()
+              .inFilter('category', catList)
+              .not('id', 'in', '(${interactedIds.join(',')})')
+              .order('rating', ascending: false)
+              .limit(10);
+        }
+      }
+    }
+
+    // Fallback → popular
+    if (result.isEmpty) {
+      result = await supabase
+          .from('courses')
+          .select()
+          .order('rating', ascending: false)
+          .limit(10);
+    }
 
     if (!mounted) return;
     setState(() {
-      recommendedCourses = data['courses'] ?? [];
+      recommendedCourses = result;
       isLoadingRecommended = false;
     });
   } catch (e) {

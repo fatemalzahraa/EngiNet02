@@ -5,9 +5,7 @@ import 'article_detail.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:enginet/core/session_manager.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:enginet/core/constants.dart';
+
 
 
 class ArticleScreen extends StatefulWidget {
@@ -71,28 +69,67 @@ class _ArticleScreenState extends State<ArticleScreen> {
     }
   }
 
-  Future<void> loadRecommendedArticles() async {
+ Future<void> loadRecommendedArticles() async {
   try {
-    final token = await SessionManager.getToken();
+    List<dynamic> result = [];
 
-    final res = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/recommendations'),
-      headers: {
-        'Authorization': 'Bearer $token',
-      },
-    );
-    if (res.statusCode != 200) {
-  debugPrint(res.body);
-  throw Exception(res.body);
-}
+    final email = await SessionManager.getEmail();
+    if (email != null) {
+      final userRow = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', email)
+          .single();
 
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
-      debugPrint("ARTICLES DATA = ${data['articles']}");
-      debugPrint("ARTICLES COUNT = ${(data['articles'] ?? []).length}");
+      final userId = userRow['id'] as int;
+
+      final userInteractions = await supabase
+          .from('user_interactions')
+          .select('content_id')
+          .eq('content_type', 'article')
+          .eq('user_id', userId)
+          .limit(5);
+
+      if (userInteractions.isNotEmpty) {
+        final interactedIds = userInteractions
+            .map((e) => e['content_id'])
+            .toList();
+
+        final categories = await supabase
+            .from('articles')
+            .select('category')
+            .inFilter('id', interactedIds);
+
+        final catList = categories
+            .map((e) => e['category']?.toString())
+            .where((c) => c != null)
+            .toSet()
+            .toList();
+
+        if (catList.isNotEmpty) {
+          result = await supabase
+              .from('articles')
+              .select()
+              .inFilter('category', catList)
+              .not('id', 'in', '(${interactedIds.join(',')})')
+              .order('rating', ascending: false)
+              .limit(10);
+        }
+      }
+    }
+
+    // Fallback → popular
+    if (result.isEmpty) {
+      result = await supabase
+          .from('articles')
+          .select()
+          .order('rating', ascending: false)
+          .limit(10);
+    }
 
     if (!mounted) return;
     setState(() {
-      recommendedArticles = data['articles'] ?? [];
+      recommendedArticles = result;
       isLoadingRecommended = false;
     });
   } catch (e) {
@@ -101,7 +138,6 @@ class _ArticleScreenState extends State<ArticleScreen> {
     debugPrint("Error loading recommended articles: $e");
   }
 }
-
   void filterArticles(String value) {
     setState(() {
       filteredArticles = allArticles.where((a) {
