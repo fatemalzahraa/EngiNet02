@@ -110,32 +110,75 @@ class _BookScreenState extends State<BookScreen> {
     }
   }
 
-  Future<void> loadRecommendedBooks() async {
+Future<void> loadRecommendedBooks() async {
   try {
-    final token = await SessionManager.getToken();
+    List<dynamic> result = [];
 
-    final res = await http.get(
-      Uri.parse('${AppConstants.baseUrl}/recommendations'),
-      headers: {
-        'Authorization': 'Bearer $token',
-      },
-    );
-    if (res.statusCode != 200) {
-  debugPrint(res.body);
-  throw Exception(res.body);
-}
+    // Önce email'den user id'yi al
+    final email = await SessionManager.getEmail();
+    if (email != null) {
+      final userRow = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', email)
+          .single();
 
-    final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final userId = userRow['id'] as int;
+
+      // Bu kullanıcının kitap etkileşimlerini al
+      final userInteractions = await supabase
+          .from('user_interactions')
+          .select('content_id')
+          .eq('content_type', 'book')
+          .eq('user_id', userId)
+          .limit(5);
+
+      if (userInteractions.isNotEmpty) {
+        final interactedIds = userInteractions
+            .map((e) => e['content_id'])
+            .toList();
+
+        final categories = await supabase
+            .from('books')
+            .select('category')
+            .inFilter('id', interactedIds);
+
+        final catList = categories
+            .map((e) => e['category']?.toString())
+            .where((c) => c != null)
+            .toSet()
+            .toList();
+
+        if (catList.isNotEmpty) {
+          result = await supabase
+              .from('books')
+              .select()
+              .inFilter('category', catList)
+              .not('id', 'in', '(${interactedIds.join(',')})')
+              .order('likes', ascending: false)
+              .limit(10);
+        }
+      }
+    }
+
+    // Fallback → popular
+    if (result.isEmpty) {
+      result = await supabase
+          .from('books')
+          .select()
+          .order('likes', ascending: false)
+          .limit(10);
+    }
 
     if (!mounted) return;
     setState(() {
-      recommendedBooks = data['books'] ?? [];
+      recommendedBooks = result;
       isLoadingRecommended = false;
     });
   } catch (e) {
     if (!mounted) return;
     setState(() => isLoadingRecommended = false);
-    debugPrint("Error loading recommended Books: $e");
+    debugPrint("Error loading recommended books: $e");
   }
 }
 Future<void> saveSearch(String query) async {
