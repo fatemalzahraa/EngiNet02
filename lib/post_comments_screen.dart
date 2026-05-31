@@ -200,27 +200,7 @@ _ctrl.clear();
   'profile_image': _currentUser!['profile_image'],
   'content': commentText,
 });
-final ownerUsername = widget.post['username']?.toString() ?? '';
 
-if (ownerUsername.isNotEmpty &&
-    _currentUser != null &&
-    ownerUsername != _currentUser!['username']) {
-  final owner = await supabase
-      .from('users')
-      .select('id')
-      .eq('username', ownerUsername)
-      .maybeSingle();
-
-  if (owner != null) {
-    await supabase.from('notifications').insert({
-      'user_id': owner['id'],
-      'message': '${_currentUser!['username']} commented on your post.',
-      'is_read': 0,
-      'post_id': _postId,
-      'type': 'post_comment',
-    });
-  }
-}
 
 
 final postOwnerId = widget.post['user_id'];

@@ -41,6 +41,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   List<dynamic> savedPosts = [];
   List<dynamic> myQuestions = [];
   bool _realtimeStarted = false;
+  bool _isRefreshingProfile = false;
   
 
   @override
@@ -91,6 +92,7 @@ void _startRealtime(int userId) {
       .listen((_) => loadProfile());
 }
 
+
   // ─── Pick & upload profile image ─────────────────────────────────────────
   Future<String?> _pickAndUploadProfileImage() async {
     final pickedFile = await _picker.pickImage(
@@ -115,6 +117,8 @@ void _startRealtime(int userId) {
 
   // ─── Load profile ─────────────────────────────────────────────────────────
   Future<void> loadProfile() async {
+    if (_isRefreshingProfile) return;
+    _isRefreshingProfile = true;
     try {
       final email = await SessionManager.getEmail();
       if (email == null || email.isEmpty) {
@@ -266,8 +270,8 @@ if (studentProfileList.isNotEmpty) {
             .toList();
         myQuestions = enrichedQuestions;
       });
-    } catch (e) {
-      debugPrint('❌ Error loading profile: $e');
+    } finally {
+    _isRefreshingProfile = false;
       if (!mounted) return;
       setState(() => isLoading = false);
     }

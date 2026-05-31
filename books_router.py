@@ -144,17 +144,38 @@ def unlike_book(book_id: int, current_user: dict = Depends(get_current_user)):
 @router.delete("/{book_id}")
 def delete_book(
     book_id: int,
-    current_user: dict = Depends(require_role("admin", "engineer")),
+    current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
     try:
         cursor = db.cursor()
-        cursor.execute("SELECT id FROM books WHERE id = %s", (book_id,))
-        if not cursor.fetchone():
+
+        cursor.execute(
+            "SELECT id, username, role FROM users WHERE email = %s",
+            (current_user["email"],),
+        )
+        user = cursor.fetchone()
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        cursor.execute(
+            "SELECT id, author_username FROM books WHERE id = %s",
+            (book_id,),
+        )
+        book = cursor.fetchone()
+
+        if not book:
             raise HTTPException(status_code=404, detail="Book not found")
+
+        if book["author_username"] != user["username"] and user["role"] != "admin":
+            raise HTTPException(status_code=403, detail="Not allowed")
+
         cursor.execute("DELETE FROM book_likes WHERE book_id = %s", (book_id,))
         cursor.execute("DELETE FROM books WHERE id = %s", (book_id,))
+
         db.commit()
         return {"message": "Book deleted successfully"}
+
     finally:
         db.close()

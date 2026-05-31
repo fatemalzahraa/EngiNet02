@@ -686,14 +686,15 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                               ),
                                             ),
                                             const SizedBox(width: 8),
-                                            GestureDetector(
-                                              onTap: () => _deleteQuestion(q),
-                                              child: const Icon(
-                                                Icons.delete,
-                                                color: Colors.red,
-                                                size: 18,
-                                              ),
-                                            ),
+                                            if (q['user_id'] == q['current_user_id'])
+  GestureDetector(
+    onTap: () => _deleteQuestion(q),
+    child: const Icon(
+      Icons.delete,
+      color: Colors.red,
+      size: 18,
+    ),
+  ),
                                           ],
                                                 
   ),

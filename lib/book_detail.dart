@@ -808,21 +808,24 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
 
 const Spacer(),
 
-GestureDetector(
-  onTap: _confirmDeleteBook,
-  child: Container(
-    width: 40,
-    height: 40,
-    decoration: const BoxDecoration(
-      color: Colors.red,
-      shape: BoxShape.circle,
-    ),
-    child: const Icon(
-      Icons.delete,
-      color: Colors.white,
+if (_currentUser != null &&
+    _currentUser!['username'] ==
+        (book?['author_username'] ?? book?['author']))
+  GestureDetector(
+    onTap: _confirmDeleteBook,
+    child: Container(
+      width: 40,
+      height: 40,
+      decoration: const BoxDecoration(
+        color: Colors.red,
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(
+        Icons.delete,
+        color: Colors.white,
+      ),
     ),
   ),
-),
                 ],
               ),
             ),

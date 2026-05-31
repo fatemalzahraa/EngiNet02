@@ -149,21 +149,21 @@ def get_my_questions(current_user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=404, detail="User not found")
 
         cursor.execute("""
-            SELECT q.*, u.username, u.profile_image,
-              COALESCE((SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id), 0) AS answers_count,
-              EXISTS(
-                SELECT 1 FROM question_likes l
-                WHERE l.question_id = q.id AND l.user_id = %s
-              ) AS is_liked,
-              EXISTS(
-                SELECT 1 FROM saved_questions s
-                WHERE s.question_id = q.id AND s.user_id = %s
-              ) AS is_saved
-            FROM questions q
-            LEFT JOIN users u ON u.id = q.user_id
-            WHERE q.user_id = %s
-            ORDER BY q.created_at DESC
-        """, (user["id"], user["id"], user["id"], user["id"]))
+    SELECT q.*, u.username, u.profile_image,
+      COALESCE((SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id), 0) AS answers_count,
+      EXISTS(
+        SELECT 1 FROM question_likes l
+        WHERE l.question_id = q.id AND l.user_id = %s
+      ) AS is_liked,
+      EXISTS(
+        SELECT 1 FROM saved_questions s
+        WHERE s.question_id = q.id AND s.user_id = %s
+      ) AS is_saved
+    FROM questions q
+    LEFT JOIN users u ON u.id = q.user_id
+    WHERE q.user_id = %s
+    ORDER BY q.created_at DESC
+""", (user["id"], user["id"], user["id"]))
 
         return cursor.fetchall()
 
