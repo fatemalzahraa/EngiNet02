@@ -22,7 +22,7 @@ from profile_router import router as profile_router
 from questions_router import router as question_router
 from recommendations_router import router as recommendations_router
 from search_router import router as search_router
-from routers.ai_router import router as ai_router
+from ai_router import router as ai_router
 
 from dependencies import (
     SECRET_KEY,
