@@ -219,27 +219,37 @@ def create_engineer_profile(data: EngineerProfileRequest, current_user: dict = D
 
 
 # ── /forgot-password ───────────────────────────────────────
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
 @app.post("/forgot-password")
-def forgot_password(email: str):
+def forgot_password(data: ForgotPasswordRequest):
     db = get_db()
-    result = db.table("users").select("id, email").eq("email", email).execute()
+
+    result = db.table("users").select("id, email").eq("email", data.email).execute()
+
     if not result.data:
-        return {"message": "If this email exists, a reset link has been sent"}
+        return {"message": "If this email exists, a reset code has been sent"}
 
-    user = result.data[0]
-    token = secrets.token_urlsafe(32)
-    expires_at = (datetime.utcnow() + timedelta(minutes=30)).isoformat()
+    code = f"{secrets.randbelow(1000000):06d}"
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
 
-    db.table("password_reset_tokens").insert({
-        "user_id": user["id"],
-        "token": token,
+    db.table("otp_codes").delete().eq("email", data.email).execute()
+
+    db.table("otp_codes").insert({
+        "email": data.email,
+        "code": code,
         "expires_at": expires_at,
     }).execute()
 
-    reset_link = f"https://your-domain.com/reset-password-link?token={token}"
-    send_email(to=user["email"], subject="Reset your password",
-               body=f"Click the link to reset your password:\n{reset_link}")
-    return {"message": "If this email exists, a reset link has been sent"}
+    send_email(
+        to=data.email,
+        subject="EngiNet Password Reset Code",
+        body=f"Your password reset code is: {code}\n\nThis code expires in 10 minutes.",
+    )
+
+    return {"message": "If this email exists, a reset code has been sent"}
 
 
 # ── /verify-otp ────────────────────────────────────────────
@@ -270,30 +280,60 @@ def verify_otp(data: VerifyOTPRequest):
 
 # ── /reset-password-link ───────────────────────────────────
 class ResetPasswordRequest(BaseModel):
-    token: str
+    email: str
+    code: str
     new_password: str
 
 
 @app.post("/reset-password-link")
 def reset_password_link(data: ResetPasswordRequest):
     if len(data.new_password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 6 characters",
+        )
 
     db = get_db()
-    now = datetime.utcnow().isoformat()
-    result = db.table("password_reset_tokens").select("id, user_id").eq("token", data.token).eq("used", False).gt("expires_at", now).execute()
+
+    result = db.table("otp_codes") \
+        .select("code, expires_at") \
+        .eq("email", data.email) \
+        .execute()
 
     if not result.data:
-        raise HTTPException(status_code=400, detail="Invalid or expired reset link")
+        raise HTTPException(status_code=400, detail="No reset code found")
 
-    reset_token = result.data[0]
-    hashed = bcrypt.hashpw(data.new_password.encode(), bcrypt.gensalt()).decode()
+    entry = result.data[0]
 
-    db.table("users").update({"password": hashed}).eq("id", reset_token["user_id"]).execute()
-    db.table("password_reset_tokens").update({"used": True}).eq("id", reset_token["id"]).execute()
+    expires_at = datetime.fromisoformat(entry["expires_at"])
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if datetime.now(timezone.utc) > expires_at:
+        db.table("otp_codes").delete().eq("email", data.email).execute()
+        raise HTTPException(status_code=400, detail="Reset code has expired")
+
+    if entry["code"] != data.code:
+        raise HTTPException(status_code=400, detail="Invalid reset code")
+
+    user_result = db.table("users").select("id").eq("email", data.email).execute()
+
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    hashed = bcrypt.hashpw(
+        data.new_password.encode(),
+        bcrypt.gensalt(),
+    ).decode()
+
+    db.table("users") \
+        .update({"password": hashed}) \
+        .eq("id", user_result.data[0]["id"]) \
+        .execute()
+
+    db.table("otp_codes").delete().eq("email", data.email).execute()
 
     return {"message": "Password updated successfully"}
-
 
 # ── /users/engineers ───────────────────────────────────────
 @app.get("/users/engineers")

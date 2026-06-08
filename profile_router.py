@@ -6,19 +6,21 @@ from typing import Optional
 from dependencies import get_current_user, require_role
 from database import get_db
 
-router = APIRouter(prefix="/profile", tags=["Profile"]) 
-
+router = APIRouter(prefix="/profile", tags=["Profile"])
 
 
 class UpdateProfile(BaseModel):
     bio: Optional[str] = None
     profile_image: Optional[str] = None
     university: Optional[str] = None
+
+
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
 supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+
+# ── Update full profile (with optional image upload) ─────
 @router.put("/update")
 async def update_profile_full(
     username: str = Form(...),
@@ -37,156 +39,123 @@ async def update_profile_full(
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
-    try:
-        cursor = db.cursor()
 
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s",
-            (current_user["email"],),
+    # Get user by email
+    user_res = db.table("users").select("id").eq("email", current_user["email"]).single().execute()
+    if not user_res.data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_id = user_res.data["id"]
+    profile_image_url = None
+
+    # Upload image if provided
+    if image:
+        file_ext = image.filename.split(".")[-1]
+        file_path = f"profile-images/{user_id}_{username}.{file_ext}"
+        file_bytes = await image.read()
+
+        supabase.storage.from_("profiles").upload(
+            path=file_path,
+            file=file_bytes,
+            file_options={
+                "content-type": image.content_type,
+                "upsert": "true",
+            },
         )
-        user = cursor.fetchone()
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+        profile_image_url = supabase.storage.from_("profiles").get_public_url(file_path)
 
-        profile_image_url = None
+    # Build update payload
+    update_data = {
+        "username": username,
+        "email": email,
+        "bio": bio,
+        "phone": phone,
+        "university": university,
+        "specialty": specialty,
+        "location": location,
+        "linkedin": linkedin,
+        "github": github,
+        "website": website,
+        "skills": skills,
+        "show_email": show_email,
+    }
+    if profile_image_url:
+        update_data["profile_image"] = profile_image_url
 
-        if image:
-            file_ext = image.filename.split(".")[-1]
-            file_path = f"profile-images/{user['id']}_{username}.{file_ext}"
-            file_bytes = await image.read()
+    result = db.table("users").update(update_data).eq("id", user_id).execute()
 
-            supabase.storage.from_("profiles").upload(
-                path=file_path,
-                file=file_bytes,
-                file_options={
-                    "content-type": image.content_type,
-                    "upsert": "true",
-                },
-            )
+    if not result.data:
+        raise HTTPException(status_code=500, detail="Failed to update profile")
 
-            profile_image_url = supabase.storage.from_("profiles").get_public_url(
-                file_path
-            )
-
-        if profile_image_url:
-            cursor.execute("""
-                UPDATE users
-                SET username=%s, email=%s, bio=%s, phone=%s, university=%s,
-                    specialty=%s, location=%s, linkedin=%s, github=%s,
-                    website=%s, skills=%s, show_email=%s, profile_image=%s
-                WHERE id=%s
-            """, (
-                username, email, bio, phone, university,
-                specialty, location, linkedin, github,
-                website, skills, show_email, profile_image_url,
-                user["id"],
-            ))
-        else:
-            cursor.execute("""
-                UPDATE users
-                SET username=%s, email=%s, bio=%s, phone=%s, university=%s,
-                    specialty=%s, location=%s, linkedin=%s, github=%s,
-                    website=%s, skills=%s, show_email=%s
-                WHERE id=%s
-            """, (
-                username, email, bio, phone, university,
-                specialty, location, linkedin, github,
-                website, skills, show_email,
-                user["id"],
-            ))
-
-        db.commit()
-
-        return {
-            "message": "Profile updated",
-            "profile_image": profile_image_url,
-        }
-
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-
-    finally:
-        db.close()
+    return {
+        "message": "Profile updated",
+        "profile_image": profile_image_url,
+    }
 
 
 # ── Get my profile ────────────────────────────────────────
 @router.get("/me")
 def get_my_profile(current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT * FROM users WHERE email = %s", (current_user["email"],))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        return {
-            "id": user["id"],
-            "username": user["username"],
-            "email": user["email"],
-            "role": user["role"],
-            "bio": user["bio"],
-            "profile_image": user["profile_image"],
-            "points": user["points"],
-            "university": user["university"],
-        }
-    finally:
-        db.close()
+
+    result = db.table("users").select(
+        "id, username, email, role, bio, profile_image, points, university"
+    ).eq("email", current_user["email"]).single().execute()
+
+    if not result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return result.data
 
 
-# ── Update my profile ─────────────────────────────────────
+# ── Update my profile (partial) ───────────────────────────
 @router.put("/me")
 def update_my_profile(data: UpdateProfile, current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        fields = []
-        values = []
-        if data.bio is not None:
-            fields.append("bio = %s")
-            values.append(data.bio)
-        if data.profile_image is not None:
-            fields.append("profile_image = %s")
-            values.append(data.profile_image)
-        if data.university is not None:
-            fields.append("university = %s")
-            values.append(data.university)
 
-        if fields:
-            values.append(current_user["email"])
-            cursor.execute(
-                f"UPDATE users SET {', '.join(fields)} WHERE email = %s",
-                values,
-            )
-            db.commit()
-        return {"message": "Profile updated successfully"}
-    finally:
-        db.close()
+    update_data = {}
+    if data.bio is not None:
+        update_data["bio"] = data.bio
+    if data.profile_image is not None:
+        update_data["profile_image"] = data.profile_image
+    if data.university is not None:
+        update_data["university"] = data.university
+
+    if update_data:
+        db.table("users").update(update_data).eq("email", current_user["email"]).execute()
+
+    return {"message": "Profile updated successfully"}
 
 
 # ── Get courses where user has lesson progress ────────────
 @router.get("/my-courses")
 def get_my_courses(current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        cursor.execute(
-            """
-            SELECT DISTINCT c.* FROM courses c
-            JOIN lessons l ON l.course_id = c.id
-            JOIN lesson_progress lp ON lp.lesson_id = l.id
-            WHERE lp.user_id = %s
-            """,
-            (user["id"],),
-        )
-        return cursor.fetchall()
-    finally:
-        db.close()
+
+    user_res = db.table("users").select("id").eq("email", current_user["email"]).single().execute()
+    if not user_res.data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_id = user_res.data["id"]
+
+    # Get lesson IDs completed by user
+    progress_res = db.table("lesson_progress").select("lesson_id").eq("user_id", user_id).execute()
+    lesson_ids = [row["lesson_id"] for row in (progress_res.data or [])]
+
+    if not lesson_ids:
+        return []
+
+    # Get course IDs from those lessons
+    lessons_res = db.table("lessons").select("course_id").in_("id", lesson_ids).execute()
+    course_ids = list({row["course_id"] for row in (lessons_res.data or [])})
+
+    if not course_ids:
+        return []
+
+    # Get courses
+    courses_res = db.table("courses").select("*").in_("id", course_ids).execute()
+    return courses_res.data or []
 
 
 # ── Mark lesson as complete / incomplete ──────────────────
@@ -198,43 +167,35 @@ def save_lesson_progress(
     current_user: dict = Depends(require_role("student", "engineer", "admin")),
 ):
     db = get_db()
-    try:
-        cursor = db.cursor()
 
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
-        user = cursor.fetchone()
+    user_res = db.table("users").select("id").eq("email", current_user["email"]).single().execute()
+    if not user_res.data:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+    user_id = user_res.data["id"]
 
-        cursor.execute(
-            """
-            INSERT INTO lesson_progress (
-                user_id, lesson_id, is_completed, watched_seconds
-            )
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (user_id, lesson_id)
-            DO UPDATE SET
-                is_completed = EXCLUDED.is_completed OR lesson_progress.is_completed,
-                watched_seconds = GREATEST(
-                    lesson_progress.watched_seconds,
-                    EXCLUDED.watched_seconds
-                )
-            """,
-            (user["id"], lesson_id, is_completed, watched_seconds),
-        )
+    # Check existing progress
+    existing = db.table("lesson_progress").select("*").eq("user_id", user_id).eq("lesson_id", lesson_id).single().execute()
 
-        db.commit()
-        return {"message": "Progress saved"}
+    if existing.data:
+        # Update: keep max watched_seconds, keep completed if already true
+        new_completed = is_completed or existing.data.get("is_completed", False)
+        new_seconds = max(watched_seconds, existing.data.get("watched_seconds") or 0)
 
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
+        db.table("lesson_progress").update({
+            "is_completed": new_completed,
+            "watched_seconds": new_seconds,
+        }).eq("user_id", user_id).eq("lesson_id", lesson_id).execute()
+    else:
+        # Insert new record
+        db.table("lesson_progress").insert({
+            "user_id": user_id,
+            "lesson_id": lesson_id,
+            "is_completed": is_completed,
+            "watched_seconds": watched_seconds,
+        }).execute()
+
+    return {"message": "Progress saved"}
 
 
 # ── Get lesson progress for a course ─────────────────────
@@ -244,38 +205,29 @@ def get_lesson_progress(
     current_user: dict = Depends(require_role("student", "engineer", "admin")),
 ):
     db = get_db()
-    try:
-        cursor = db.cursor()
 
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
-        user = cursor.fetchone()
+    user_res = db.table("users").select("id").eq("email", current_user["email"]).single().execute()
+    if not user_res.data:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+    user_id = user_res.data["id"]
 
-        cursor.execute(
-            """
-            SELECT lp.lesson_id, lp.is_completed, lp.watched_seconds
-            FROM lesson_progress lp
-            JOIN lessons l ON l.id = lp.lesson_id
-            WHERE lp.user_id = %s
-              AND l.course_id = %s
-            """,
-            (user["id"], course_id),
-        )
+    # Get lessons for this course
+    lessons_res = db.table("lessons").select("id").eq("course_id", course_id).execute()
+    lesson_ids = [row["id"] for row in (lessons_res.data or [])]
 
-        rows = cursor.fetchall()
+    if not lesson_ids:
+        return {}
 
-        return {
-            str(row["lesson_id"]): {
-                "completed": bool(row["is_completed"]),
-                "watched_seconds": row["watched_seconds"] or 0,
-            }
-            for row in rows
+    # Get progress for these lessons
+    progress_res = db.table("lesson_progress").select(
+        "lesson_id, is_completed, watched_seconds"
+    ).eq("user_id", user_id).in_("lesson_id", lesson_ids).execute()
+
+    return {
+        str(row["lesson_id"]): {
+            "completed": bool(row["is_completed"]),
+            "watched_seconds": row["watched_seconds"] or 0,
         }
-
-    finally:
-        db.close()
+        for row in (progress_res.data or [])
+    }

@@ -54,8 +54,12 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
   try {
     final res = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/forgot-password?email=$email'),
-    );
+  Uri.parse('${AppConstants.baseUrl}/forgot-password'),
+  headers: {'Content-Type': 'application/json'},
+  body: jsonEncode({
+    'email': email,
+  }),
+);
 
     if (res.statusCode == 200) {
       setState(() => _step = 2);
