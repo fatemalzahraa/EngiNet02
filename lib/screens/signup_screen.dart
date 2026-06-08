@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
@@ -14,15 +15,15 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final _usernameController      = TextEditingController();
-  final _emailController         = TextEditingController();
-  final _passwordController      = TextEditingController();
+  final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
   final _confirmPasswordController = TextEditingController();
 
-  String _selectedRole  = 'student';
-  bool _isLoading       = false;
+  String _selectedRole = 'student';
+  bool _isLoading = false;
   bool _obscurePassword = true;
-  bool _obscureConfirm  = true;
+  bool _obscureConfirm = true;
 
   final _supabase = Supabase.instance.client;
 
@@ -36,9 +37,9 @@ class _SignupScreenState extends State<SignupScreen> {
   }
 
   Future<void> _signup() async {
-    final username        = _usernameController.text.trim();
-    final email           = _emailController.text.trim();
-    final password        = _passwordController.text.trim();
+    final username = _usernameController.text.trim();
+    final email = _emailController.text.trim();
+    final password = _passwordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
 
     if (username.isEmpty || email.isEmpty || password.isEmpty) {
@@ -63,9 +64,9 @@ class _SignupScreenState extends State<SignupScreen> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'username': username,
-          'email':    email,
+          'email': email,
           'password': password,
-          'role':     _selectedRole,
+          'role': _selectedRole,
         }),
       );
 
@@ -87,20 +88,19 @@ class _SignupScreenState extends State<SignupScreen> {
 
       // 3. Save session using the backend JWT
       await SessionManager.saveSession(
-        token:    backendToken,
-        role:     _selectedRole,
+        token: backendToken,
+        role: _selectedRole,
         username: username,
-        email:    email,
+        email: email,
       );
 
       if (!mounted) return;
       _showSnackBar('Account created successfully!');
       if (_selectedRole == 'student') {
-          Navigator.pushReplacementNamed(context, '/student-questions');
+        Navigator.pushReplacementNamed(context, '/student-questions');
       } else {
-          Navigator.pushReplacementNamed(context, '/engineer-questions');
+        Navigator.pushReplacementNamed(context, '/engineer-questions');
       }
-
     } on AuthException catch (e) {
       _showSnackBar(e.message, isError: true);
     } catch (e) {
@@ -124,7 +124,7 @@ class _SignupScreenState extends State<SignupScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -139,20 +139,29 @@ class _SignupScreenState extends State<SignupScreen> {
                   style: GoogleFonts.agbalumo(
                     fontSize: 36,
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFFE3C39D),
+                    color: AppColors.accent,
                   ),
                 ),
                 Text(
                   'Join the EngiNet community',
                   style: GoogleFonts.robotoCondensed(
                     fontSize: 15,
-                    color: const Color(0xFFA68868),
+                    color: AppColors.textAccent,
                   ),
                 ),
                 const SizedBox(height: 32),
-                _buildField(controller: _usernameController, hint: 'Username', icon: Icons.person_outline),
+                _buildField(
+                  controller: _usernameController,
+                  hint: 'Username',
+                  icon: Icons.person_outline,
+                ),
                 const SizedBox(height: 14),
-                _buildField(controller: _emailController, hint: 'Email', icon: Icons.email_outlined, keyboardType: TextInputType.emailAddress),
+                _buildField(
+                  controller: _emailController,
+                  hint: 'Email',
+                  icon: Icons.email_outlined,
+                  keyboardType: TextInputType.emailAddress,
+                ),
                 const SizedBox(height: 14),
                 _buildField(
                   controller: _passwordController,
@@ -160,8 +169,14 @@ class _SignupScreenState extends State<SignupScreen> {
                   icon: Icons.lock_outline,
                   obscureText: _obscurePassword,
                   suffixIcon: IconButton(
-                    icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
-                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
                 const SizedBox(height: 14),
@@ -171,39 +186,56 @@ class _SignupScreenState extends State<SignupScreen> {
                   icon: Icons.lock_outline,
                   obscureText: _obscureConfirm,
                   suffixIcon: IconButton(
-                    icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility, color: Colors.grey),
-                    onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+                    icon: Icon(
+                      _obscureConfirm ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () =>
+                        setState(() => _obscureConfirm = !_obscureConfirm),
                   ),
                 ),
                 const SizedBox(height: 20),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFE3C39D),
+                    color: AppColors.accent,
                     borderRadius: BorderRadius.circular(34),
                   ),
                   child: Row(
                     children: [
                       const Icon(Icons.badge_outlined, color: Colors.black45),
                       const SizedBox(width: 10),
-                      Text('I am a:', style: GoogleFonts.robotoCondensed(color: Colors.black54, fontSize: 15)),
+                      Text(
+                        'I am a:',
+                        style: GoogleFonts.robotoCondensed(
+                          color: Colors.black54,
+                          fontSize: 15,
+                        ),
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: DropdownButtonHideUnderline(
                           child: DropdownButton<String>(
                             value: _selectedRole,
-                            dropdownColor: const Color(0xFFE3C39D),
+                            dropdownColor: AppColors.accent,
                             style: GoogleFonts.robotoCondensed(
                               color: Colors.black87,
                               fontWeight: FontWeight.bold,
                               fontSize: 15,
                             ),
                             items: const [
-                              DropdownMenuItem(value: 'student',  child: Text('Student')),
-                              DropdownMenuItem(value: 'engineer', child: Text('Engineer')),
+                              DropdownMenuItem(
+                                value: 'student',
+                                child: Text('Student'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'engineer',
+                                child: Text('Engineer'),
+                              ),
                             ],
                             onChanged: (value) {
-                              if (value != null) setState(() => _selectedRole = value);
+                              if (value != null)
+                                setState(() => _selectedRole = value);
                             },
                           ),
                         ),
@@ -219,18 +251,23 @@ class _SignupScreenState extends State<SignupScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4B6382),
+                        color: AppColors.cardBg,
                         borderRadius: BorderRadius.circular(34),
                       ),
                       child: Center(
                         child: _isLoading
-                            ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
-                            : Text('Create Account',
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              )
+                            : Text(
+                                'Create Account',
                                 style: GoogleFonts.robotoCondensed(
                                   color: Colors.white,
                                   fontWeight: FontWeight.bold,
                                   fontSize: 20,
-                                )),
+                                ),
+                              ),
                       ),
                     ),
                   ),
@@ -239,16 +276,24 @@ class _SignupScreenState extends State<SignupScreen> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Text("Already have an account? ",
-                        style: GoogleFonts.robotoCondensed(color: Colors.white54, fontSize: 15)),
+                    Text(
+                      "Already have an account? ",
+                      style: GoogleFonts.robotoCondensed(
+                        color: Colors.white54,
+                        fontSize: 15,
+                      ),
+                    ),
                     GestureDetector(
-                      onTap: () => Navigator.pushReplacementNamed(context, '/login'),
-                      child: Text('Sign In',
-                          style: GoogleFonts.robotoCondensed(
-                            color: const Color(0xFFE3C39D),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 15,
-                          )),
+                      onTap: () =>
+                          Navigator.pushReplacementNamed(context, '/login'),
+                      child: Text(
+                        'Sign In',
+                        style: GoogleFonts.robotoCondensed(
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -271,7 +316,7 @@ class _SignupScreenState extends State<SignupScreen> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFE3C39D),
+        color: AppColors.accent,
         borderRadius: BorderRadius.circular(34),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20),

@@ -8,10 +8,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:enginet/core/app_colors.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class AddArticleScreen extends StatefulWidget {
- final Map<String, dynamic>? article;
-  const AddArticleScreen({super.key,this.article });
+  final Map<String, dynamic>? article;
+  const AddArticleScreen({super.key, this.article});
 
   @override
   State<AddArticleScreen> createState() => _AddArticleScreenState();
@@ -45,55 +47,80 @@ class _AddArticleScreenState extends State<AddArticleScreen> {
     _contentController.dispose();
     super.dispose();
   }
+
   @override
-void initState() {
-  super.initState();
+  void initState() {
+    super.initState();
 
-  if (isEditMode) {
-    _titleController.text = widget.article!['title'] ?? '';
-    _contentController.text = widget.article!['content'] ?? '';
-    _selectedCategory = widget.article!['category'];
+    if (isEditMode) {
+      _titleController.text = widget.article!['title'] ?? '';
+      _contentController.text = widget.article!['content'] ?? '';
+      _selectedCategory = widget.article!['category'];
+    }
   }
-}
 
-  Future<void> _pickImage() async {
+Future<void> _pickImage() async {
   try {
     final XFile? pickedFile = await _picker.pickImage(
       source: ImageSource.gallery,
       imageQuality: 80,
     );
 
-    if (!mounted) return;
     if (pickedFile == null) return;
 
-    setState(() => _selectedImage = File(pickedFile.path));
-  } catch (e) {
-    debugPrint('Error picking image: $e');
+    final imageFile = File(pickedFile.path);
+    final sizeInBytes = await imageFile.length();
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Failed to pick image')),
-    );
+    if (sizeInBytes > 5 * 1024 * 1024) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Image too large. Maximum size is 5MB'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+  } catch (e) {
+    debugPrint(e.toString());
   }
 }
 
   Future<void> _pickPdf() async {
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['pdf'],
+  final result = await FilePicker.platform.pickFiles(
+    type: FileType.custom,
+    allowedExtensions: ['pdf'],
+  );
+  if (result == null || result.files.single.path == null) return;
+
+
+  final file = File(result.files.single.path!);
+  final sizeInBytes = await file.length();
+  if (sizeInBytes > 10 * 1024 * 1024) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('File too large. Maximum size is 10MB'),
+        backgroundColor: Colors.red,
+      ),
     );
-    if (result == null || result.files.single.path == null) return;
-    setState(() => _selectedPdf = File(result.files.single.path!));
+    return;
   }
 
+  setState(() => _selectedPdf = file);
+}
   Future<String?> _uploadImage() async {
     if (_selectedImage == null) return null;
     final username = await SessionManager.getUsername() ?? 'user';
     final fileExt = path.extension(_selectedImage!.path);
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}_$username$fileExt';
+    final fileName =
+        '${DateTime.now().millisecondsSinceEpoch}_$username$fileExt';
     final filePath = 'article-images/$fileName';
-    await _supabase.storage.from('articles').upload(
+    await _supabase.storage
+        .from('articles')
+        .upload(
           filePath,
           _selectedImage!,
           fileOptions: const FileOptions(upsert: true),
@@ -106,7 +133,9 @@ void initState() {
     final username = await SessionManager.getUsername() ?? 'user';
     final fileName = '${DateTime.now().millisecondsSinceEpoch}_$username.pdf';
     final filePath = 'article-pdfs/$fileName';
-    await _supabase.storage.from('articles').upload(
+    await _supabase.storage
+        .from('articles')
+        .upload(
           filePath,
           _selectedPdf!,
           fileOptions: const FileOptions(upsert: true),
@@ -115,123 +144,130 @@ void initState() {
   }
 
   Future<void> _submitArticle() async {
-  final title = _titleController.text.trim();
-  final content = _contentController.text.trim();
+    final title = _titleController.text.trim();
+    final content = _contentController.text.trim();
 
-  if (title.isEmpty || content.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Please fill title and content')),
-    );
-    return;
-  }
-
-  setState(() => _isLoading = true);
-
-  try {
-    final imageUrl = await _uploadImage();
-    final pdfUrl = await _uploadPdf();
-
-    if (isEditMode) {
-      await _supabase.from('articles').update({
-        'title': title,
-        'content': content,
-        'category': _selectedCategory,
-        if (imageUrl != null) 'image_url': imageUrl,
-        if (pdfUrl != null) 'pdf_url': pdfUrl,
-      }).eq('id', widget.article!['id']);
-
-      if (!mounted) return;
+    if (title.isEmpty || content.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Article updated!')),
+        const SnackBar(content: Text('Please fill title and content')),
       );
-      Navigator.pop(context, true);
       return;
     }
 
-    final username = await SessionManager.getUsername();
+    setState(() => _isLoading = true);
 
-    await _supabase.from('articles').insert({
-      'title': title,
-      'content': content,
-      'author_name': username?.toString().trim(),
-      'image_url': imageUrl,
-      'category': _selectedCategory,
-      'pdf_url': pdfUrl,
-    });
+    try {
+      final imageUrl = await _uploadImage();
+      final pdfUrl = await _uploadPdf();
 
-    final email = await SessionManager.getEmail();
-    final userData = await _supabase
-        .from('users')
-        .select('id')
-        .eq('email', email!)
-        .single();
+      if (isEditMode) {
+        await _supabase
+            .from('articles')
+            .update({
+              'title': title,
+              'content': content,
+              'category': _selectedCategory,
+              if (imageUrl != null) 'image_url': imageUrl,
+              if (pdfUrl != null) 'pdf_url': pdfUrl,
+            })
+            .eq('id', widget.article!['id']);
 
-    await addPoints(userData['id'], 5);
+        if (!mounted) return;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Article updated!')));
+        Navigator.pop(context, true);
+        return;
+      }
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Article published!')),
-    );
-    Navigator.pop(context, true);
-  } catch (e) {
-    debugPrint('Error submitting article: $e');
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          isEditMode ? 'Failed to update article' : 'Failed to publish article',
+      final username = await SessionManager.getUsername();
+
+      await _supabase.from('articles').insert({
+        'title': title,
+        'content': content,
+        'author_name': username?.toString().trim(),
+        'image_url': imageUrl,
+        'category': _selectedCategory,
+        'pdf_url': pdfUrl,
+      });
+
+      final email = await SessionManager.getEmail();
+      final userData = await _supabase
+          .from('users')
+          .select('id')
+          .eq('email', email!)
+          .single();
+
+      await addPoints(userData['id'], 5);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Article published!')));
+      Navigator.pop(context, true);
+    } catch (e) {
+      debugPrint('Error submitting article: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isEditMode
+                ? 'Failed to update article'
+                : 'Failed to publish article',
+          ),
         ),
-      ),
-    );
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
+      );
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         leading: GestureDetector(
           onTap: () => Navigator.pop(context),
           child: Container(
             margin: const EdgeInsets.all(8),
             decoration: const BoxDecoration(
-              color: Color(0xFFE3C39D),
+              color: AppColors.accent,
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.arrow_back, color: Colors.black, size: 18),
           ),
         ),
-       title: Text(
-  isEditMode ? 'Edit Article' : 'New Article',
-  style: GoogleFonts.agbalumo(
-    color: const Color(0xFFE3C39D),
-    fontSize: 22,
-  ),
-),
+        title: Text(
+          isEditMode ? 'Edit Article' : 'New Article',
+          style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 22),
+        ),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: ElevatedButton(
               onPressed: _isLoading ? null : _submitArticle,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE3C39D),
+                backgroundColor: AppColors.accent,
                 foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(20),
+                ),
               ),
               child: _isLoading
                   ? const SizedBox(
                       width: 16,
                       height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.black,
+                      ),
                     )
                   : Text(
-    isEditMode ? 'Update' : 'Publish',
-    style: GoogleFonts.agbalumo(fontSize: 14),
-  ),
+                      isEditMode ? 'Update' : 'Publish',
+                      style: GoogleFonts.agbalumo(fontSize: 14),
+                    ),
             ),
           ),
         ],
@@ -243,7 +279,11 @@ void initState() {
           children: [
             _label('Title *'),
             const SizedBox(height: 8),
-            _field(controller: _titleController, hint: 'Article title', maxLines: 1),
+            _field(
+              controller: _titleController,
+              hint: 'Article title',
+              maxLines: 1,
+            ),
 
             const SizedBox(height: 16),
             _label('Category'),
@@ -257,7 +297,10 @@ void initState() {
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: _selectedCategory,
-                  hint: const Text('Select category', style: TextStyle(color: Colors.black38)),
+                  hint: const Text(
+                    'Select category',
+                    style: TextStyle(color: Colors.black38),
+                  ),
                   isExpanded: true,
                   dropdownColor: const Color(0xFFD8C09A),
                   style: const TextStyle(color: Colors.black87, fontSize: 15),
@@ -272,7 +315,11 @@ void initState() {
             const SizedBox(height: 16),
             _label('Content *'),
             const SizedBox(height: 8),
-            _field(controller: _contentController, hint: 'Write your article...', maxLines: 10),
+            _field(
+              controller: _contentController,
+              hint: 'Write your article...',
+              maxLines: 10,
+            ),
 
             const SizedBox(height: 16),
             _label('PDF File (optional)'),
@@ -292,7 +339,9 @@ void initState() {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        _selectedPdf == null ? 'Choose PDF file' : 'PDF file selected ✓',
+                        _selectedPdf == null
+                            ? 'Choose PDF file'
+                            : 'PDF file selected ✓',
                         style: const TextStyle(color: Colors.black87),
                       ),
                     ),
@@ -316,14 +365,25 @@ void initState() {
                 child: _selectedImage != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.file(_selectedImage!, fit: BoxFit.cover, width: double.infinity),
+                        child: Image.file(
+                          _selectedImage!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                        ),
                       )
                     : const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.add_photo_alternate, size: 42, color: Colors.black54),
+                          Icon(
+                            Icons.add_photo_alternate,
+                            size: 42,
+                            color: Colors.black54,
+                          ),
                           SizedBox(height: 8),
-                          Text('Tap to choose image', style: TextStyle(color: Colors.black54)),
+                          Text(
+                            'Tap to choose image',
+                            style: TextStyle(color: Colors.black54),
+                          ),
                         ],
                       ),
               ),
@@ -332,7 +392,10 @@ void initState() {
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => setState(() => _selectedImage = null),
-                child: const Text('Remove image', style: TextStyle(color: Colors.redAccent)),
+                child: const Text(
+                  'Remove image',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
               ),
             ],
 

@@ -4,6 +4,7 @@ import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:enginet/core/app_colors.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,10 +14,10 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _emailController    = TextEditingController();
+  final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _isLoading           = false;
-  bool _obscurePassword     = true;
+  bool _isLoading = false;
+  bool _obscurePassword = true;
 
   @override
   void dispose() {
@@ -26,7 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _login() async {
-    final email    = _emailController.text.trim();
+    final email = _emailController.text.trim();
     final password = _passwordController.text.trim();
 
     if (email.isEmpty || password.isEmpty) {
@@ -46,22 +47,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (response.statusCode != 200) {
         final body = jsonDecode(response.body);
-        _showSnackBar(body['detail'] ?? 'Login failed. Check your credentials.', isError: true);
+        _showSnackBar(
+          body['detail'] ?? 'Login failed. Check your credentials.',
+          isError: true,
+        );
         return;
       }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 
       await SessionManager.saveSession(
-        token:    data['access_token']?.toString() ?? '',
-        role:     data['role']?.toString()         ?? 'student',
-        username: data['username']?.toString()     ?? '',
-        email:    email,
+        token: data['access_token']?.toString() ?? '',
+        role: data['role']?.toString() ?? 'student',
+        username: data['username']?.toString() ?? '',
+        email: email,
       );
 
       if (!mounted) return;
       Navigator.pushReplacementNamed(context, '/home');
-
     } catch (e) {
       debugPrint('Login error: $e');
       _showSnackBar('Unable to connect to server. Try again.', isError: true);
@@ -83,7 +86,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
@@ -98,7 +101,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   style: GoogleFonts.agbalumo(
                     fontSize: 40,
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFFE3C39D),
+                    color: AppColors.accent,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -106,7 +109,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   'Sign in to continue',
                   style: GoogleFonts.robotoCondensed(
                     fontSize: 16,
-                    color: const Color(0xFFA68868),
+                    color: AppColors.textAccent,
                   ),
                 ),
                 const SizedBox(height: 40),
@@ -124,17 +127,21 @@ class _LoginScreenState extends State<LoginScreen> {
                   obscureText: _obscurePassword,
                   suffixIcon: IconButton(
                     icon: Icon(
-                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      _obscurePassword
+                          ? Icons.visibility_off
+                          : Icons.visibility,
                       color: Colors.grey,
                     ),
-                    onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
                 const SizedBox(height: 10),
                 Align(
                   alignment: Alignment.centerRight,
                   child: GestureDetector(
-                    onTap: () => Navigator.pushNamed(context, '/reset-password-link'),
+                    onTap: () =>
+                        Navigator.pushNamed(context, '/reset-password-link'),
                     child: Text(
                       'Forgot Password?',
                       style: GoogleFonts.robotoCondensed(
@@ -152,12 +159,15 @@ class _LoginScreenState extends State<LoginScreen> {
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF4B6382),
+                        color: AppColors.cardBg,
                         borderRadius: BorderRadius.circular(34),
                       ),
                       child: Center(
                         child: _isLoading
-                            ? const CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
+                            ? const CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              )
                             : Text(
                                 'Sign In',
                                 style: GoogleFonts.robotoCondensed(
@@ -176,14 +186,18 @@ class _LoginScreenState extends State<LoginScreen> {
                   children: [
                     Text(
                       "Don't have an account? ",
-                      style: GoogleFonts.robotoCondensed(color: Colors.white54, fontSize: 15),
+                      style: GoogleFonts.robotoCondensed(
+                        color: Colors.white54,
+                        fontSize: 15,
+                      ),
                     ),
                     GestureDetector(
-                      onTap: () => Navigator.pushReplacementNamed(context, '/register'),
+                      onTap: () =>
+                          Navigator.pushReplacementNamed(context, '/register'),
                       child: Text(
                         'Sign Up',
                         style: GoogleFonts.robotoCondensed(
-                          color: const Color(0xFFE3C39D),
+                          color: AppColors.accent,
                           fontWeight: FontWeight.bold,
                           fontSize: 15,
                         ),
@@ -209,7 +223,7 @@ class _LoginScreenState extends State<LoginScreen> {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFE3C39D),
+        color: AppColors.accent,
         borderRadius: BorderRadius.circular(34),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 20),

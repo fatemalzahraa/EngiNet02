@@ -11,6 +11,7 @@ import 'package:video_player/video_player.dart';
 import 'course_comments_screen.dart';
 import 'package:enginet/engineer_profile.dart';
 import 'package:enginet/points_helper.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class CourseDetailScreen extends StatefulWidget {
   final String courseId;
@@ -332,8 +333,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     }
   }
 
-  
-
   // ── Lesson progress ───────────────────────────────────────────────────────
   Future<void> _saveLessonProgress(
     int lessonId, {
@@ -341,7 +340,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     required int watchedSeconds,
   }) async {
     final token = await SessionManager.getToken();
-    
+
     if (token == null || token.isEmpty) return;
     if (!mounted) return;
 
@@ -583,7 +582,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Scaffold(
-        backgroundColor: Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         body: Center(
           child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
         ),
@@ -592,7 +591,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
 
     if (course == null) {
       return const Scaffold(
-        backgroundColor: Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         body: Center(
           child: Text(
             'Course not found',
@@ -650,7 +649,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                     width: 40,
                     height: 40,
                     decoration: const BoxDecoration(
-                      color: Color(0xFFE3C39D),
+                      color: AppColors.accent,
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(Icons.arrow_back, color: Colors.black),
@@ -705,7 +704,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                   _courseStarted
                                       ? Icons.percent
                                       : Icons.play_arrow,
-                                  color: const Color(0xFFE3C39D),
+                                  color: AppColors.accent,
                                   size: 20,
                                 ),
                                 const SizedBox(width: 4),
@@ -714,7 +713,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                                       ? 'Progress ${_progressPercent.toStringAsFixed(0)}%'
                                       : 'Start',
                                   style: GoogleFonts.agbalumo(
-                                    color: const Color(0xFFE3C39D),
+                                    color: AppColors.accent,
                                     fontSize: 16,
                                   ),
                                 ),
@@ -872,7 +871,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                         value: _completedCount / lessons.length,
                         backgroundColor: Colors.white24,
                         valueColor: const AlwaysStoppedAnimation<Color>(
-                          Color(0xFFE3C39D),
+                          AppColors.accent,
                         ),
                       ),
                     ),
@@ -923,7 +922,7 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
               color: isCompleted
                   ? const Color(0xFF4CAF50)
                   : canOpen
-                  ? const Color(0xFFE3C39D)
+                  ? AppColors.accent
                   : Colors.grey,
               shape: BoxShape.circle,
             ),
@@ -1049,11 +1048,11 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFFE3C39D)),
+          icon: const Icon(Icons.arrow_back, color: AppColors.accent),
           onPressed: () {
             final seconds = _controller.value.isInitialized
                 ? _controller.value.position.inSeconds
@@ -1067,7 +1066,7 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
         ),
         title: Text(
           widget.title,
-          style: GoogleFonts.agbalumo(color: const Color(0xFFE3C39D)),
+          style: GoogleFonts.agbalumo(color: AppColors.accent),
           overflow: TextOverflow.ellipsis,
         ),
       ),
@@ -1083,7 +1082,7 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
                       _controller,
                       allowScrubbing: true,
                       colors: const VideoProgressColors(
-                        playedColor: Color(0xFFE3C39D),
+                        playedColor: AppColors.accent,
                         bufferedColor: Colors.white54,
                         backgroundColor: Colors.white24,
                       ),
@@ -1091,7 +1090,7 @@ class _LessonVideoPlayerScreenState extends State<LessonVideoPlayerScreen> {
                     Center(
                       child: IconButton(
                         iconSize: 64,
-                        color: const Color(0xFFE3C39D),
+                        color: AppColors.accent,
                         icon: Icon(
                           _controller.value.isPlaying
                               ? Icons.pause_circle

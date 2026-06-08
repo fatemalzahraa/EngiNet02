@@ -4,6 +4,7 @@ import 'package:enginet/core/session_manager.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/reset_password_screen.dart';
 import 'package:enginet/edit_profile_screen.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -13,11 +14,7 @@ class SettingsScreen extends StatelessWidget {
 
     if (!context.mounted) return;
 
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      '/login',
-      (route) => false,
-    );
+    Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
   }
 
   Future<void> _deleteAccount(BuildContext context) async {
@@ -25,9 +22,7 @@ class SettingsScreen extends StatelessWidget {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: const Color(0xFF132F5C),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(
           'Delete Account',
           style: GoogleFonts.poppins(
@@ -37,18 +32,14 @@ class SettingsScreen extends StatelessWidget {
         ),
         content: Text(
           'Are you sure you want to permanently delete your account?',
-          style: GoogleFonts.poppins(
-            color: Colors.white70,
-          ),
+          style: GoogleFonts.poppins(color: Colors.white70),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
             child: Text(
               'Cancel',
-              style: GoogleFonts.poppins(
-                color: Colors.white70,
-              ),
+              style: GoogleFonts.poppins(color: Colors.white70),
             ),
           ),
           TextButton(
@@ -102,11 +93,7 @@ class SettingsScreen extends StatelessWidget {
 
       if (!context.mounted) return;
 
-      Navigator.pushNamedAndRemoveUntil(
-        context,
-        '/login',
-        (route) => false,
-      );
+      Navigator.pushNamedAndRemoveUntil(context, '/login', (route) => false);
     } catch (e) {
       debugPrint('DELETE ACCOUNT ERROR: $e');
 
@@ -115,10 +102,7 @@ class SettingsScreen extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.red,
-          content: Text(
-            'Error: $e',
-            style: GoogleFonts.poppins(),
-          ),
+          content: Text('Error: $e', style: GoogleFonts.poppins()),
         ),
       );
     }
@@ -128,7 +112,7 @@ class SettingsScreen extends StatelessWidget {
     required IconData icon,
     required String title,
     required VoidCallback onTap,
-    Color color = const Color(0xFFE3C39D),
+    Color color = AppColors.accent,
   }) {
     final bool isDanger = color == Colors.red;
 
@@ -137,10 +121,7 @@ class SettingsScreen extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(24),
         gradient: LinearGradient(
-          colors: [
-            const Color(0xFFD8C09A),
-            const Color(0xFFE6D0AF),
-          ],
+          colors: [const Color(0xFFD8C09A), const Color(0xFFE6D0AF)],
         ),
         boxShadow: [
           BoxShadow(
@@ -156,10 +137,7 @@ class SettingsScreen extends StatelessWidget {
           borderRadius: BorderRadius.circular(24),
           onTap: onTap,
           child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 18,
-              vertical: 16,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
             child: Row(
               children: [
                 Container(
@@ -168,14 +146,12 @@ class SettingsScreen extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: isDanger
                         ? Colors.red.withOpacity(0.12)
-                        : const Color(0xFF071739).withOpacity(0.10),
+                        : AppColors.primary.withOpacity(0.10),
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: Icon(
                     icon,
-                    color: isDanger
-                        ? Colors.red
-                        : const Color(0xFF071739),
+                    color: isDanger ? Colors.red : AppColors.primary,
                     size: 28,
                   ),
                 ),
@@ -186,7 +162,7 @@ class SettingsScreen extends StatelessWidget {
                   child: Text(
                     title,
                     style: GoogleFonts.poppins(
-                      color: const Color(0xFF071739),
+                      color: AppColors.primary,
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
                     ),
@@ -196,7 +172,7 @@ class SettingsScreen extends StatelessWidget {
                 Icon(
                   Icons.arrow_forward_ios_rounded,
                   size: 18,
-                  color: const Color(0xFF071739).withOpacity(0.65),
+                  color: AppColors.primary.withOpacity(0.65),
                 ),
               ],
             ),
@@ -209,7 +185,7 @@ class SettingsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
 
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -218,15 +194,10 @@ class SettingsScreen extends StatelessWidget {
 
         title: Text(
           'Settings',
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 30,
-          ),
+          style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 30),
         ),
 
-        iconTheme: const IconThemeData(
-          color: Color(0xFFE3C39D),
-        ),
+        iconTheme: const IconThemeData(color: AppColors.accent),
       ),
 
       body: Container(
@@ -234,11 +205,7 @@ class SettingsScreen extends StatelessWidget {
 
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [
-              Color(0xFF071739),
-              Color(0xFF0B2A5B),
-              Color(0xFF132F5C),
-            ],
+            colors: [AppColors.primary, Color(0xFF0B2A5B), Color(0xFF132F5C)],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
           ),
@@ -257,17 +224,17 @@ class SettingsScreen extends StatelessWidget {
 
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: const Color(0xFFE3C39D).withOpacity(0.12),
+                    color: AppColors.accent.withOpacity(0.12),
 
                     border: Border.all(
-                      color: const Color(0xFFE3C39D).withOpacity(0.30),
+                      color: AppColors.accent.withOpacity(0.30),
                       width: 1.5,
                     ),
                   ),
 
                   child: const Icon(
                     Icons.settings_rounded,
-                    color: Color(0xFFE3C39D),
+                    color: AppColors.accent,
                     size: 60,
                   ),
                 ),

@@ -6,6 +6,7 @@ import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:enginet/engineer_profile.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class BookDetailScreen extends StatefulWidget {
   final String bookId;
@@ -20,7 +21,7 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
   // ─── State ───────────────────────────────────────────────────────────────
   Map<String, dynamic>? book;
-  Map<String, dynamic>? _currentUser;   // cached once, never re-fetched
+  Map<String, dynamic>? _currentUser; // cached once, never re-fetched
   bool isLoading = true;
   bool isBookmarked = false;
   bool isLiked = false;
@@ -59,40 +60,38 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   }
 
   Future<void> _openAuthorProfile() async {
-  final authorUsername =
-      book?['author_username']?.toString() ??
-      book?['author']?.toString() ??
-      '';
+    final authorUsername =
+        book?['author_username']?.toString() ??
+        book?['author']?.toString() ??
+        '';
 
-  if (authorUsername.isEmpty) return;
+    if (authorUsername.isEmpty) return;
 
-  try {
-    final owner = await supabase
-        .from('users')
-        .select('id')
-        .eq('username', authorUsername)
-        .maybeSingle();
+    try {
+      final owner = await supabase
+          .from('users')
+          .select('id')
+          .eq('username', authorUsername)
+          .maybeSingle();
 
-    if (owner == null || owner['id'] == null) {
-      _showSnack('User profile not found');
-      return;
-    }
+      if (owner == null || owner['id'] == null) {
+        _showSnack('User profile not found');
+        return;
+      }
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => EngineerProfileScreen(
-          targetUserId: owner['id'],
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EngineerProfileScreen(targetUserId: owner['id']),
         ),
-      ),
-    );
-  } catch (e) {
-    debugPrint('❌ open author profile error: $e');
-    _showSnack('Failed to open profile');
+      );
+    } catch (e) {
+      debugPrint('❌ open author profile error: $e');
+      _showSnack('Failed to open profile');
+    }
   }
-}
 
   // ─── Init: fetch user once, then load everything in parallel ─────────────
   Future<void> _initData() async {
@@ -117,51 +116,43 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   }
 
   Future<void> _confirmDeleteBook() async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text("Delete Book"),
-      content: const Text(
-        "Are you sure you want to delete this book?",
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text("Cancel"),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text(
-            "Delete",
-            style: TextStyle(color: Colors.red),
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Book"),
+        content: const Text("Are you sure you want to delete this book?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
           ),
-        ),
-      ],
-    ),
-  );
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
 
-  if (confirmed == true) {
-    await _deleteBook();
+    if (confirmed == true) {
+      await _deleteBook();
+    }
   }
-}
 
-Future<void> _deleteBook() async {
-  try {
-    await supabase
-        .from('books')
-        .delete()
-        .eq('id', _bookId);
+  Future<void> _deleteBook() async {
+    try {
+      await supabase.from('books').delete().eq('id', _bookId);
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    _showSnack('Book deleted successfully');
+      _showSnack('Book deleted successfully');
 
-    Navigator.pop(context);
-  } catch (e) {
-    debugPrint('❌ deleteBook error: $e');
-    _showSnack('Failed to delete book');
+      Navigator.pop(context);
+    } catch (e) {
+      debugPrint('❌ deleteBook error: $e');
+      _showSnack('Failed to delete book');
+    }
   }
-}
 
   /// Fetch the logged-in user row from Supabase (called only once).
   Future<Map<String, dynamic>?> _fetchCurrentUser() async {
@@ -297,10 +288,9 @@ Future<void> _deleteBook() async {
 
   Future<void> _notifyBookOwner() async {
     try {
-      final ownerUsername =
-          book?['author_username'] ?? book?['author'];
-      if (ownerUsername == null ||
-          ownerUsername == _currentUser!['username']) return;
+      final ownerUsername = book?['author_username'] ?? book?['author'];
+      if (ownerUsername == null || ownerUsername == _currentUser!['username'])
+        return;
 
       final owner = await supabase
           .from('users')
@@ -311,8 +301,7 @@ Future<void> _deleteBook() async {
       if (owner != null) {
         await supabase.from('notifications').insert({
           'user_id': owner['id'],
-          'message':
-              '${_currentUser!['username']} commented on your book.',
+          'message': '${_currentUser!['username']} commented on your book.',
           'is_read': 0,
           'book_id': _bookId,
         });
@@ -365,37 +354,40 @@ Future<void> _deleteBook() async {
             .eq('user_id', userId)
             .eq('book_id', _bookId);
 
-        await supabase.from('books').update({
-          'likes': currentLikes > 0 ? currentLikes - 1 : 0,
-        }).eq('id', _bookId);
+        await supabase
+            .from('books')
+            .update({'likes': currentLikes > 0 ? currentLikes - 1 : 0})
+            .eq('id', _bookId);
       } else {
         await supabase.from('likes').insert({
           'user_id': userId,
           'book_id': _bookId,
         });
 
-        await supabase.from('books').update({
-          'likes': currentLikes + 1,
-        }).eq('id', _bookId);
+        await supabase
+            .from('books')
+            .update({'likes': currentLikes + 1})
+            .eq('id', _bookId);
         final ownerUsername = book?['author_username'] ?? book?['author'];
 
-if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
-  final owner = await supabase
-      .from('users')
-      .select('id')
-      .eq('username', ownerUsername)
-      .maybeSingle();
+        if (ownerUsername != null &&
+            ownerUsername != _currentUser!['username']) {
+          final owner = await supabase
+              .from('users')
+              .select('id')
+              .eq('username', ownerUsername)
+              .maybeSingle();
 
-  if (owner != null) {
-    await supabase.from('notifications').insert({
-      'user_id': owner['id'],
-      'message': '${_currentUser!['username']} liked your book.',
-      'is_read': 0,
-      'book_id': _bookId,
-      'type': 'book_like',
-    });
-  }
-}
+          if (owner != null) {
+            await supabase.from('notifications').insert({
+              'user_id': owner['id'],
+              'message': '${_currentUser!['username']} liked your book.',
+              'is_read': 0,
+              'book_id': _bookId,
+              'type': 'book_like',
+            });
+          }
+        }
       }
     } catch (e) {
       debugPrint('❌ toggleLike error: $e');
@@ -422,8 +414,7 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
 
     // Optimistic UI update
     setState(() {
-      selectedRating =
-          selectedRating == ratingValue ? 0 : ratingValue;
+      selectedRating = selectedRating == ratingValue ? 0 : ratingValue;
     });
 
     try {
@@ -434,14 +425,11 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
             .eq('user_id', userId)
             .eq('book_id', _bookId);
       } else {
-       await supabase.from('book_ratings').upsert(
-  {
-    'user_id': userId,
-    'book_id': _bookId,
-    'rating': ratingValue,
-  },
-  onConflict: 'user_id,book_id',
-);
+        await supabase.from('book_ratings').upsert({
+          'user_id': userId,
+          'book_id': _bookId,
+          'rating': ratingValue,
+        }, onConflict: 'user_id,book_id');
       }
 
       // Recalculate average from DB
@@ -453,14 +441,14 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
       double newAvg = 0.0;
       final list = allRatings as List;
       if (list.isNotEmpty) {
-        final sum =
-            list.fold<int>(0, (prev, r) => prev + (r['rating'] as int));
+        final sum = list.fold<int>(0, (prev, r) => prev + (r['rating'] as int));
         newAvg = sum / list.length;
       }
 
-      await supabase.from('books').update({
-        'rating': newAvg.toStringAsFixed(1),
-      }).eq('id', _bookId);
+      await supabase
+          .from('books')
+          .update({'rating': newAvg.toStringAsFixed(1)})
+          .eq('id', _bookId);
 
       if (!mounted) return;
       setState(() => book!['rating'] = newAvg.toStringAsFixed(1));
@@ -536,8 +524,10 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
     final viewerUrl =
         'https://docs.google.com/gview?embedded=true&url=${Uri.encodeComponent(url)}';
     try {
-      await launchUrl(Uri.parse(viewerUrl),
-          mode: LaunchMode.externalApplication);
+      await launchUrl(
+        Uri.parse(viewerUrl),
+        mode: LaunchMode.externalApplication,
+      );
     } catch (e) {
       debugPrint('❌ readBook error: $e');
       _showSnack('Could not open the book.');
@@ -550,8 +540,7 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
       return;
     }
     try {
-      await launchUrl(Uri.parse(url),
-          mode: LaunchMode.externalApplication);
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     } catch (e) {
       debugPrint('❌ openUrl error: $e');
       _showSnack('Could not open the link.');
@@ -561,8 +550,7 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
   // ─── Helpers ─────────────────────────────────────────────────────────────
   void _showSnack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   /// Build a Map for O(1) parent-comment lookup.
@@ -577,14 +565,11 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
       child: Container(
         padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
-          color: isReply
-              ? const Color(0xFFDDD4C4)
-              : const Color(0xFFE8DED0),
+          color: isReply ? const Color(0xFFDDD4C4) : const Color(0xFFE8DED0),
           borderRadius: BorderRadius.circular(10),
           border: isReply
               ? const Border(
-                  left:
-                      BorderSide(color: Color(0xFF6C94C6), width: 3),
+                  left: BorderSide(color: Color(0xFF6C94C6), width: 3),
                 )
               : null,
         ),
@@ -593,14 +578,16 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
           children: [
             CircleAvatar(
               radius: isReply ? 13 : 16,
-              backgroundImage:
-                  (c['profile_image'] ?? '').toString().isNotEmpty
-                      ? NetworkImage(c['profile_image'])
-                      : null,
+              backgroundImage: (c['profile_image'] ?? '').toString().isNotEmpty
+                  ? NetworkImage(c['profile_image'])
+                  : null,
               backgroundColor: const Color(0xFF6C94C6),
               child: (c['profile_image'] ?? '').toString().isEmpty
-                  ? Icon(Icons.person,
-                      size: isReply ? 13 : 16, color: Colors.white)
+                  ? Icon(
+                      Icons.person,
+                      size: isReply ? 13 : 16,
+                      color: Colors.white,
+                    )
                   : null,
             ),
             const SizedBox(width: 8),
@@ -620,8 +607,7 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
                   if (isReply) _buildParentPreview(c),
                   Text(
                     c['content'] ?? '',
-                    style: const TextStyle(
-                        color: Colors.black87, fontSize: 14),
+                    style: const TextStyle(color: Colors.black87, fontSize: 14),
                   ),
                   const SizedBox(height: 4),
                   if (!isReply)
@@ -632,8 +618,7 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
                           replyingToUsername = c['username'];
                         });
                         // Auto-focus the comment field
-                        FocusScope.of(context)
-                            .requestFocus(_commentFocusNode);
+                        FocusScope.of(context).requestFocus(_commentFocusNode);
                       },
                       child: const Text(
                         'Reply',
@@ -666,8 +651,7 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
 
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
-      padding:
-          const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(8),
@@ -704,22 +688,23 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
 
   List<Widget> _buildCommentsTree() {
     final map = _commentsMap; // build once per render
-    final parentComments =
-        comments.where((c) => c['parent_comment_id'] == null).toList();
+    final parentComments = comments
+        .where((c) => c['parent_comment_id'] == null)
+        .toList();
 
     final widgets = <Widget>[];
     for (final parent in parentComments) {
       widgets.add(_buildComment(Map<String, dynamic>.from(parent), false));
 
       final replies = comments
-          .where((c) =>
-              c['parent_comment_id']?.toString() ==
-              parent['id'].toString())
+          .where(
+            (c) =>
+                c['parent_comment_id']?.toString() == parent['id'].toString(),
+          )
           .toList();
 
       for (final reply in replies) {
-        widgets.add(
-            _buildComment(Map<String, dynamic>.from(reply), true));
+        widgets.add(_buildComment(Map<String, dynamic>.from(reply), true));
       }
     }
 
@@ -733,32 +718,33 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Scaffold(
-        backgroundColor: Color(0xFF071739),
-        body:
-            Center(child: CircularProgressIndicator(color: Color(0xFF6C94C6))),
+        backgroundColor: AppColors.primary,
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
+        ),
       );
     }
 
     if (book == null) {
       return Scaffold(
-        backgroundColor: const Color(0xFF071739),
-        appBar: AppBar(backgroundColor: const Color(0xFF071739)),
+        backgroundColor: AppColors.primary,
+        appBar: AppBar(backgroundColor: AppColors.primary),
         body: const Center(
-          child: Text('Book not found',
-              style: TextStyle(color: Colors.white)),
+          child: Text('Book not found', style: TextStyle(color: Colors.white)),
         ),
       );
     }
 
     final title = book!['title']?.toString() ?? '';
-    final author = book!['engineer']?['username']?.toString() ??
+    final author =
+        book!['engineer']?['username']?.toString() ??
         book!['author_username']?.toString() ??
         book!['author']?.toString() ??
         '';
-    final authorImage =
-        book!['engineer']?['profile_image']?.toString() ?? '';
+    final authorImage = book!['engineer']?['profile_image']?.toString() ?? '';
     final imageUrl = book!['image_url']?.toString() ?? '';
-    final fileUrl = (book!['book_url']?.toString().isNotEmpty == true
+    final fileUrl =
+        (book!['book_url']?.toString().isNotEmpty == true
             ? book!['book_url'].toString()
             : book!['file_url']?.toString()) ??
         '';
@@ -767,14 +753,13 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
         double.tryParse(book!['rating']?.toString() ?? '0') ?? 0.0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: Column(
           children: [
             // ── App bar ──────────────────────────────────────────────
             Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
                   GestureDetector(
@@ -782,50 +767,45 @@ if (ownerUsername != null && ownerUsername != _currentUser!['username']) {
                       if (Navigator.canPop(context)) {
                         Navigator.pop(context);
                       } else {
-                        Navigator.pushReplacementNamed(
-                            context, '/home');
+                        Navigator.pushReplacementNamed(context, '/home');
                       }
                     },
                     child: Container(
                       width: 40,
                       height: 40,
                       decoration: const BoxDecoration(
-                        color: Color(0xFFE3C39D),
+                        color: AppColors.accent,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.arrow_back,
-                          color: Colors.black),
+                      child: const Icon(Icons.arrow_back, color: Colors.black),
                     ),
                   ),
                   const SizedBox(width: 12),
                   Text(
-  'Book details',
-  style: GoogleFonts.agbalumo(
-    fontSize: 28,
-    color: const Color(0xFFE3C39D),
-  ),
-),
+                    'Book details',
+                    style: GoogleFonts.agbalumo(
+                      fontSize: 28,
+                      color: AppColors.accent,
+                    ),
+                  ),
 
-const Spacer(),
+                  const Spacer(),
 
-if (_currentUser != null &&
-    _currentUser!['username'] ==
-        (book?['author_username'] ?? book?['author']))
-  GestureDetector(
-    onTap: _confirmDeleteBook,
-    child: Container(
-      width: 40,
-      height: 40,
-      decoration: const BoxDecoration(
-        color: Colors.red,
-        shape: BoxShape.circle,
-      ),
-      child: const Icon(
-        Icons.delete,
-        color: Colors.white,
-      ),
-    ),
-  ),
+                  if (_currentUser != null &&
+                      _currentUser!['username'] ==
+                          (book?['author_username'] ?? book?['author']))
+                    GestureDetector(
+                      onTap: _confirmDeleteBook,
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.delete, color: Colors.white),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -836,7 +816,9 @@ if (_currentUser != null &&
                 child: SingleChildScrollView(
                   controller: _scrollController,
                   padding: const EdgeInsets.symmetric(
-                      vertical: 16, horizontal: 12),
+                    vertical: 16,
+                    horizontal: 12,
+                  ),
                   child: Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
@@ -854,30 +836,34 @@ if (_currentUser != null &&
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Author row
-GestureDetector(
-  onTap: _openAuthorProfile,
-  child: Row(
-    children: [
-      CircleAvatar(
-        radius: 22,
-        backgroundImage:
-            authorImage.isNotEmpty ? NetworkImage(authorImage) : null,
-        backgroundColor: const Color(0xFF6C94C6),
-        child: authorImage.isEmpty
-            ? const Icon(Icons.person, color: Colors.white)
-            : null,
-      ),
-      const SizedBox(width: 10),
-      Text(
-        author,
-        style: GoogleFonts.agbalumo(
-          fontSize: 16,
-          color: Colors.black87,
-        ),
-      ),
-    ],
-  ),
-),
+                          GestureDetector(
+                            onTap: _openAuthorProfile,
+                            child: Row(
+                              children: [
+                                CircleAvatar(
+                                  radius: 22,
+                                  backgroundImage: authorImage.isNotEmpty
+                                      ? NetworkImage(authorImage)
+                                      : null,
+                                  backgroundColor: const Color(0xFF6C94C6),
+                                  child: authorImage.isEmpty
+                                      ? const Icon(
+                                          Icons.person,
+                                          color: Colors.white,
+                                        )
+                                      : null,
+                                ),
+                                const SizedBox(width: 10),
+                                Text(
+                                  author,
+                                  style: GoogleFonts.agbalumo(
+                                    fontSize: 16,
+                                    color: Colors.black87,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
                           const SizedBox(height: 12),
 
                           // Title
@@ -903,12 +889,9 @@ GestureDetector(
                                       fit: BoxFit.cover,
                                       errorWidget: (c, u, e) =>
                                           _placeholderCover(),
-                                      placeholder: (c, u) =>
-                                          Shimmer.fromColors(
-                                        baseColor:
-                                            const Color(0xFF1A2F55),
-                                        highlightColor:
-                                            const Color(0xFF2A4A7F),
+                                      placeholder: (c, u) => Shimmer.fromColors(
+                                        baseColor: const Color(0xFF1A2F55),
+                                        highlightColor: const Color(0xFF2A4A7F),
                                         child: Container(
                                           height: 200,
                                           width: 160,
@@ -984,8 +967,11 @@ GestureDetector(
                               const SizedBox(width: 12),
 
                               // Comment count
-                              const Icon(Icons.chat_bubble,
-                                  color: Color(0xFF5B7FA6), size: 18),
+                              const Icon(
+                                Icons.chat_bubble,
+                                color: Color(0xFF5B7FA6),
+                                size: 18,
+                              ),
                               const SizedBox(width: 4),
                               Text('${comments.length}'),
                               const SizedBox(width: 12),
@@ -1013,7 +999,7 @@ GestureDetector(
                                   isBookmarked
                                       ? Icons.bookmark
                                       : Icons.bookmark_border,
-                                  color: const Color(0xFF071739),
+                                  color: AppColors.primary,
                                   size: 28,
                                 ),
                               ),
@@ -1041,8 +1027,7 @@ GestureDetector(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
                                 color: Colors.grey[200],
-                                borderRadius:
-                                    BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(10),
                               ),
                               child: Row(
                                 children: [
@@ -1050,12 +1035,12 @@ GestureDetector(
                                     child: Text(
                                       'Replying to $replyingToUsername',
                                       style: const TextStyle(
-                                          color: Colors.black87),
+                                        color: Colors.black87,
+                                      ),
                                     ),
                                   ),
                                   IconButton(
-                                    icon: const Icon(Icons.close,
-                                        size: 18),
+                                    icon: const Icon(Icons.close, size: 18),
                                     onPressed: () {
                                       setState(() {
                                         replyingToCommentId = null;
@@ -1075,15 +1060,13 @@ GestureDetector(
                                   controller: _commentController,
                                   focusNode: _commentFocusNode,
                                   decoration: InputDecoration(
-                                    hintText:
-                                        replyingToUsername == null
-                                            ? 'Write a comment...'
-                                            : 'Write a reply...',
+                                    hintText: replyingToUsername == null
+                                        ? 'Write a comment...'
+                                        : 'Write a reply...',
                                     filled: true,
                                     fillColor: Colors.white,
                                     border: OutlineInputBorder(
-                                      borderRadius:
-                                          BorderRadius.circular(12),
+                                      borderRadius: BorderRadius.circular(12),
                                       borderSide: BorderSide.none,
                                     ),
                                   ),
@@ -1113,12 +1096,11 @@ GestureDetector(
 
   // ─── Small helpers ────────────────────────────────────────────────────────
   Widget _placeholderCover() => Container(
-        height: 200,
-        width: 160,
-        color: const Color(0xFFE0D5C5),
-        child:
-            const Icon(Icons.book, size: 60, color: Colors.brown),
-      );
+    height: 200,
+    width: 160,
+    color: const Color(0xFFE0D5C5),
+    child: const Icon(Icons.book, size: 60, color: Colors.brown),
+  );
 
   Widget _actionButton({
     required String label,
@@ -1140,8 +1122,7 @@ GestureDetector(
             const SizedBox(width: 8),
             Text(
               label,
-              style: GoogleFonts.agbalumo(
-                  color: Colors.white, fontSize: 16),
+              style: GoogleFonts.agbalumo(color: Colors.white, fontSize: 16),
             ),
           ],
         ),

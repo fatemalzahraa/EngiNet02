@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/session_manager.dart';
-
+import 'package:enginet/core/app_colors.dart';
 
 import 'engineer_profile.dart';
-
 
 class FollowingScreen extends StatefulWidget {
   final List<dynamic> following;
@@ -14,7 +13,6 @@ class FollowingScreen extends StatefulWidget {
 
   @override
   State<FollowingScreen> createState() => _FollowingScreenState();
-
 }
 
 class _FollowingScreenState extends State<FollowingScreen> {
@@ -54,52 +52,50 @@ class _FollowingScreenState extends State<FollowingScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
-    appBar: AppBar(
-  backgroundColor: const Color(0xFF071739),
-  elevation: 0,
-  automaticallyImplyLeading: false, 
+      backgroundColor: AppColors.primary,
+      appBar: AppBar(
+        backgroundColor: AppColors.primary,
+        elevation: 0,
+        automaticallyImplyLeading: false,
 
-  title: Stack(
-    alignment: Alignment.center,
-    children: [
-     
-      Align(
-        alignment: Alignment.centerLeft,
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: GestureDetector(
-            onTap: () {
-              Navigator.pop(context);
-            },
-            child: Container(
-              width: 40,
-              height: 40,
-              decoration: const BoxDecoration(
-                color: Color(0xFFE3C39D),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.arrow_back,
-                color: Color(0xFF071739),
+        title: Stack(
+          alignment: Alignment.center,
+          children: [
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: GestureDetector(
+                  onTap: () {
+                    Navigator.pop(context);
+                  },
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                      color: AppColors.accent,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.arrow_back,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                ),
               ),
             ),
-          ),
-        ),
-      ),
 
-      
-      const Text(
-        'Following',
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
+            const Text(
+              'Following',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ),
       ),
-    ],
-  ),
-),
       body: followingList.isEmpty
           ? const Center(
               child: Text(
@@ -114,7 +110,9 @@ class _FollowingScreenState extends State<FollowingScreen> {
 
                 return Container(
                   margin: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 6),
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: const Color(0xFF1A2F55),
@@ -126,9 +124,8 @@ class _FollowingScreenState extends State<FollowingScreen> {
                         radius: 22,
                         backgroundImage:
                             (user['profile_image'] ?? '').isNotEmpty
-                                ? CachedNetworkImageProvider(
-                                    user['profile_image'])
-                                : null,
+                            ? CachedNetworkImageProvider(user['profile_image'])
+                            : null,
                         backgroundColor: const Color(0xFF4A6FA5),
                         child: (user['profile_image'] ?? '').isEmpty
                             ? const Icon(Icons.person, color: Colors.white)
@@ -152,7 +149,7 @@ class _FollowingScreenState extends State<FollowingScreen> {
                           child: Text(
                             user['username'] ?? '',
                             style: const TextStyle(
-                              color: Color(0xFFE3C39D), // 🔥 اللون
+                              color: AppColors.accent, // 🔥 اللون
                               fontSize: 18, // 🔥 تكبير الخط
                               fontWeight: FontWeight.bold,
                             ),
@@ -162,13 +159,14 @@ class _FollowingScreenState extends State<FollowingScreen> {
 
                       /// 🔥 زر إلغاء المتابعة
                       ElevatedButton(
-                        onPressed: () =>
-                            unfollowUser(user['id'], index),
+                        onPressed: () => unfollowUser(user['id'], index),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFFE3C39D),
+                          backgroundColor: AppColors.accent,
                           foregroundColor: Colors.black,
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 6),
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),

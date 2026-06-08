@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/session_manager.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class AddPostScreen extends StatefulWidget {
   const AddPostScreen({super.key});
@@ -27,7 +28,13 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
   File? _selectedImage;
 
-  final List<String> _categories = ['bilgi', 'soru', 'ipucu', 'egitim', 'duyuru'];
+  final List<String> _categories = [
+    'bilgi',
+    'soru',
+    'ipucu',
+    'egitim',
+    'duyuru',
+  ];
 
   @override
   void initState() {
@@ -74,9 +81,9 @@ class _AddPostScreenState extends State<AddPostScreen> {
       });
     } catch (e) {
       debugPrint('Error picking image: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to pick image')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Failed to pick image')));
     }
   }
 
@@ -90,14 +97,15 @@ class _AddPostScreenState extends State<AddPostScreen> {
           '${DateTime.now().millisecondsSinceEpoch}_$username$fileExt';
       final filePath = 'post-images/$fileName';
 
-      await _supabase.storage.from('posts').upload(
+      await _supabase.storage
+          .from('posts')
+          .upload(
             filePath,
             _selectedImage!,
             fileOptions: const FileOptions(upsert: true),
           );
 
-      final imageUrl =
-          _supabase.storage.from('posts').getPublicUrl(filePath);
+      final imageUrl = _supabase.storage.from('posts').getPublicUrl(filePath);
 
       return imageUrl;
     } catch (e) {
@@ -107,88 +115,90 @@ class _AddPostScreenState extends State<AddPostScreen> {
   }
 
   Future<void> _submitPost() async {
-     if (_contentController.text.trim().isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Please write something')),
-    );
-    return;
-  }
-
-  setState(() => _isLoading = true);
-
-  try {
-    final email = await SessionManager.getEmail();
-    final username = await SessionManager.getUsername();
-    final imageUrl = await _uploadImage();
-
-  final insertedPost = await _supabase
-    .from('posts')
-    .insert({
-      'username': username,
-      'content': _contentController.text.trim(),
-      'image_url': imageUrl,
-      'linked_course_id': _selectedCourseId,
-      'category': _selectedCategory,
-      'likes': 0,
-    })
-    .select('id')
-    .single();
-
-final postId = insertedPost['id'];
-
-    final currentUser = await _supabase
-        .from('users')
-        .select('id, username, role')
-        .eq('email', email ?? '')
-        .single();
-
-    if (currentUser['role'] == 'engineer') {
-      final followers = await _supabase
-          .from('follows')
-          .select('follower_id')
-          .eq('following_id', currentUser['id']);
-if (followers.isNotEmpty) {
-  final notifications = (followers as List)
-      .map((f) => {
-            'user_id': f['follower_id'],
-            'message': '${currentUser['username']} shared a new post.',
-            'is_read': 0,
-            'post_id': postId,
-          })
-      .toList();
-
-  await _supabase.from('notifications').insert(notifications);
-}
+    if (_contentController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please write something')));
+      return;
     }
 
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Post published!')),
-    );
-    Navigator.pop(context, true);
-  } catch (e) {
-    debugPrint('Error posting: $e');
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Failed to publish post')),
-    );
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
-  }
+    setState(() => _isLoading = true);
+
+    try {
+      final email = await SessionManager.getEmail();
+      final username = await SessionManager.getUsername();
+      final imageUrl = await _uploadImage();
+
+      final insertedPost = await _supabase
+          .from('posts')
+          .insert({
+            'username': username,
+            'content': _contentController.text.trim(),
+            'image_url': imageUrl,
+            'linked_course_id': _selectedCourseId,
+            'category': _selectedCategory,
+            'likes': 0,
+          })
+          .select('id')
+          .single();
+
+      final postId = insertedPost['id'];
+
+      final currentUser = await _supabase
+          .from('users')
+          .select('id, username, role')
+          .eq('email', email ?? '')
+          .single();
+
+      if (currentUser['role'] == 'engineer') {
+        final followers = await _supabase
+            .from('follows')
+            .select('follower_id')
+            .eq('following_id', currentUser['id']);
+        if (followers.isNotEmpty) {
+          final notifications = (followers as List)
+              .map(
+                (f) => {
+                  'user_id': f['follower_id'],
+                  'message': '${currentUser['username']} shared a new post.',
+                  'is_read': 0,
+                  'post_id': postId,
+                },
+              )
+              .toList();
+
+          await _supabase.from('notifications').insert(notifications);
+        }
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Post published!')));
+      Navigator.pop(context, true);
+    } catch (e) {
+      debugPrint('Error posting: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Failed to publish post')));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         leading: GestureDetector(
           onTap: () => Navigator.pop(context),
           child: Container(
             margin: const EdgeInsets.all(8),
             decoration: const BoxDecoration(
-              color: Color(0xFFE3C39D),
+              color: AppColors.accent,
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.arrow_back, color: Colors.black, size: 18),
@@ -196,10 +206,7 @@ if (followers.isNotEmpty) {
         ),
         title: Text(
           'New Post',
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 22,
-          ),
+          style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 22),
         ),
         actions: [
           Padding(
@@ -207,13 +214,15 @@ if (followers.isNotEmpty) {
             child: ElevatedButton(
               onPressed: _isLoading ? null : _submitPost,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE3C39D),
+                backgroundColor: AppColors.accent,
                 foregroundColor: Colors.black,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
                 ),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 8,
+                ),
               ),
               child: _isLoading
                   ? const SizedBox(
@@ -224,10 +233,7 @@ if (followers.isNotEmpty) {
                         color: Colors.black,
                       ),
                     )
-                  : Text(
-                      'Publish',
-                      style: GoogleFonts.agbalumo(fontSize: 14),
-                    ),
+                  : Text('Publish', style: GoogleFonts.agbalumo(fontSize: 14)),
             ),
           ),
         ],
@@ -286,8 +292,11 @@ if (followers.isNotEmpty) {
                     : const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.add_a_photo,
-                              size: 40, color: Colors.black54),
+                          Icon(
+                            Icons.add_a_photo,
+                            size: 40,
+                            color: Colors.black54,
+                          ),
                           SizedBox(height: 8),
                           Text(
                             'Tap to choose image',
@@ -331,16 +340,15 @@ if (followers.isNotEmpty) {
                   onTap: () => setState(() => _selectedCategory = cat),
                   child: Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 8),
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? const Color(0xFFE3C39D)
+                          ? AppColors.accent
                           : const Color(0xFF1A2F55),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: const Color(0xFFE3C39D),
-                        width: 1,
-                      ),
+                      border: Border.all(color: AppColors.accent, width: 1),
                     ),
                     child: Text(
                       cat,
@@ -365,9 +373,7 @@ if (followers.isNotEmpty) {
             const SizedBox(height: 8),
             _loadingCourses
                 ? const Center(
-                    child: CircularProgressIndicator(
-                      color: Color(0xFF6C94C6),
-                    ),
+                    child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
                   )
                 : Container(
                     decoration: BoxDecoration(

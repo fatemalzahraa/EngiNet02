@@ -11,6 +11,7 @@ import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/engineer_profile.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class QuestionsScreen extends StatefulWidget {
   const QuestionsScreen({super.key});
@@ -34,32 +35,31 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     super.initState();
     _fetchQuestions();
   }
+
   Future<void> _openUserProfile(String username) async {
-  if (username.isEmpty) return;
+    if (username.isEmpty) return;
 
-  try {
-    final owner = await Supabase.instance.client
-        .from('users')
-        .select('id')
-        .eq('username', username)
-        .maybeSingle();
+    try {
+      final owner = await Supabase.instance.client
+          .from('users')
+          .select('id')
+          .eq('username', username)
+          .maybeSingle();
 
-    if (owner == null || owner['id'] == null) return;
+      if (owner == null || owner['id'] == null) return;
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => EngineerProfileScreen(
-          targetUserId: owner['id'],
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EngineerProfileScreen(targetUserId: owner['id']),
         ),
-      ),
-    );
-  } catch (e) {
-    debugPrint('❌ open profile error: $e');
+      );
+    } catch (e) {
+      debugPrint('❌ open profile error: $e');
+    }
   }
-}
 
   Future<void> _fetchQuestions() async {
     try {
@@ -159,63 +159,58 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   }
 
   Future<void> _deleteQuestion(Map q) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text("Delete Question"),
-      content: const Text("Are you sure you want to delete this question?"),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text("Cancel"),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text(
-            "Delete",
-            style: TextStyle(color: Colors.red),
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Question"),
+        content: const Text("Are you sure you want to delete this question?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
           ),
-        ),
-      ],
-    ),
-  );
-
-  if (confirmed != true) return;
-
-  try {
-    final token = await SessionManager.getToken();
-    if (token == null || token.isEmpty) return;
-
-    final response = await http.delete(
-      Uri.parse('${AppConstants.baseUrl}/questions/${q['id']}'),
-      headers: {
-        'Authorization': 'Bearer $token',
-      },
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
 
-    if (response.statusCode == 200) {
+    if (confirmed != true) return;
+
+    try {
+      final token = await SessionManager.getToken();
+      if (token == null || token.isEmpty) return;
+
+      final response = await http.delete(
+        Uri.parse('${AppConstants.baseUrl}/questions/${q['id']}'),
+        headers: {'Authorization': 'Bearer $token'},
+      );
+
+      if (response.statusCode == 200) {
+        if (!mounted) return;
+
+        setState(() {
+          _questions.removeWhere((item) => item['id'] == q['id']);
+        });
+
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Question deleted")));
+      } else {
+        throw Exception(response.body);
+      }
+    } catch (e) {
+      debugPrint("DELETE QUESTION ERROR: $e");
+
       if (!mounted) return;
 
-      setState(() {
-        _questions.removeWhere((item) => item['id'] == q['id']);
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Question deleted")),
-      );
-    } else {
-      throw Exception(response.body);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("❌ Error: $e")));
     }
-  } catch (e) {
-    debugPrint("DELETE QUESTION ERROR: $e");
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("❌ Error: $e")),
-    );
   }
-}
 
   void _openQuestion(Map q) {
     Navigator.push(
@@ -254,7 +249,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                 Text(
                   "Ask a Question",
                   style: GoogleFonts.agbalumo(
-                    color: const Color(0xFFE3C39D),
+                    color: AppColors.accent,
                     fontSize: 22,
                   ),
                 ),
@@ -316,7 +311,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                   width: double.infinity,
                   child: ElevatedButton(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4B6382),
+                      backgroundColor: AppColors.cardBg,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
@@ -332,9 +327,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                         if (token == null || token.isEmpty) {
                           if (!mounted) return;
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text("Please login first"),
-                            ),
+                            const SnackBar(content: Text("Please login first")),
                           );
                           return;
                         }
@@ -369,7 +362,8 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                         final body = await response.stream.bytesToString();
 
                         debugPrint(
-                            'POST QUESTION STATUS: ${response.statusCode}');
+                          'POST QUESTION STATUS: ${response.statusCode}',
+                        );
                         debugPrint('POST QUESTION BODY: $body');
 
                         if (response.statusCode >= 400) {
@@ -387,9 +381,9 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                       } catch (e) {
                         debugPrint("Error posting question: $e");
                         if (!mounted) return;
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("❌ Error: $e")),
-                        );
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(SnackBar(content: Text("❌ Error: $e")));
                       }
                     },
                     child: const Text(
@@ -417,13 +411,13 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: const Color(0xFF1E3A5F),
+          color: AppColors.cardBg,
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: const Color(0xFFE3C39D), size: 20),
+            Icon(icon, color: AppColors.accent, size: 20),
             const SizedBox(width: 8),
             Text(label, style: const TextStyle(color: Colors.white)),
           ],
@@ -432,11 +426,14 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     );
   }
 
-  Widget _buildField(TextEditingController ctrl, String hint,
-      {int maxLines = 1}) {
+  Widget _buildField(
+    TextEditingController ctrl,
+    String hint, {
+    int maxLines = 1,
+  }) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFF1E3A5F),
+        color: AppColors.cardBg,
         borderRadius: BorderRadius.circular(12),
       ),
       child: TextField(
@@ -491,15 +488,11 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
         child: Container(
           height: 150,
           decoration: BoxDecoration(
-            color: const Color(0xFF071739),
+            color: AppColors.primary,
             borderRadius: BorderRadius.circular(12),
           ),
           child: const Center(
-            child: Icon(
-              Icons.play_circle,
-              color: Color(0xFFE3C39D),
-              size: 55,
-            ),
+            child: Icon(Icons.play_circle, color: AppColors.accent, size: 55),
           ),
         ),
       );
@@ -529,7 +522,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     final filteredQuestions = _filteredQuestions;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -539,10 +532,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
               child: Row(
                 children: [
                   IconButton(
-                    icon: const Icon(
-                      Icons.arrow_back,
-                      color: Color(0xFFE3C39D),
-                    ),
+                    icon: const Icon(Icons.arrow_back, color: AppColors.accent),
                     onPressed: () => Navigator.pop(context),
                   ),
                   Text(
@@ -562,7 +552,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
               child: Container(
                 height: 44,
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E3A5F),
+                  color: AppColors.cardBg,
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: TextField(
@@ -570,8 +560,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                   decoration: InputDecoration(
                     hintText: "Search for a question...",
                     hintStyle: const TextStyle(color: Colors.white38),
-                    prefixIcon:
-                        const Icon(Icons.search, color: Colors.white54),
+                    prefixIcon: const Icon(Icons.search, color: Colors.white54),
                     suffixIcon: _searchQuery.isNotEmpty
                         ? IconButton(
                             icon: const Icon(
@@ -600,9 +589,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
             Expanded(
               child: _isLoading
                   ? const Center(
-                      child: CircularProgressIndicator(
-                        color: Color(0xFFE3C39D),
-                      ),
+                      child: CircularProgressIndicator(color: AppColors.accent),
                     )
                   : RefreshIndicator(
                       onRefresh: _fetchQuestions,
@@ -638,7 +625,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                     margin: const EdgeInsets.only(bottom: 14),
                                     padding: const EdgeInsets.all(16),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFFE3C39D),
+                                      color: AppColors.accent,
                                       borderRadius: BorderRadius.circular(16),
                                     ),
                                     child: Column(
@@ -646,66 +633,69 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                           CrossAxisAlignment.start,
                                       children: [
                                         GestureDetector(
-  onTap: () => _openUserProfile(username),
-  child: Row(
-    children: [
-      CircleAvatar(
-                                              radius: 18,
-                                              backgroundImage:
-                                                  profileImage.isNotEmpty
-                                                      ? NetworkImage(
-                                                          profileImage)
-                                                      : null,
-                                              backgroundColor:
-                                                  const Color(0xFF4B6382),
-                                              child: profileImage.isEmpty
-                                                  ? const Icon(
-                                                      Icons.person,
-                                                      color: Colors.white,
-                                                      size: 18,
-                                                    )
-                                                  : null,
-                                            ),
-                                            const SizedBox(width: 8),
-                                            Text(
-                                              username,
-                                              style:
-                                                  GoogleFonts.robotoCondensed(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 15,
-                                                color: const Color(0xFF071739),
+                                          onTap: () =>
+                                              _openUserProfile(username),
+                                          child: Row(
+                                            children: [
+                                              CircleAvatar(
+                                                radius: 18,
+                                                backgroundImage:
+                                                    profileImage.isNotEmpty
+                                                    ? NetworkImage(profileImage)
+                                                    : null,
+                                                backgroundColor:
+                                                    AppColors.cardBg,
+                                                child: profileImage.isEmpty
+                                                    ? const Icon(
+                                                        Icons.person,
+                                                        color: Colors.white,
+                                                        size: 18,
+                                                      )
+                                                    : null,
                                               ),
-                                            ),
-                                            const Spacer(),
-                                            Text(
-                                              _timeAgo(q['created_at']
-                                                  ?.toString()),
-                                              style: const TextStyle(
-                                                color: Color(0xFF4A4A4A),
-                                                fontSize: 11,
+                                              const SizedBox(width: 8),
+                                              Text(
+                                                username,
+                                                style:
+                                                    GoogleFonts.robotoCondensed(
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      fontSize: 15,
+                                                      color: AppColors.primary,
+                                                    ),
                                               ),
-                                            ),
-                                            const SizedBox(width: 8),
-                                            if (q['user_id'] == q['current_user_id'])
-  GestureDetector(
-    onTap: () => _deleteQuestion(q),
-    child: const Icon(
-      Icons.delete,
-      color: Colors.red,
-      size: 18,
-    ),
-  ),
-                                          ],
-                                                
-  ),
-),
+                                              const Spacer(),
+                                              Text(
+                                                _timeAgo(
+                                                  q['created_at']?.toString(),
+                                                ),
+                                                style: const TextStyle(
+                                                  color: Color(0xFF4A4A4A),
+                                                  fontSize: 11,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              if (q['user_id'] ==
+                                                  q['current_user_id'])
+                                                GestureDetector(
+                                                  onTap: () =>
+                                                      _deleteQuestion(q),
+                                                  child: const Icon(
+                                                    Icons.delete,
+                                                    color: Colors.red,
+                                                    size: 18,
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
                                         const SizedBox(height: 10),
                                         Text(
                                           q["title"]?.toString() ?? "",
                                           style: GoogleFonts.robotoCondensed(
                                             fontSize: 16,
                                             fontWeight: FontWeight.bold,
-                                            color: const Color(0xFF071739),
+                                            color: AppColors.primary,
                                           ),
                                         ),
                                         const SizedBox(height: 6),
@@ -714,7 +704,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                           maxLines: 3,
                                           overflow: TextOverflow.ellipsis,
                                           style: const TextStyle(
-                                            color: Color(0xFF071739),
+                                            color: AppColors.primary,
                                             fontSize: 13,
                                           ),
                                         ),
@@ -766,7 +756,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                                         q['is_saved'] == 1)
                                                     ? Icons.bookmark
                                                     : Icons.bookmark_border,
-                                                color: const Color(0xFF071739),
+                                                color: AppColors.primary,
                                                 size: 28,
                                               ),
                                             ),
@@ -785,7 +775,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _openAskDialog,
-        backgroundColor: const Color(0xFF4B6382),
+        backgroundColor: AppColors.cardBg,
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
@@ -819,20 +809,21 @@ class _AnswerScreenState extends State<AnswerScreen> {
   void initState() {
     super.initState();
     _fetchAnswers();
-_startAnswersRealtime();
-_loadCurrentUser();
+    _startAnswersRealtime();
+    _loadCurrentUser();
   }
 
   @override
   void dispose() {
     _answersSub?.cancel();
-  _ctrl.dispose();
-  _answerFocusNode.dispose();
-  super.dispose();
+    _ctrl.dispose();
+    _answerFocusNode.dispose();
+    super.dispose();
   }
 
   String? _parentIdOf(Map a) {
-    final value = a['parent_answer_id'] ??
+    final value =
+        a['parent_answer_id'] ??
         a['parent_comment_id'] ??
         a['parent_id'] ??
         a['reply_to_answer_id'] ??
@@ -845,70 +836,69 @@ _loadCurrentUser();
 
     return text;
   }
-void _startAnswersRealtime() {
-  _answersSub?.cancel();
 
-  final questionId =
-      int.tryParse(widget.question['id'].toString()) ?? 0;
+  void _startAnswersRealtime() {
+    _answersSub?.cancel();
 
-  _answersSub = Supabase.instance.client
-      .from('answers')
-      .stream(primaryKey: ['id'])
-      .eq('question_id', questionId)
-      .order('created_at', ascending: true)
-      .listen((data) {
-        if (!mounted) return;
+    final questionId = int.tryParse(widget.question['id'].toString()) ?? 0;
 
-        setState(() {
-          _answers = data;
+    _answersSub = Supabase.instance.client
+        .from('answers')
+        .stream(primaryKey: ['id'])
+        .eq('question_id', questionId)
+        .order('created_at', ascending: true)
+        .listen((data) {
+          if (!mounted) return;
+
+          setState(() {
+            _answers = data;
+          });
         });
-      });
-}
+  }
 
-Future<void> _openUserProfile(String username) async {
-  if (username.isEmpty) return;
+  Future<void> _openUserProfile(String username) async {
+    if (username.isEmpty) return;
 
-  try {
-    final owner = await Supabase.instance.client
+    try {
+      final owner = await Supabase.instance.client
+          .from('users')
+          .select('id')
+          .eq('username', username)
+          .maybeSingle();
+
+      if (owner == null || owner['id'] == null) return;
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EngineerProfileScreen(targetUserId: owner['id']),
+        ),
+      );
+    } catch (e) {
+      debugPrint('❌ open profile error: $e');
+    }
+  }
+
+  Future<void> _loadCurrentUser() async {
+    final email = await SessionManager.getEmail();
+
+    if (email == null) return;
+
+    final user = await Supabase.instance.client
         .from('users')
         .select('id')
-        .eq('username', username)
+        .eq('email', email)
         .maybeSingle();
-
-    if (owner == null || owner['id'] == null) return;
 
     if (!mounted) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => EngineerProfileScreen(
-          targetUserId: owner['id'],
-        ),
-      ),
-    );
-  } catch (e) {
-    debugPrint('❌ open profile error: $e');
+    setState(() {
+      _currentUser = user;
+    });
   }
-}
 
-Future<void> _loadCurrentUser() async {
-  final email = await SessionManager.getEmail();
-
-  if (email == null) return;
-
-  final user = await Supabase.instance.client
-      .from('users')
-      .select('id')
-      .eq('email', email)
-      .maybeSingle();
-
-  if (!mounted) return;
-
-  setState(() {
-    _currentUser = user;
-  });
-}
   Future<void> _fetchAnswers() async {
     try {
       final response = await http.get(
@@ -936,9 +926,9 @@ Future<void> _loadCurrentUser() async {
 
     final token = await SessionManager.getToken();
     if (token == null || token.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("Please login first")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Please login first")));
       return;
     }
 
@@ -972,14 +962,12 @@ Future<void> _loadCurrentUser() async {
         replyingToAnswerId = null;
         replyingToUsername = null;
       });
-
-      
     } catch (e) {
       debugPrint("Error posting answer: $e");
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Error: $e")),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("❌ Error: $e")));
     } finally {
       if (mounted) setState(() => _isPosting = false);
     }
@@ -987,7 +975,8 @@ Future<void> _loadCurrentUser() async {
 
   Map<String, Map<String, dynamic>> get _answersMap {
     return {
-      for (final a in _answers) a['id'].toString(): Map<String, dynamic>.from(a),
+      for (final a in _answers)
+        a['id'].toString(): Map<String, dynamic>.from(a),
     };
   }
 
@@ -998,7 +987,8 @@ Future<void> _loadCurrentUser() async {
     final parent = _answersMap[parentId];
     final parentProfile = parent?['profiles'];
 
-    final parentUsername = parent?['username']?.toString() ??
+    final parentUsername =
+        parent?['username']?.toString() ??
         parentProfile?['username']?.toString() ??
         '';
 
@@ -1012,9 +1002,7 @@ Future<void> _loadCurrentUser() async {
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.5),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: const Color(0xFF6C94C6).withOpacity(0.4),
-        ),
+        border: Border.all(color: const Color(0xFF6C94C6).withOpacity(0.4)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1042,281 +1030,274 @@ Future<void> _loadCurrentUser() async {
       ),
     );
   }
+
   Future<void> _editAnswer(Map<String, dynamic> answer) async {
-  final token = await SessionManager.getToken();
-  if (token == null || token.isEmpty) return;
+    final token = await SessionManager.getToken();
+    if (token == null || token.isEmpty) return;
 
-  final editCtrl = TextEditingController(
-    text: answer['content']?.toString() ?? '',
-  );
+    final editCtrl = TextEditingController(
+      text: answer['content']?.toString() ?? '',
+    );
 
-  final newText = await showDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Edit Answer'),
-      content: TextField(
-        controller: editCtrl,
-        maxLines: 4,
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, editCtrl.text.trim()),
-          child: const Text('Save'),
-        ),
-      ],
-    ),
-  );
-
-  if (newText == null || newText.isEmpty) return;
-
-  final res = await http.put(
-    Uri.parse('${AppConstants.baseUrl}/questions/answers/${answer['id']}'),
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    },
-    body: jsonEncode({
-      'content': newText,
-      'parent_answer_id': answer['parent_answer_id'],
-    }),
-  );
-
-  if (res.statusCode >= 400) {
-    throw Exception(res.body);
-  }
-
-  if (!mounted) return;
-  setState(() {
-    answer['content'] = newText;
-  });
-}
-
-Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Delete Answer'),
-      content: const Text('Are you sure you want to delete this answer?'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('No'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text(
-            'Yes, delete',
-            style: TextStyle(color: Colors.red),
+    final newText = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Answer'),
+        content: TextField(controller: editCtrl, maxLines: 4),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
           ),
-        ),
-      ],
-    ),
-  );
-
-  if (confirmed != true) return;
-
-  final token = await SessionManager.getToken();
-  if (token == null || token.isEmpty) return;
-
-  final res = await http.delete(
-    Uri.parse('${AppConstants.baseUrl}/questions/answers/${answer['id']}'),
-    headers: {
-      'Authorization': 'Bearer $token',
-    },
-  );
-
-  if (res.statusCode >= 400) {
-    throw Exception(res.body);
-  }
-
-  if (!mounted) return;
-  setState(() {
-    _answers.removeWhere((a) => a['id'] == answer['id']);
-  });
-}
-
-  Widget _buildAnswer(Map<String, dynamic> a, bool isReply) {
-  final aProfile = a['profiles'];
-
-  final aUsername = a['username']?.toString() ??
-      aProfile?['username']?.toString() ??
-      'User';
-
-  final aProfileImage = a['profile_image']?.toString() ??
-      aProfile?['profile_image']?.toString() ??
-      '';
-
-  return Padding(
-   padding: EdgeInsets.only(
-    bottom: 6,
-    left: isReply ? 60 : 0,  
-    top: isReply ? 0 : 4,
-  ),
-    child: Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-  color: isReply
-      ? const Color(0xFFCFA882)
-      : const Color(0xFFA17E5A),
-  borderRadius: BorderRadius.circular(12),
-  border: isReply
-      ? const Border(
-          left: BorderSide(
-            color: Color(0xFF6C94C6),
-            width: 5, 
-          ),
-        )
-      : null,
-),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          CircleAvatar(
-            radius: isReply ? 13 : 16,
-            backgroundImage: aProfileImage.isNotEmpty
-                ? NetworkImage(aProfileImage)
-                : null,
-            backgroundColor: const Color(0xFF6C94C6),
-            child: aProfileImage.isEmpty
-                ? Icon(Icons.person,
-                    size: isReply ? 13 : 16, color: Colors.white)
-                : null,
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-               GestureDetector(
-  onTap: () => _openUserProfile(aUsername),
-  child: Row(
-    children: [
-    Expanded(
-      child: Text(
-        aUsername,
-        style: GoogleFonts.robotoCondensed(
-          fontWeight: FontWeight.bold,
-          fontSize: 13,
-          color: Colors.white,
-        ),
-      ),
-    ),
-
-    if (_currentUser != null && a['user_id'] == _currentUser!['id'])
-      PopupMenuButton<String>(
-        icon: const Icon(
-          Icons.more_vert,
-          color: Colors.white,
-          size: 18,
-        ),
-        onSelected: (value) {
-          if (value == 'edit') {
-            _editAnswer(a);
-          } else if (value == 'delete') {
-            _deleteAnswer(a);
-          }
-        },
-        itemBuilder: (context) => const [
-          PopupMenuItem(
-            value: 'edit',
-            child: Text('Edit'),
-          ),
-          PopupMenuItem(
-            value: 'delete',
-            child: Text('Delete'),
+          TextButton(
+            onPressed: () => Navigator.pop(context, editCtrl.text.trim()),
+            child: const Text('Save'),
           ),
         ],
       ),
-      ],
-  ),
-),
-                const SizedBox(height: 4),
-                if (isReply) _buildParentAnswerPreview(a),
-                Text(
-                  a['content']?.toString() ?? '',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                if (!isReply)
-                  GestureDetector(
-                    onTap: () {
-                      setState(() {
-                        replyingToAnswerId = a['id'].toString();
-                        replyingToUsername = aUsername;
-                      });
-                      FocusScope.of(context).requestFocus(_answerFocusNode);
-                    },
-                    child: const Text(
-                      'Reply',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFFE3C39D),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-              ],
+    );
+
+    if (newText == null || newText.isEmpty) return;
+
+    final res = await http.put(
+      Uri.parse('${AppConstants.baseUrl}/questions/answers/${answer['id']}'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'content': newText,
+        'parent_answer_id': answer['parent_answer_id'],
+      }),
+    );
+
+    if (res.statusCode >= 400) {
+      throw Exception(res.body);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      answer['content'] = newText;
+    });
+  }
+
+  Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Answer'),
+        content: const Text('Are you sure you want to delete this answer?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Yes, delete',
+              style: TextStyle(color: Colors.red),
             ),
           ),
         ],
       ),
-    ),
-  );
-}
-  List<Widget> _buildAnswersTree() {
-  final parentAnswers =
-      _answers.where((a) => _parentIdOf(a) == null).toList();
+    );
 
-  final widgets = <Widget>[];
+    if (confirmed != true) return;
 
-  for (final parent in parentAnswers) {
-    final parentMap = Map<String, dynamic>.from(parent);
-    widgets.add(_buildAnswer(parentMap, false));
+    final token = await SessionManager.getToken();
+    if (token == null || token.isEmpty) return;
 
-    final replies = _answers.where((a) {
-      return _parentIdOf(a) == parentMap['id'].toString();
-    }).toList();
+    final res = await http.delete(
+      Uri.parse('${AppConstants.baseUrl}/questions/answers/${answer['id']}'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
 
-    for (final reply in replies) {
-      widgets.add(_buildAnswer(Map<String, dynamic>.from(reply), true));
+    if (res.statusCode >= 400) {
+      throw Exception(res.body);
     }
+
+    if (!mounted) return;
+    setState(() {
+      _answers.removeWhere((a) => a['id'] == answer['id']);
+    });
   }
 
-  return widgets;
-}
+  Widget _buildAnswer(Map<String, dynamic> a, bool isReply) {
+    final aProfile = a['profiles'];
+
+    final aUsername =
+        a['username']?.toString() ??
+        aProfile?['username']?.toString() ??
+        'User';
+
+    final aProfileImage =
+        a['profile_image']?.toString() ??
+        aProfile?['profile_image']?.toString() ??
+        '';
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: 6,
+        left: isReply ? 60 : 0,
+        top: isReply ? 0 : 4,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isReply ? const Color(0xFFCFA882) : const Color(0xFFA17E5A),
+          borderRadius: BorderRadius.circular(12),
+          border: isReply
+              ? const Border(
+                  left: BorderSide(color: Color(0xFF6C94C6), width: 5),
+                )
+              : null,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: isReply ? 13 : 16,
+              backgroundImage: aProfileImage.isNotEmpty
+                  ? NetworkImage(aProfileImage)
+                  : null,
+              backgroundColor: const Color(0xFF6C94C6),
+              child: aProfileImage.isEmpty
+                  ? Icon(
+                      Icons.person,
+                      size: isReply ? 13 : 16,
+                      color: Colors.white,
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () => _openUserProfile(aUsername),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            aUsername,
+                            style: GoogleFonts.robotoCondensed(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+
+                        if (_currentUser != null &&
+                            a['user_id'] == _currentUser!['id'])
+                          PopupMenuButton<String>(
+                            icon: const Icon(
+                              Icons.more_vert,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                _editAnswer(a);
+                              } else if (value == 'delete') {
+                                _deleteAnswer(a);
+                              }
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(value: 'edit', child: Text('Edit')),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Text('Delete'),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (isReply) _buildParentAnswerPreview(a),
+                  Text(
+                    a['content']?.toString() ?? '',
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                  const SizedBox(height: 4),
+                  if (!isReply)
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          replyingToAnswerId = a['id'].toString();
+                          replyingToUsername = aUsername;
+                        });
+                        FocusScope.of(context).requestFocus(_answerFocusNode);
+                      },
+                      child: const Text(
+                        'Reply',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildAnswersTree() {
+    final parentAnswers = _answers
+        .where((a) => _parentIdOf(a) == null)
+        .toList();
+
+    final widgets = <Widget>[];
+
+    for (final parent in parentAnswers) {
+      final parentMap = Map<String, dynamic>.from(parent);
+      widgets.add(_buildAnswer(parentMap, false));
+
+      final replies = _answers.where((a) {
+        return _parentIdOf(a) == parentMap['id'].toString();
+      }).toList();
+
+      for (final reply in replies) {
+        widgets.add(_buildAnswer(Map<String, dynamic>.from(reply), true));
+      }
+    }
+
+    return widgets;
+  }
+
   @override
   Widget build(BuildContext context) {
     final profile = widget.question['profiles'];
 
-    final questionUsername = widget.question['username']?.toString() ??
+    final questionUsername =
+        widget.question['username']?.toString() ??
         profile?['username']?.toString() ??
         '';
 
-    final questionProfileImage = widget.question['profile_image']?.toString() ??
+    final questionProfileImage =
+        widget.question['profile_image']?.toString() ??
         profile?['profile_image']?.toString() ??
         '';
 
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFFE3C39D)),
+          icon: const Icon(Icons.arrow_back, color: AppColors.accent),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           "Answers",
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 24,
-          ),
+          style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 24),
         ),
       ),
       body: Column(
@@ -1325,78 +1306,78 @@ Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFFE3C39D),
+              color: AppColors.accent,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 GestureDetector(
-  onTap: () => _openUserProfile(questionUsername),
-  child: Row(
-    children: [
-      CircleAvatar(
-                      radius: 18,
-                      backgroundImage: questionProfileImage.isNotEmpty
-                          ? NetworkImage(questionProfileImage)
-                          : null,
-                      backgroundColor: const Color(0xFF4B6382),
-                      child: questionProfileImage.isEmpty
-                          ? const Icon(
-                              Icons.person,
-                              color: Colors.white,
-                              size: 18,
-                            )
-                          : null,
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      questionUsername,
-                      style: GoogleFonts.robotoCondensed(
-                        fontWeight: FontWeight.bold,
-                        color: const Color(0xFF071739),
+                  onTap: () => _openUserProfile(questionUsername),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundImage: questionProfileImage.isNotEmpty
+                            ? NetworkImage(questionProfileImage)
+                            : null,
+                        backgroundColor: AppColors.cardBg,
+                        child: questionProfileImage.isEmpty
+                            ? const Icon(
+                                Icons.person,
+                                color: Colors.white,
+                                size: 18,
+                              )
+                            : null,
                       ),
-                    ),
-                      ],
-  ),
-),
+                      const SizedBox(width: 8),
+                      Text(
+                        questionUsername,
+                        style: GoogleFonts.robotoCondensed(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
                 const SizedBox(height: 10),
                 Text(
                   widget.question["title"]?.toString() ?? "",
                   style: GoogleFonts.robotoCondensed(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: const Color(0xFF071739),
+                    color: AppColors.primary,
                   ),
                 ),
                 const SizedBox(height: 6),
                 Text(
                   widget.question["content"]?.toString() ?? "",
-                  style: const TextStyle(color: Color(0xFF071739)),
+                  style: const TextStyle(color: AppColors.primary),
                 ),
                 const SizedBox(height: 12),
                 Row(
                   children: [
                     const Icon(
                       Icons.favorite_border,
-                      color: Color(0xFF071739),
+                      color: AppColors.primary,
                       size: 18,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       "${widget.question["likes"] ?? 0}",
-                      style: const TextStyle(color: Color(0xFF071739)),
+                      style: const TextStyle(color: AppColors.primary),
                     ),
                     const SizedBox(width: 16),
                     const Icon(
                       Icons.chat_bubble_outline,
-                      color: Color(0xFF071739),
+                      color: AppColors.primary,
                       size: 18,
                     ),
                     const SizedBox(width: 4),
                     Text(
                       "${_answers.length}",
-                      style: const TextStyle(color: Color(0xFF071739)),
+                      style: const TextStyle(color: AppColors.primary),
                     ),
                   ],
                 ),
@@ -1410,10 +1391,7 @@ Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
               alignment: Alignment.centerLeft,
               child: Text(
                 "Answers (${_answers.length})",
-                style: GoogleFonts.agbalumo(
-                  color: Colors.white,
-                  fontSize: 20,
-                ),
+                style: GoogleFonts.agbalumo(color: Colors.white, fontSize: 20),
               ),
             ),
           ),
@@ -1437,7 +1415,7 @@ Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
               margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: const Color(0xFFE3C39D),
+                color: AppColors.accent,
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Row(
@@ -1446,7 +1424,7 @@ Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
                     child: Text(
                       "Replying to $replyingToUsername",
                       style: const TextStyle(
-                        color: Color(0xFF071739),
+                        color: AppColors.primary,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
@@ -1460,7 +1438,7 @@ Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
                     },
                     child: const Icon(
                       Icons.close,
-                      color: Color(0xFF071739),
+                      color: AppColors.primary,
                       size: 18,
                     ),
                   ),
@@ -1476,7 +1454,7 @@ Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E3A5F),
+                      color: AppColors.cardBg,
                       borderRadius: BorderRadius.circular(24),
                     ),
                     child: TextField(
@@ -1507,10 +1485,7 @@ Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
                     height: 46,
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
-                        colors: [
-                          Color(0xFF6C94C6),
-                          Color(0xFF4A6FA5),
-                        ],
+                        colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
                       ),
                       shape: BoxShape.circle,
                     ),
@@ -1522,11 +1497,7 @@ Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
                               strokeWidth: 2,
                             ),
                           )
-                        : const Icon(
-                            Icons.send,
-                            color: Colors.white,
-                            size: 20,
-                          ),
+                        : const Icon(Icons.send, color: Colors.white, size: 20),
                   ),
                 ),
               ],

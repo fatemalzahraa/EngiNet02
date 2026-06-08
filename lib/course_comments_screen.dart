@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/session_manager.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class CourseCommentsScreen extends StatefulWidget {
   final String courseId;
@@ -54,54 +55,51 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
   }
 
   Future<void> _addComment() async {
-  if (user == null) return;
+    if (user == null) return;
 
-  final text = _controller.text.trim();
-  if (text.isEmpty) return;
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
 
-  final courseId = int.parse(widget.courseId);
+    final courseId = int.parse(widget.courseId);
 
-  await supabase.from('course_comments').insert({
-    'course_id': courseId,
-    'comment_user_id': user!['id'],
-    'username': user!['username'],
-    'profile_image': user!['profile_image'],
-    'content': text,
-  });
+    await supabase.from('course_comments').insert({
+      'course_id': courseId,
+      'comment_user_id': user!['id'],
+      'username': user!['username'],
+      'profile_image': user!['profile_image'],
+      'content': text,
+    });
 
-  final course = await supabase
-      .from('courses')
-      .select('instructor_name')
-      .eq('id', courseId)
-      .maybeSingle();
-
-  if (course != null) {
-    final owner = await supabase
-        .from('users')
-        .select('id')
-        .eq('username', course['instructor_name'])
+    final course = await supabase
+        .from('courses')
+        .select('instructor_name')
+        .eq('id', courseId)
         .maybeSingle();
 
-    if (owner != null && owner['id'] != user!['id']) {
-      await supabase.from('notifications').insert({
-        'user_id': owner['id'],
-        'message': '${user!['username']} commented on your course.',
-        'is_read': 0,
-        'course_id': courseId,
-        'type': 'course_comment',
-      });
+    if (course != null) {
+      final owner = await supabase
+          .from('users')
+          .select('id')
+          .eq('username', course['instructor_name'])
+          .maybeSingle();
+
+      if (owner != null && owner['id'] != user!['id']) {
+        await supabase.from('notifications').insert({
+          'user_id': owner['id'],
+          'message': '${user!['username']} commented on your course.',
+          'is_read': 0,
+          'course_id': courseId,
+          'type': 'course_comment',
+        });
+      }
     }
+
+    _controller.clear();
+    await _loadComments();
   }
 
-  _controller.clear();
-  await _loadComments();
-}
-
   Future<void> _deleteComment(int commentId) async {
-    await supabase
-        .from('course_comments')
-        .delete()
-        .eq('id', commentId);
+    await supabase.from('course_comments').delete().eq('id', commentId);
 
     await _loadComments();
   }
@@ -112,7 +110,7 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         title: const Text(
           'Edit Comment',
           style: TextStyle(color: Colors.white),
@@ -150,11 +148,11 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
 
       // 🔥 زر الرجوع الصح
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         elevation: 0,
         leadingWidth: 64,
         leading: GestureDetector(
@@ -164,22 +162,19 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
             width: 44,
             height: 44,
             decoration: const BoxDecoration(
-              color: Color(0xFFE3C39D),
+              color: AppColors.accent,
               shape: BoxShape.circle,
             ),
             child: const Icon(
               Icons.arrow_back,
-              color: Color(0xFF071739),
+              color: AppColors.primary,
               size: 24,
             ),
           ),
         ),
         title: Text(
           'Comments',
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 22,
-          ),
+          style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 22),
         ),
       ),
 
@@ -200,9 +195,8 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
 
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundImage: (c['profile_image'] ?? '')
-                                  .toString()
-                                  .isNotEmpty
+                          backgroundImage:
+                              (c['profile_image'] ?? '').toString().isNotEmpty
                               ? NetworkImage(c['profile_image'])
                               : null,
                           backgroundColor: const Color(0xFF4A6FA5),
@@ -221,8 +215,10 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
                             if (user != null &&
                                 user!['id'] == c['comment_user_id'])
                               PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert,
-                                    color: Colors.white70),
+                                icon: const Icon(
+                                  Icons.more_vert,
+                                  color: Colors.white70,
+                                ),
                                 onSelected: (value) {
                                   if (value == 'edit') {
                                     _editComment(c);
@@ -232,9 +228,13 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
                                 },
                                 itemBuilder: (context) => const [
                                   PopupMenuItem(
-                                      value: 'edit', child: Text('Edit')),
+                                    value: 'edit',
+                                    child: Text('Edit'),
+                                  ),
                                   PopupMenuItem(
-                                      value: 'delete', child: Text('Delete')),
+                                    value: 'delete',
+                                    child: Text('Delete'),
+                                  ),
                                 ],
                               ),
                           ],
@@ -268,7 +268,7 @@ class _CourseCommentsScreenState extends State<CourseCommentsScreen> {
                 ),
                 IconButton(
                   onPressed: _addComment,
-                  icon: const Icon(Icons.send, color: Color(0xFFE3C39D)),
+                  icon: const Icon(Icons.send, color: AppColors.accent),
                 ),
               ],
             ),

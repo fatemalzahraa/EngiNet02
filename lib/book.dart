@@ -8,6 +8,8 @@ import 'package:enginet/core/session_manager.dart';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:enginet/core/constants.dart';
+import 'package:enginet/core/app_colors.dart';
+
 class BookScreen extends StatefulWidget {
   const BookScreen({super.key});
 
@@ -51,10 +53,10 @@ class _BookScreenState extends State<BookScreen> {
   }
 
   void _editBook(dynamic book) {
-    final titleController =
-        TextEditingController(text: book['title'] ?? '');
-    final descController =
-        TextEditingController(text: book['description'] ?? '');
+    final titleController = TextEditingController(text: book['title'] ?? '');
+    final descController = TextEditingController(
+      text: book['description'] ?? '',
+    );
 
     showDialog(
       context: context,
@@ -75,10 +77,13 @@ class _BookScreenState extends State<BookScreen> {
           ),
           TextButton(
             onPressed: () async {
-              await supabase.from('books').update({
-                'title': titleController.text.trim(),
-                'description': descController.text.trim(),
-              }).eq('id', book['id']);
+              await supabase
+                  .from('books')
+                  .update({
+                    'title': titleController.text.trim(),
+                    'description': descController.text.trim(),
+                  })
+                  .eq('id', book['id']);
 
               Navigator.pop(context);
               loadBooks();
@@ -110,122 +115,121 @@ class _BookScreenState extends State<BookScreen> {
     }
   }
 
-Future<void> loadRecommendedBooks() async {
-  try {
-    List<dynamic> result = [];
+  Future<void> loadRecommendedBooks() async {
+    try {
+      List<dynamic> result = [];
 
-    // Önce email'den user id'yi al
-    final email = await SessionManager.getEmail();
-    if (email != null) {
-      final userRow = await supabase
+      // Önce email'den user id'yi al
+      final email = await SessionManager.getEmail();
+      if (email != null) {
+        final userRow = await supabase
+            .from('users')
+            .select('id')
+            .eq('email', email)
+            .single();
+
+        final userId = userRow['id'] as int;
+
+        // Bu kullanıcının kitap etkileşimlerini al
+        final userInteractions = await supabase
+            .from('user_interactions')
+            .select('content_id')
+            .eq('content_type', 'book')
+            .eq('user_id', userId)
+            .limit(5);
+
+        if (userInteractions.isNotEmpty) {
+          final interactedIds = userInteractions
+              .map((e) => e['content_id'])
+              .toList();
+
+          final categories = await supabase
+              .from('books')
+              .select('category')
+              .inFilter('id', interactedIds);
+
+          final catList = categories
+              .map((e) => e['category']?.toString())
+              .where((c) => c != null)
+              .toSet()
+              .toList();
+
+          if (catList.isNotEmpty) {
+            result = await supabase
+                .from('books')
+                .select()
+                .inFilter('category', catList)
+                .not('id', 'in', '(${interactedIds.join(',')})')
+                .order('likes', ascending: false)
+                .limit(10);
+          }
+        }
+      }
+
+      // Fallback → popular
+      if (result.isEmpty) {
+        result = await supabase
+            .from('books')
+            .select()
+            .order('likes', ascending: false)
+            .limit(10);
+      }
+
+      if (!mounted) return;
+      setState(() {
+        recommendedBooks = result;
+        isLoadingRecommended = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => isLoadingRecommended = false);
+      debugPrint("Error loading recommended books: $e");
+    }
+  }
+
+  Future<void> saveSearch(String query) async {
+    if (query.trim().length < 2) return;
+
+    try {
+      final email = await SessionManager.getEmail();
+      if (email == null) return;
+
+      final user = await supabase
           .from('users')
           .select('id')
           .eq('email', email)
           .single();
 
-      final userId = userRow['id'] as int;
-
-      // Bu kullanıcının kitap etkileşimlerini al
-      final userInteractions = await supabase
-          .from('user_interactions')
-          .select('content_id')
-          .eq('content_type', 'book')
-          .eq('user_id', userId)
-          .limit(5);
-
-      if (userInteractions.isNotEmpty) {
-        final interactedIds = userInteractions
-            .map((e) => e['content_id'])
-            .toList();
-
-        final categories = await supabase
-            .from('books')
-            .select('category')
-            .inFilter('id', interactedIds);
-
-        final catList = categories
-            .map((e) => e['category']?.toString())
-            .where((c) => c != null)
-            .toSet()
-            .toList();
-
-        if (catList.isNotEmpty) {
-          result = await supabase
-              .from('books')
-              .select()
-              .inFilter('category', catList)
-              .not('id', 'in', '(${interactedIds.join(',')})')
-              .order('likes', ascending: false)
-              .limit(10);
-        }
-      }
+      await supabase.from('search_history').insert({
+        'user_id': user['id'],
+        'query': query.trim(),
+      });
+    } catch (e) {
+      debugPrint("Search save error: $e");
     }
+  }
 
-    // Fallback → popular
-    if (result.isEmpty) {
-      result = await supabase
-          .from('books')
-          .select()
-          .order('likes', ascending: false)
-          .limit(10);
-    }
+  void filterBooks(String value) {
+    saveSearch(value);
 
-    if (!mounted) return;
     setState(() {
-      recommendedBooks = result;
-      isLoadingRecommended = false;
+      filteredBooks = allBooks.where((book) {
+        final title = (book['title'] ?? '').toString().toLowerCase();
+        final author = (book['author'] ?? '').toString().toLowerCase();
+        final category = (book['category'] ?? '').toString().toLowerCase();
+        final search = value.toLowerCase();
+
+        return title.contains(search) ||
+            author.contains(search) ||
+            category.contains(search);
+      }).toList();
     });
-  } catch (e) {
-    if (!mounted) return;
-    setState(() => isLoadingRecommended = false);
-    debugPrint("Error loading recommended books: $e");
   }
-}
-Future<void> saveSearch(String query) async {
-  if (query.trim().length < 2) return;
-
-  try {
-    final email = await SessionManager.getEmail();
-    if (email == null) return;
-
-    final user = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', email)
-        .single();
-
-    await supabase.from('search_history').insert({
-      'user_id': user['id'],
-      'query': query.trim(),
-    });
-  } catch (e) {
-    debugPrint("Search save error: $e");
-  }
-}
-void filterBooks(String value) {
-  saveSearch(value);
-
-  setState(() {
-    filteredBooks = allBooks.where((book) {
-      final title = (book['title'] ?? '').toString().toLowerCase();
-      final author = (book['author'] ?? '').toString().toLowerCase();
-      final category = (book['category'] ?? '').toString().toLowerCase();
-      final search = value.toLowerCase();
-
-      return title.contains(search) ||
-          author.contains(search) ||
-          category.contains(search);
-    }).toList();
-  });
-}
-
-
-
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: RefreshIndicator(
           onRefresh: () async {
@@ -272,45 +276,51 @@ void filterBooks(String value) {
               const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
               // Recommended Books Section
-SliverToBoxAdapter(
-  child: Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-    child: Text(
-      "Recommended Books",
-      style: GoogleFonts.agbalumo(
-        fontSize: 22,
-        color: const Color(0xFF6C94C6),
-      ),
-    ),
-  ),
-),
-
-SliverToBoxAdapter(
-  child: SizedBox(
-    height: 220,
-    child: isLoadingRecommended
-        ? const Center(
-            child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
-          )
-        : recommendedBooks.isEmpty
-            ? const Center(
-                child: Text(
-                  "No recommendations yet",
-                  style: TextStyle(color: Colors.white),
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  child: Text(
+                    "Recommended Books",
+                    style: GoogleFonts.agbalumo(
+                      fontSize: 22,
+                      color: const Color(0xFF6C94C6),
+                    ),
+                  ),
                 ),
-              )
-            : ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                scrollDirection: Axis.horizontal,
-                itemCount: recommendedBooks.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (context, index) {
-                  final book = recommendedBooks[index];
-                  return _buildRecommendedBookCard(book);
-                },
               ),
-  ),
-),
+
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: 220,
+                  child: isLoadingRecommended
+                      ? const Center(
+                          child: CircularProgressIndicator(
+                            color: Color(0xFF6C94C6),
+                          ),
+                        )
+                      : recommendedBooks.isEmpty
+                      ? const Center(
+                          child: Text(
+                            "No recommendations yet",
+                            style: TextStyle(color: Colors.white),
+                          ),
+                        )
+                      : ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          scrollDirection: Axis.horizontal,
+                          itemCount: recommendedBooks.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(width: 12),
+                          itemBuilder: (context, index) {
+                            final book = recommendedBooks[index];
+                            return _buildRecommendedBookCard(book);
+                          },
+                        ),
+                ),
+              ),
               // ─── All Books Grid ───
               if (isLoading)
                 const SliverToBoxAdapter(
@@ -318,7 +328,8 @@ SliverToBoxAdapter(
                     child: Padding(
                       padding: EdgeInsets.all(32),
                       child: CircularProgressIndicator(
-                          color: Color(0xFF6C94C6)),
+                        color: Color(0xFF6C94C6),
+                      ),
                     ),
                   ),
                 )
@@ -327,8 +338,10 @@ SliverToBoxAdapter(
                   child: Center(
                     child: Padding(
                       padding: EdgeInsets.all(32),
-                      child: Text("No books found",
-                          style: TextStyle(color: Colors.white)),
+                      child: Text(
+                        "No books found",
+                        style: TextStyle(color: Colors.white),
+                      ),
                     ),
                   ),
                 )
@@ -338,115 +351,111 @@ SliverToBoxAdapter(
                   sliver: SliverGrid(
                     gridDelegate:
                         const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
-                      childAspectRatio: 0.55,
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final book = filteredBooks[index];
-                        final imageUrl =
-                            book['image_url']?.toString() ?? '';
-                        final title = book['title']?.toString() ?? '';
-                        final likes = book['likes'] ?? 0;
-                        final isOwner =
-                            book['author_username']?.toString() ==
-                                currentUsername;
-                        final bookId = book['id']?.toString() ?? '';
+                          crossAxisCount: 2,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                          childAspectRatio: 0.55,
+                        ),
+                    delegate: SliverChildBuilderDelegate((context, index) {
+                      final book = filteredBooks[index];
+                      final imageUrl = book['image_url']?.toString() ?? '';
+                      final title = book['title']?.toString() ?? '';
+                      final likes = book['likes'] ?? 0;
+                      final isOwner =
+                          book['author_username']?.toString() ==
+                          currentUsername;
+                      final bookId = book['id']?.toString() ?? '';
 
-                        return GestureDetector(
-                          onTap: () {
-                            if (bookId.isEmpty) return;
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) =>
-                                    BookDetailScreen(bookId: bookId),
-                              ),
-                            );
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFD8C6AF),
-                              borderRadius: BorderRadius.circular(20),
+                      return GestureDetector(
+                        onTap: () {
+                          if (bookId.isEmpty) return;
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  BookDetailScreen(bookId: bookId),
                             ),
-                            child: Column(
-                              children: [
-                                Expanded(
-                                  child: Stack(
-                                    children: [
-                                      ClipRRect(
-                                        borderRadius:
-                                            const BorderRadius.only(
-                                          topLeft: Radius.circular(20),
-                                          topRight: Radius.circular(20),
-                                        ),
-                                        child: imageUrl.isNotEmpty
-                                            ? CachedNetworkImage(
-                                                imageUrl: imageUrl,
-                                                fit: BoxFit.cover,
-                                                width: double.infinity,
-                                              )
-                                            : const Icon(Icons.book,
-                                                size: 60),
-                                      ),
-                                      if (isOwner)
-                                        Positioned(
-                                          top: 8,
-                                          right: 8,
-                                          child: PopupMenuButton<String>(
-                                            icon: const Icon(
-                                                Icons.more_vert,
-                                                color: Colors.black),
-                                            onSelected: (value) {
-                                              if (value == 'delete') {
-                                                _deleteBook(bookId);
-                                              } else if (value ==
-                                                  'edit') {
-                                                _editBook(book);
-                                              }
-                                            },
-                                            itemBuilder: (context) =>
-                                                const [
-                                              PopupMenuItem(
-                                                  value: 'edit',
-                                                  child: Text('Edit')),
-                                              PopupMenuItem(
-                                                  value: 'delete',
-                                                  child: Text('Delete')),
-                                            ],
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 8),
-                                  child: Text(
-                                    title,
-                                    textAlign: TextAlign.center,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                ),
-                                const SizedBox(height: 6),
-                                Padding(
-                                  padding:
-                                      const EdgeInsets.only(bottom: 8),
-                                  child: Text("⭐ $likes"),
-                                ),
-                              ],
-                            ),
+                          );
+                        },
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFD8C6AF),
+                            borderRadius: BorderRadius.circular(20),
                           ),
-                        );
-                      },
-                      childCount: filteredBooks.length,
-                    ),
+                          child: Column(
+                            children: [
+                              Expanded(
+                                child: Stack(
+                                  children: [
+                                    ClipRRect(
+                                      borderRadius: const BorderRadius.only(
+                                        topLeft: Radius.circular(20),
+                                        topRight: Radius.circular(20),
+                                      ),
+                                      child: imageUrl.isNotEmpty
+                                          ? CachedNetworkImage(
+                                              imageUrl: imageUrl,
+                                              fit: BoxFit.cover,
+                                              width: double.infinity,
+                                            )
+                                          : const Icon(Icons.book, size: 60),
+                                    ),
+                                    if (isOwner)
+                                      Positioned(
+                                        top: 8,
+                                        right: 8,
+                                        child: PopupMenuButton<String>(
+                                          icon: const Icon(
+                                            Icons.more_vert,
+                                            color: Colors.black,
+                                          ),
+                                          onSelected: (value) {
+                                            if (value == 'delete') {
+                                              _deleteBook(bookId);
+                                            } else if (value == 'edit') {
+                                              _editBook(book);
+                                            }
+                                          },
+                                          itemBuilder: (context) => const [
+                                            PopupMenuItem(
+                                              value: 'edit',
+                                              child: Text('Edit'),
+                                            ),
+                                            PopupMenuItem(
+                                              value: 'delete',
+                                              child: Text('Delete'),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
+                                child: Text(
+                                  title,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 8),
+                                child: Text("⭐ $likes"),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }, childCount: filteredBooks.length),
                   ),
                 ),
             ],
@@ -490,8 +499,8 @@ SliverToBoxAdapter(
                         imageUrl: imageUrl,
                         fit: BoxFit.cover,
                         width: double.infinity,
-                        errorWidget: (c, u, e) => const Icon(Icons.book,
-                            size: 40),
+                        errorWidget: (c, u, e) =>
+                            const Icon(Icons.book, size: 40),
                         placeholder: (c, u) => Shimmer.fromColors(
                           baseColor: const Color(0xFFCCB89A),
                           highlightColor: const Color(0xFFE8D8C0),
@@ -502,15 +511,16 @@ SliverToBoxAdapter(
               ),
             ),
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
               child: Text(
                 title,
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                    fontWeight: FontWeight.bold, fontSize: 12),
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
               ),
             ),
           ],

@@ -5,6 +5,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'course_details.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class CourseScreen extends StatefulWidget {
   const CourseScreen({super.key});
@@ -51,83 +52,82 @@ class _CourseScreenState extends State<CourseScreen> {
     }
   }
 
- Future<void> loadRecommendedCourses() async {
-  try {
-    List<dynamic> result = [];
+  Future<void> loadRecommendedCourses() async {
+    try {
+      List<dynamic> result = [];
 
-    final email = await SessionManager.getEmail();
-    if (email != null) {
-      final userRow = await supabase
-          .from('users')
-          .select('id')
-          .eq('email', email)
-          .single();
+      final email = await SessionManager.getEmail();
+      if (email != null) {
+        final userRow = await supabase
+            .from('users')
+            .select('id')
+            .eq('email', email)
+            .single();
 
-      final userId = userRow['id'] as int;
+        final userId = userRow['id'] as int;
 
-      final userInteractions = await supabase
-          .from('user_interactions')
-          .select('content_id')
-          .eq('content_type', 'course')
-          .eq('user_id', userId)
-          .limit(5);
+        final userInteractions = await supabase
+            .from('user_interactions')
+            .select('content_id')
+            .eq('content_type', 'course')
+            .eq('user_id', userId)
+            .limit(5);
 
-      if (userInteractions.isNotEmpty) {
-        final interactedIds = userInteractions
-            .map((e) => e['content_id'])
-            .toList();
+        if (userInteractions.isNotEmpty) {
+          final interactedIds = userInteractions
+              .map((e) => e['content_id'])
+              .toList();
 
-        final categories = await supabase
-            .from('courses')
-            .select('category')
-            .inFilter('id', interactedIds);
-
-        final catList = categories
-            .map((e) => e['category']?.toString())
-            .where((c) => c != null)
-            .toSet()
-            .toList();
-
-        if (catList.isNotEmpty) {
-          result = await supabase
+          final categories = await supabase
               .from('courses')
-              .select()
-              .inFilter('category', catList)
-              .not('id', 'in', '(${interactedIds.join(',')})')
-              .order('rating', ascending: false)
-              .limit(10);
+              .select('category')
+              .inFilter('id', interactedIds);
+
+          final catList = categories
+              .map((e) => e['category']?.toString())
+              .where((c) => c != null)
+              .toSet()
+              .toList();
+
+          if (catList.isNotEmpty) {
+            result = await supabase
+                .from('courses')
+                .select()
+                .inFilter('category', catList)
+                .not('id', 'in', '(${interactedIds.join(',')})')
+                .order('rating', ascending: false)
+                .limit(10);
+          }
         }
       }
-    }
 
-    // Fallback → popular
-    if (result.isEmpty) {
-      result = await supabase
-          .from('courses')
-          .select()
-          .order('rating', ascending: false)
-          .limit(10);
-    }
+      // Fallback → popular
+      if (result.isEmpty) {
+        result = await supabase
+            .from('courses')
+            .select()
+            .order('rating', ascending: false)
+            .limit(10);
+      }
 
-    if (!mounted) return;
-    setState(() {
-      recommendedCourses = result;
-      isLoadingRecommended = false;
-    });
-  } catch (e) {
-    if (!mounted) return;
-    setState(() => isLoadingRecommended = false);
-    debugPrint("Error loading recommended courses: $e");
+      if (!mounted) return;
+      setState(() {
+        recommendedCourses = result;
+        isLoadingRecommended = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => isLoadingRecommended = false);
+      debugPrint("Error loading recommended courses: $e");
+    }
   }
-}
 
   void filterCourses(String value) {
     setState(() {
       filteredCourses = allCourses.where((c) {
-        return c['title']
-            .toString()
-            .toLowerCase()
-            .contains(value.toLowerCase());
+        return c['title'].toString().toLowerCase().contains(
+          value.toLowerCase(),
+        );
       }).toList();
     });
   }
@@ -135,14 +135,13 @@ class _CourseScreenState extends State<CourseScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: Column(
           children: [
             // ─── HEADER ───
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -154,8 +153,11 @@ class _CourseScreenState extends State<CourseScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.search,
-                        color: Colors.white, size: 28),
+                    icon: const Icon(
+                      Icons.search,
+                      color: Colors.white,
+                      size: 28,
+                    ),
                     onPressed: () {
                       setState(() {
                         showSearch = !showSearch;
@@ -173,8 +175,10 @@ class _CourseScreenState extends State<CourseScreen> {
             // ─── SEARCH BAR ───
             if (showSearch)
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 8,
+                ),
                 child: TextField(
                   controller: _searchController,
                   onChanged: filterCourses,
@@ -182,10 +186,9 @@ class _CourseScreenState extends State<CourseScreen> {
                   decoration: InputDecoration(
                     hintText: "Search courses...",
                     hintStyle: const TextStyle(color: Colors.white54),
-                    prefixIcon:
-                        const Icon(Icons.search, color: Colors.white54),
+                    prefixIcon: const Icon(Icons.search, color: Colors.white54),
                     filled: true,
-                    fillColor: const Color(0xFF1E3A5F),
+                    fillColor: AppColors.cardBg,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(16),
                       borderSide: BorderSide.none,
@@ -199,22 +202,25 @@ class _CourseScreenState extends State<CourseScreen> {
               child: isLoading
                   ? const Center(
                       child: CircularProgressIndicator(
-                          color: Color(0xFF6C94C6)))
+                        color: Color(0xFF6C94C6),
+                      ),
+                    )
                   : RefreshIndicator(
                       onRefresh: () async {
                         await loadCourses();
                         await loadRecommendedCourses();
                       },
                       child: ListView(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
                         children: [
                           // ─── Recommended Courses Section ───
                           if (recommendedCourses.isNotEmpty ||
                               isLoadingRecommended) ...[
                             Padding(
                               padding: const EdgeInsets.only(
-                                  top: 4, bottom: 12),
+                                top: 4,
+                                bottom: 12,
+                              ),
                               child: Text(
                                 "Recommended Courses",
                                 style: GoogleFonts.agbalumo(
@@ -228,25 +234,25 @@ class _CourseScreenState extends State<CourseScreen> {
                               child: isLoadingRecommended
                                   ? const Center(
                                       child: CircularProgressIndicator(
-                                          color: Color(0xFF6C94C6)))
+                                        color: Color(0xFF6C94C6),
+                                      ),
+                                    )
                                   : ListView.separated(
                                       scrollDirection: Axis.horizontal,
-                                      itemCount:
-                                          recommendedCourses.length,
+                                      itemCount: recommendedCourses.length,
                                       separatorBuilder: (_, __) =>
                                           const SizedBox(width: 12),
                                       itemBuilder: (context, index) {
-                                        final item =
-                                            recommendedCourses[index];
+                                        final item = recommendedCourses[index];
                                         return _buildRecommendedCourseCard(
-                                            item);
+                                          item,
+                                        );
                                       },
                                     ),
                             ),
                             const SizedBox(height: 20),
                             Padding(
-                              padding:
-                                  const EdgeInsets.only(bottom: 12),
+                              padding: const EdgeInsets.only(bottom: 12),
                               child: Text(
                                 "All Courses",
                                 style: GoogleFonts.agbalumo(
@@ -262,9 +268,10 @@ class _CourseScreenState extends State<CourseScreen> {
                             const Center(
                               child: Padding(
                                 padding: EdgeInsets.all(32),
-                                child: Text("No courses found",
-                                    style:
-                                        TextStyle(color: Colors.white)),
+                                child: Text(
+                                  "No courses found",
+                                  style: TextStyle(color: Colors.white),
+                                ),
                               ),
                             )
                           else
@@ -285,8 +292,7 @@ class _CourseScreenState extends State<CourseScreen> {
     final title = item['title']?.toString() ?? '';
     final imageUrl = item['image_url']?.toString() ?? '';
     final courseId = item['id']?.toString() ?? '';
-    final rating =
-        double.tryParse(item['rating']?.toString() ?? '0') ?? 0.0;
+    final rating = double.tryParse(item['rating']?.toString() ?? '0') ?? 0.0;
 
     return GestureDetector(
       onTap: () async {
@@ -294,8 +300,7 @@ class _CourseScreenState extends State<CourseScreen> {
         await Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (context) =>
-                CourseDetailScreen(courseId: courseId),
+            builder: (context) => CourseDetailScreen(courseId: courseId),
           ),
         );
         await loadCourses();
@@ -323,21 +328,26 @@ class _CourseScreenState extends State<CourseScreen> {
                       errorWidget: (c, u, e) => Container(
                         height: 110,
                         color: const Color(0xFF7D93B0),
-                        child: const Icon(Icons.play_circle,
-                            size: 40, color: Colors.white54),
+                        child: const Icon(
+                          Icons.play_circle,
+                          size: 40,
+                          color: Colors.white54,
+                        ),
                       ),
                       placeholder: (c, u) => Shimmer.fromColors(
                         baseColor: const Color(0xFF1A2F55),
                         highlightColor: const Color(0xFF2A4A7F),
-                        child: Container(
-                            height: 110, color: Colors.white),
+                        child: Container(height: 110, color: Colors.white),
                       ),
                     )
                   : Container(
                       height: 110,
                       color: const Color(0xFF2A4A6F),
-                      child: const Icon(Icons.play_circle,
-                          size: 40, color: Colors.white54),
+                      child: const Icon(
+                        Icons.play_circle,
+                        size: 40,
+                        color: Colors.white54,
+                      ),
                     ),
             ),
             Padding(
@@ -358,13 +368,14 @@ class _CourseScreenState extends State<CourseScreen> {
                   const SizedBox(height: 4),
                   Row(
                     children: [
-                      const Icon(Icons.star,
-                          color: Colors.orange, size: 14),
+                      const Icon(Icons.star, color: Colors.orange, size: 14),
                       const SizedBox(width: 4),
                       Text(
                         rating.toStringAsFixed(1),
                         style: const TextStyle(
-                            color: Colors.white, fontSize: 12),
+                          color: Colors.white,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
@@ -418,24 +429,31 @@ class _CourseScreenState extends State<CourseScreen> {
                         width: 130,
                         height: 130,
                         color: const Color(0xFF7D93B0),
-                        child: const Icon(Icons.play_circle,
-                            size: 50, color: Colors.white54),
+                        child: const Icon(
+                          Icons.play_circle,
+                          size: 50,
+                          color: Colors.white54,
+                        ),
                       ),
                       placeholder: (c, u) => Shimmer.fromColors(
                         baseColor: const Color(0xFF1A2F55),
                         highlightColor: const Color(0xFF2A4A7F),
                         child: Container(
-                            width: 130,
-                            height: 130,
-                            color: Colors.white),
+                          width: 130,
+                          height: 130,
+                          color: Colors.white,
+                        ),
                       ),
                     )
                   : Container(
                       width: 130,
                       height: 130,
                       color: const Color(0xFF2A4A6F),
-                      child: const Icon(Icons.play_circle,
-                          size: 50, color: Colors.white54),
+                      child: const Icon(
+                        Icons.play_circle,
+                        size: 50,
+                        color: Colors.white54,
+                      ),
                     ),
             ),
             Expanded(
@@ -464,8 +482,11 @@ class _CourseScreenState extends State<CourseScreen> {
                               : null,
                           backgroundColor: const Color(0xFF2A4A6F),
                           child: instructorImage.isEmpty
-                              ? const Icon(Icons.person,
-                                  size: 14, color: Colors.white)
+                              ? const Icon(
+                                  Icons.person,
+                                  size: 14,
+                                  color: Colors.white,
+                                )
                               : null,
                         ),
                         const SizedBox(width: 6),
@@ -484,13 +505,14 @@ class _CourseScreenState extends State<CourseScreen> {
                     Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        const Icon(Icons.star,
-                            color: Colors.orange, size: 16),
+                        const Icon(Icons.star, color: Colors.orange, size: 16),
                         const SizedBox(width: 4),
                         Text(
                           rating.toStringAsFixed(1),
                           style: const TextStyle(
-                              color: Colors.white, fontSize: 13),
+                            color: Colors.white,
+                            fontSize: 13,
+                          ),
                         ),
                       ],
                     ),

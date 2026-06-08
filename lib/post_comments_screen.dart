@@ -3,6 +3,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'dart:async';
+import 'package:enginet/core/app_colors.dart';
+
 class PostCommentsScreen extends StatefulWidget {
   final dynamic post;
 
@@ -32,90 +34,87 @@ class _PostCommentsScreenState extends State<PostCommentsScreen> {
   @override
   void dispose() {
     _commentsSub?.cancel();
-_ctrl.dispose();
-super.dispose();
+    _ctrl.dispose();
+    super.dispose();
   }
-Future<void> _editComment(Map<String, dynamic> comment) async {
-  final editCtrl = TextEditingController(
-    text: comment['content']?.toString() ?? '',
-  );
 
-  final newText = await showDialog<String>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Edit Comment'),
-      content: TextField(
-        controller: editCtrl,
-        maxLines: 4,
-        decoration: const InputDecoration(
-          hintText: 'Edit your comment...',
+  Future<void> _editComment(Map<String, dynamic> comment) async {
+    final editCtrl = TextEditingController(
+      text: comment['content']?.toString() ?? '',
+    );
+
+    final newText = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Comment'),
+        content: TextField(
+          controller: editCtrl,
+          maxLines: 4,
+          decoration: const InputDecoration(hintText: 'Edit your comment...'),
         ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, editCtrl.text.trim()),
-          child: const Text('Save'),
-        ),
-      ],
-    ),
-  );
-
-  if (newText == null || newText.isEmpty) return;
-
-  await supabase
-      .from('comments')
-      .update({'content': newText})
-      .eq('id', comment['id']);
-
-  if (!mounted) return;
-
-  setState(() {
-    final index = _comments.indexWhere((c) => c['id'] == comment['id']);
-    if (index != -1) {
-      _comments[index]['content'] = newText;
-    }
-  });
-}
-
-Future<void> _deleteComment(Map<String, dynamic> comment) async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('Delete Comment'),
-      content: const Text('Are you sure you want to delete this comment?'),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text('No'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text(
-            'Yes, delete',
-            style: TextStyle(color: Colors.red),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
           ),
-        ),
-      ],
-    ),
-  );
+          TextButton(
+            onPressed: () => Navigator.pop(context, editCtrl.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
 
-  if (confirmed != true) return;
+    if (newText == null || newText.isEmpty) return;
 
-  await supabase
-      .from('comments')
-      .delete()
-      .eq('id', comment['id']);
+    await supabase
+        .from('comments')
+        .update({'content': newText})
+        .eq('id', comment['id']);
 
-  if (!mounted) return;
+    if (!mounted) return;
 
-  setState(() {
-    _comments.removeWhere((c) => c['id'] == comment['id']);
-  });
-}
+    setState(() {
+      final index = _comments.indexWhere((c) => c['id'] == comment['id']);
+      if (index != -1) {
+        _comments[index]['content'] = newText;
+      }
+    });
+  }
+
+  Future<void> _deleteComment(Map<String, dynamic> comment) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Comment'),
+        content: const Text('Are you sure you want to delete this comment?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Yes, delete',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    await supabase.from('comments').delete().eq('id', comment['id']);
+
+    if (!mounted) return;
+
+    setState(() {
+      _comments.removeWhere((c) => c['id'] == comment['id']);
+    });
+  }
+
   Future<void> _loadAll() async {
     final email = await SessionManager.getEmail();
 
@@ -130,22 +129,23 @@ Future<void> _deleteComment(Map<String, dynamic> comment) async {
     await _fetchComments();
     _startCommentsRealtime();
   }
+
   void _startCommentsRealtime() {
-  _commentsSub?.cancel();
+    _commentsSub?.cancel();
 
-  _commentsSub = supabase
-      .from('comments')
-      .stream(primaryKey: ['id'])
-      .eq('post_id', _postId)
-      .order('created_at', ascending: true)
-      .listen((data) {
-        if (!mounted) return;
+    _commentsSub = supabase
+        .from('comments')
+        .stream(primaryKey: ['id'])
+        .eq('post_id', _postId)
+        .order('created_at', ascending: true)
+        .listen((data) {
+          if (!mounted) return;
 
-        setState(() {
-          _comments = data;
+          setState(() {
+            _comments = data;
+          });
         });
-      });
-}
+  }
 
   Future<void> _fetchComments() async {
     try {
@@ -167,61 +167,57 @@ Future<void> _deleteComment(Map<String, dynamic> comment) async {
   Future<void> _postComment() async {
     if (_ctrl.text.trim().isEmpty || _isPosting) return;
     if (_currentUser == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please login first')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please login first')));
       return;
     }
 
     setState(() => _isPosting = true);
     final commentText = _ctrl.text.trim();
 
-final tempComment = {
-  'id': DateTime.now().millisecondsSinceEpoch,
-  'post_id': _postId,
-  'comment_user_id': _currentUser!['id'],
-  'username': _currentUser!['username'],
-  'profile_image': _currentUser!['profile_image'],
-  'content': commentText,
-  'created_at': DateTime.now().toIso8601String(),
-};
+    final tempComment = {
+      'id': DateTime.now().millisecondsSinceEpoch,
+      'post_id': _postId,
+      'comment_user_id': _currentUser!['id'],
+      'username': _currentUser!['username'],
+      'profile_image': _currentUser!['profile_image'],
+      'content': commentText,
+      'created_at': DateTime.now().toIso8601String(),
+    };
 
-setState(() {
-  _comments.add(tempComment);
-});
+    setState(() {
+      _comments.add(tempComment);
+    });
 
-_ctrl.clear();
+    _ctrl.clear();
 
     try {
       await supabase.from('comments').insert({
-  'post_id': _postId,
-  'comment_user_id': _currentUser!['id'],
-  'username': _currentUser!['username'],
-  'profile_image': _currentUser!['profile_image'],
-  'content': commentText,
-});
+        'post_id': _postId,
+        'comment_user_id': _currentUser!['id'],
+        'username': _currentUser!['username'],
+        'profile_image': _currentUser!['profile_image'],
+        'content': commentText,
+      });
 
+      final postOwnerId = widget.post['user_id'];
 
-
-final postOwnerId = widget.post['user_id'];
-
-
-if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
-  await supabase.from('notifications').insert({
-    'user_id': postOwnerId,
-    'post_id': _postId,
-    'type': 'post_comment',
-    'message': '${_currentUser!['username']} commented on your post',
-    'is_read': 0,
-  });
-}
-
+      if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
+        await supabase.from('notifications').insert({
+          'user_id': postOwnerId,
+          'post_id': _postId,
+          'type': 'post_comment',
+          'message': '${_currentUser!['username']} commented on your post',
+          'is_read': 0,
+        });
+      }
     } catch (e) {
       debugPrint('❌ Error posting comment: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('❌ Error: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('❌ Error: $e')));
     } finally {
       if (mounted) setState(() => _isPosting = false);
     }
@@ -235,19 +231,16 @@ if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
     final likes = widget.post['likes'] ?? 0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFFE3C39D)),
+          icon: const Icon(Icons.arrow_back, color: AppColors.accent),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           'Comments',
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 24,
-          ),
+          style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 24),
         ),
       ),
       body: Column(
@@ -256,7 +249,7 @@ if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
             margin: const EdgeInsets.all(16),
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: const Color(0xFFE3C39D),
+              color: AppColors.accent,
               borderRadius: BorderRadius.circular(16),
             ),
             child: Column(
@@ -266,11 +259,16 @@ if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
                   children: [
                     CircleAvatar(
                       radius: 18,
-                      backgroundImage:
-                          profileImage.isNotEmpty ? NetworkImage(profileImage) : null,
-                      backgroundColor: const Color(0xFF4B6382),
+                      backgroundImage: profileImage.isNotEmpty
+                          ? NetworkImage(profileImage)
+                          : null,
+                      backgroundColor: AppColors.cardBg,
                       child: profileImage.isEmpty
-                          ? const Icon(Icons.person, color: Colors.white, size: 18)
+                          ? const Icon(
+                              Icons.person,
+                              color: Colors.white,
+                              size: 18,
+                            )
                           : null,
                     ),
                     const SizedBox(width: 8),
@@ -278,33 +276,36 @@ if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
                       username,
                       style: GoogleFonts.robotoCondensed(
                         fontWeight: FontWeight.bold,
-                        color: const Color(0xFF071739),
+                        color: AppColors.primary,
                       ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 10),
-                Text(
-                  content,
-                  style: const TextStyle(color: Color(0xFF071739)),
-                ),
+                Text(content, style: const TextStyle(color: AppColors.primary)),
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Icon(Icons.favorite_border,
-                        color: Color(0xFF071739), size: 18),
+                    const Icon(
+                      Icons.favorite_border,
+                      color: AppColors.primary,
+                      size: 18,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       '$likes',
-                      style: const TextStyle(color: Color(0xFF071739)),
+                      style: const TextStyle(color: AppColors.primary),
                     ),
                     const SizedBox(width: 16),
-                    const Icon(Icons.chat_bubble_outline,
-                        color: Color(0xFF071739), size: 18),
+                    const Icon(
+                      Icons.chat_bubble_outline,
+                      color: AppColors.primary,
+                      size: 18,
+                    ),
                     const SizedBox(width: 4),
                     Text(
                       '${_comments.length}',
-                      style: const TextStyle(color: Color(0xFF071739)),
+                      style: const TextStyle(color: AppColors.primary),
                     ),
                   ],
                 ),
@@ -318,10 +319,7 @@ if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
               alignment: Alignment.centerLeft,
               child: Text(
                 'Comments (${_comments.length})',
-                style: GoogleFonts.agbalumo(
-                  color: Colors.white,
-                  fontSize: 20,
-                ),
+                style: GoogleFonts.agbalumo(color: Colors.white, fontSize: 20),
               ),
             ),
           ),
@@ -340,13 +338,14 @@ if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
                     itemBuilder: (_, i) {
                       final c = _comments[i];
                       final cUsername = c['username']?.toString() ?? '';
-                      final cProfileImage = c['profile_image']?.toString() ?? '';
+                      final cProfileImage =
+                          c['profile_image']?.toString() ?? '';
 
                       return Container(
                         margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFA68868),
+                          color: AppColors.textAccent,
                           borderRadius: BorderRadius.circular(12),
                         ),
                         child: Column(
@@ -359,10 +358,13 @@ if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
                                   backgroundImage: cProfileImage.isNotEmpty
                                       ? NetworkImage(cProfileImage)
                                       : null,
-                                  backgroundColor: const Color(0xFF4B6382),
+                                  backgroundColor: AppColors.cardBg,
                                   child: cProfileImage.isEmpty
-                                      ? const Icon(Icons.person,
-                                          size: 15, color: Colors.white)
+                                      ? const Icon(
+                                          Icons.person,
+                                          size: 15,
+                                          color: Colors.white,
+                                        )
                                       : null,
                                 ),
                                 const SizedBox(width: 8),
@@ -370,38 +372,38 @@ if (postOwnerId != null && postOwnerId != _currentUser!['id']) {
                                   cUsername,
                                   style: GoogleFonts.robotoCondensed(
                                     fontWeight: FontWeight.bold,
-                                    color: const Color(0xFF071739),
+                                    color: AppColors.primary,
                                   ),
                                 ),
                                 const Spacer(),
 
-if (_currentUser != null &&
-    c['comment_user_id'] == _currentUser!['id'])
-  PopupMenuButton<String>(
-    onSelected: (value) {
-      if (value == 'edit') {
-        _editComment(c);
-      } else if (value == 'delete') {
-        _deleteComment(c);
-      }
-    },
-    itemBuilder: (context) => const [
-      PopupMenuItem(
-        value: 'edit',
-        child: Text('Edit'),
-      ),
-      PopupMenuItem(
-        value: 'delete',
-        child: Text('Delete'),
-      ),
-    ],
-  ),
+                                if (_currentUser != null &&
+                                    c['comment_user_id'] == _currentUser!['id'])
+                                  PopupMenuButton<String>(
+                                    onSelected: (value) {
+                                      if (value == 'edit') {
+                                        _editComment(c);
+                                      } else if (value == 'delete') {
+                                        _deleteComment(c);
+                                      }
+                                    },
+                                    itemBuilder: (context) => const [
+                                      PopupMenuItem(
+                                        value: 'edit',
+                                        child: Text('Edit'),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'delete',
+                                        child: Text('Delete'),
+                                      ),
+                                    ],
+                                  ),
                               ],
                             ),
                             const SizedBox(height: 6),
                             Text(
                               c['content']?.toString() ?? '',
-                              style: const TextStyle(color: Color(0xFF071739)),
+                              style: const TextStyle(color: AppColors.primary),
                             ),
                           ],
                         ),
@@ -418,7 +420,7 @@ if (_currentUser != null &&
                 Expanded(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1E3A5F),
+                      color: AppColors.cardBg,
                       borderRadius: BorderRadius.circular(24),
                     ),
                     child: TextField(
@@ -429,8 +431,10 @@ if (_currentUser != null &&
                       decoration: const InputDecoration(
                         hintText: 'Write your comment...',
                         hintStyle: TextStyle(color: Colors.white38),
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        contentPadding: EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
                         border: InputBorder.none,
                       ),
                     ),

@@ -9,6 +9,7 @@ import 'package:enginet/article_comments_screen.dart';
 import 'package:enginet/course_comments_screen.dart';
 import 'package:enginet/post_comments_screen.dart';
 import 'dart:async';
+import 'package:enginet/core/app_colors.dart';
 
 class NotificationsScreen extends StatefulWidget {
   const NotificationsScreen({super.key});
@@ -25,35 +26,36 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   int? _currentUserId;
   StreamSubscription<List<Map<String, dynamic>>>? _notificationsSub;
   @override
-void dispose() {
-  _notificationsSub?.cancel();
-  super.dispose();
-}
+  void dispose() {
+    _notificationsSub?.cancel();
+    super.dispose();
+  }
 
   @override
   void initState() {
     super.initState();
     _loadData();
   }
+
   void _startNotificationsRealtime() {
-  if (_currentUserId == null) return;
+    if (_currentUserId == null) return;
 
-  _notificationsSub?.cancel();
+    _notificationsSub?.cancel();
 
-  _notificationsSub = _supabase
-      .from('notifications')
-      .stream(primaryKey: ['id'])
-      .eq('user_id', _currentUserId!)
-      .order('created_at', ascending: false)
-      .listen((data) {
-        if (!mounted) return;
+    _notificationsSub = _supabase
+        .from('notifications')
+        .stream(primaryKey: ['id'])
+        .eq('user_id', _currentUserId!)
+        .order('created_at', ascending: false)
+        .listen((data) {
+          if (!mounted) return;
 
-        setState(() {
-          _notifications = data;
-          _isLoading = false;
+          setState(() {
+            _notifications = data;
+            _isLoading = false;
+          });
         });
-      });
-}
+  }
 
   Future<void> _loadData() async {
     await _fetchNotifications();
@@ -111,106 +113,97 @@ void dispose() {
   }
 
   Future<void> _openNotification(dynamic notification) async {
-  final questionId = notification['question_id'];
-  final bookId = notification['book_id'];
-  final articleId = notification['article_id'];
-  final courseId = notification['course_id'];
-  final type = notification['type']?.toString() ?? '';
-  final postId = notification['post_id'];
+    final questionId = notification['question_id'];
+    final bookId = notification['book_id'];
+    final articleId = notification['article_id'];
+    final courseId = notification['course_id'];
+    final type = notification['type']?.toString() ?? '';
+    final postId = notification['post_id'];
 
-  debugPrint('NOTIFICATION CLICKED: $notification');
-  debugPrint('NOTIFICATION CLICKED: $notification');
+    debugPrint('NOTIFICATION CLICKED: $notification');
+    debugPrint('NOTIFICATION CLICKED: $notification');
 
-if (postId != null) {
-  final post = await _supabase
-      .from('posts')
-      .select()
-      .eq('id', postId)
-      .maybeSingle();
+    if (postId != null) {
+      final post = await _supabase
+          .from('posts')
+          .select()
+          .eq('id', postId)
+          .maybeSingle();
 
-  if (post == null) return;
+      if (post == null) return;
 
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => PostCommentsScreen(post: post),
-    ),
-  );
-  return;
-}
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => PostCommentsScreen(post: post)),
+      );
+      return;
+    }
 
-
-  if (courseId != null) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => CourseCommentsScreen(
-        courseId: courseId.toString(),
-      ),
-    ),
-  );
-  return;
-}
-
-  if (articleId != null) {
-    if (type == 'article_comment') {
+    if (courseId != null) {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ArticleCommentsScreen(
-            articleId: articleId.toString(),
-          ),
+          builder: (_) => CourseCommentsScreen(courseId: courseId.toString()),
         ),
       );
-    } else {
+      return;
+    }
+
+    if (articleId != null) {
+      if (type == 'article_comment') {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                ArticleCommentsScreen(articleId: articleId.toString()),
+          ),
+        );
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) =>
+                ArticleDetailScreen(articleId: articleId.toString()),
+          ),
+        );
+      }
+      return;
+    }
+
+    if (bookId != null) {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => ArticleDetailScreen(
-            articleId: articleId.toString(),
-          ),
+          builder: (_) => BookDetailScreen(bookId: bookId.toString()),
         ),
+      );
+      return;
+    }
+
+    if (questionId != null) {
+      final question = await _supabase
+          .from('questions')
+          .select()
+          .eq('id', questionId)
+          .single();
+
+      final user = await _supabase
+          .from('users')
+          .select('username, profile_image')
+          .eq('id', question['user_id'])
+          .maybeSingle();
+
+      question['username'] = user?['username'] ?? '';
+      question['profile_image'] = user?['profile_image'] ?? '';
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => AnswerScreen(question: question)),
       );
     }
-    return;
   }
-
-  if (bookId != null) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BookDetailScreen(bookId: bookId.toString()),
-      ),
-    );
-    return;
-  }
-
-  if (questionId != null) {
-    final question = await _supabase
-        .from('questions')
-        .select()
-        .eq('id', questionId)
-        .single();
-
-    final user = await _supabase
-        .from('users')
-        .select('username, profile_image')
-        .eq('id', question['user_id'])
-        .maybeSingle();
-
-    question['username'] = user?['username'] ?? '';
-    question['profile_image'] = user?['profile_image'] ?? '';
-
-    if (!mounted) return;
-
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AnswerScreen(question: question),
-      ),
-    );
-  }
-}
 
   String _timeAgo(String dateStr) {
     final date = DateTime.tryParse(dateStr);
@@ -224,126 +217,117 @@ if (postId != null) {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFFE3C39D)),
+          icon: const Icon(Icons.arrow_back, color: AppColors.accent),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           "Notifications",
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 24,
-          ),
+          style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 24),
         ),
       ),
       body: _isLoading
           ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFFE3C39D)),
+              child: CircularProgressIndicator(color: AppColors.accent),
             )
           : _notifications.isEmpty
-              ? Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Icon(
-                        Icons.notifications_off_outlined,
-                        color: Colors.white24,
-                        size: 60,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        "No notifications yet",
-                        style: GoogleFonts.robotoCondensed(
-                          color: Colors.white38,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ],
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.notifications_off_outlined,
+                    color: Colors.white24,
+                    size: 60,
                   ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _notifications.length,
-                  itemBuilder: (_, i) {
-                    final n = _notifications[i];
-                    final isRead = n["is_read"] == 1;
+                  const SizedBox(height: 16),
+                  Text(
+                    "No notifications yet",
+                    style: GoogleFonts.robotoCondensed(
+                      color: Colors.white38,
+                      fontSize: 18,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: _notifications.length,
+              itemBuilder: (_, i) {
+                final n = _notifications[i];
+                final isRead = n["is_read"] == 1;
 
-                    return GestureDetector(
-                      onTap: () => _openNotification(n),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 12),
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: isRead
-                              ? const Color(0xFF1E3A5F)
-                              : const Color(0xFF4B6382),
-                          borderRadius: BorderRadius.circular(14),
-                          border: isRead
-                              ? null
-                              : Border.all(color: const Color(0xFFE3C39D)),
+                return GestureDetector(
+                  onTap: () => _openNotification(n),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: isRead ? AppColors.cardBg : AppColors.cardBg,
+                      borderRadius: BorderRadius.circular(14),
+                      border: isRead
+                          ? null
+                          : Border.all(color: AppColors.accent),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: isRead
+                                ? const Color(0xFF2A4A6F)
+                                : AppColors.accent,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.notifications,
+                            color: isRead ? Colors.white38 : AppColors.primary,
+                            size: 20,
+                          ),
                         ),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: isRead
-                                    ? const Color(0xFF2A4A6F)
-                                    : const Color(0xFFE3C39D),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                Icons.notifications,
-                                color: isRead
-                                    ? Colors.white38
-                                    : const Color(0xFF071739),
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    n["message"] ?? "",
-                                    style: TextStyle(
-                                      color: isRead
-                                          ? Colors.white70
-                                          : Colors.white,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    _timeAgo(n["created_at"] ?? ""),
-                                    style: const TextStyle(
-                                      color: Colors.white38,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (!isRead)
-                              Container(
-                                width: 8,
-                                height: 8,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFE3C39D),
-                                  shape: BoxShape.circle,
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                n["message"] ?? "",
+                                style: TextStyle(
+                                  color: isRead ? Colors.white70 : Colors.white,
+                                  fontSize: 14,
                                 ),
                               ),
-                          ],
+                              const SizedBox(height: 4),
+                              Text(
+                                _timeAgo(n["created_at"] ?? ""),
+                                style: const TextStyle(
+                                  color: Colors.white38,
+                                  fontSize: 12,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
+                        if (!isRead)
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(
+                              color: AppColors.accent,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
     );
   }
 }
