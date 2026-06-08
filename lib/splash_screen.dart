@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:enginet/core/session_manager.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -27,29 +28,35 @@ class _SplashScreenState extends State<SplashScreen>
       duration: const Duration(milliseconds: 800),
     );
     _rotateAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-          parent: _rotateController, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _rotateController, curve: Curves.easeInOut),
     );
 
     _logoJumpController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
-    _logoJumpAnimation = TweenSequence([
-      TweenSequenceItem(
-          tween: Tween<double>(begin: 0, end: -80), weight: 50),
-      TweenSequenceItem(
-          tween: Tween<double>(begin: -80, end: 0), weight: 50),
-    ]).animate(CurvedAnimation(
-        parent: _logoJumpController, curve: Curves.easeInOut));
+    _logoJumpAnimation =
+        TweenSequence([
+          TweenSequenceItem(
+            tween: Tween<double>(begin: 0, end: -80),
+            weight: 50,
+          ),
+          TweenSequenceItem(
+            tween: Tween<double>(begin: -80, end: 0),
+            weight: 50,
+          ),
+        ]).animate(
+          CurvedAnimation(parent: _logoJumpController, curve: Curves.easeInOut),
+        );
 
     _textController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
     );
-    _textAnimation = Tween<double>(begin: 80, end: 0).animate(
-      CurvedAnimation(parent: _textController, curve: Curves.easeOut),
-    );
+    _textAnimation = Tween<double>(
+      begin: 80,
+      end: 0,
+    ).animate(CurvedAnimation(parent: _textController, curve: Curves.easeOut));
 
     _runAnimations();
   }
@@ -83,7 +90,7 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: Stack(
         children: [
           // زوايا الدوائر الزخرفية
@@ -106,7 +113,7 @@ class _SplashScreenState extends State<SplashScreen>
               width: 200,
               height: 200,
               decoration: const BoxDecoration(
-                color: Color(0xFFE3C39D),
+                color: AppColors.accent,
                 shape: BoxShape.circle,
               ),
             ),
@@ -130,7 +137,7 @@ class _SplashScreenState extends State<SplashScreen>
               width: 200,
               height: 200,
               decoration: const BoxDecoration(
-                color: Color(0xFFE3C39D),
+                color: AppColors.accent,
                 shape: BoxShape.circle,
               ),
             ),
@@ -142,8 +149,10 @@ class _SplashScreenState extends State<SplashScreen>
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 AnimatedBuilder(
-                  animation: Listenable.merge(
-                      [_rotateAnimation, _logoJumpAnimation]),
+                  animation: Listenable.merge([
+                    _rotateAnimation,
+                    _logoJumpAnimation,
+                  ]),
                   builder: (context, child) {
                     return Transform.translate(
                       offset: Offset(0, _logoJumpAnimation.value),
@@ -165,13 +174,15 @@ class _SplashScreenState extends State<SplashScreen>
                     return Transform.translate(
                       offset: Offset(0, _textAnimation.value),
                       child: Opacity(
-                        opacity:
-                            (1 - (_textAnimation.value / 80)).clamp(0.0, 1.0),
+                        opacity: (1 - (_textAnimation.value / 80)).clamp(
+                          0.0,
+                          1.0,
+                        ),
                         child: Text(
                           "EngiNet",
                           style: GoogleFonts.agbalumo(
                             fontSize: 40,
-                            color: const Color(0xFFE3C39D),
+                            color: AppColors.accent,
                             fontWeight: FontWeight.bold,
                           ),
                         ),

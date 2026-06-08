@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'dart:convert';
+import 'package:enginet/core/app_colors.dart';
 
 class AIChatScreen extends StatefulWidget {
   const AIChatScreen({super.key});
@@ -27,14 +28,11 @@ class _AIChatScreenState extends State<AIChatScreen> {
   List<Map<String, dynamic>> _allCourses = [];
   List<Map<String, dynamic>> _allBooks = [];
 
-  static const String _groqApiKey = String.fromEnvironment(
-    'GROQ_API_KEY',
-    defaultValue: '',
+  // ✅ Groq is now called via backend — no API key in Flutter
+  static const String _backendUrl = String.fromEnvironment(
+    'BACKEND_URL',
+    defaultValue: 'https://enginet02.onrender.com',
   );
-
-  static const String _groqUrl =
-      "https://api.groq.com/openai/v1/chat/completions";
-  static const String _groqModel = "llama-3.3-70b-versatile";
 
   @override
   void initState() {
@@ -93,13 +91,15 @@ class _AIChatScreenState extends State<AIChatScreen> {
       sb.writeln("=== Available Courses ===");
       for (final c in courses) {
         sb.writeln(
-            "• ${c['title']} [${c['category'] ?? 'General'}]: ${c['description'] ?? ''}");
+          "• ${c['title']} [${c['category'] ?? 'General'}]: ${c['description'] ?? ''}",
+        );
       }
 
       sb.writeln("\n=== Available Books ===");
       for (final b in books) {
         sb.writeln(
-            "• ${b['title']} [${b['category'] ?? 'General'}]: ${b['description'] ?? ''}");
+          "• ${b['title']} [${b['category'] ?? 'General'}]: ${b['description'] ?? ''}",
+        );
       }
 
       sb.writeln("\n=== Available Articles ===");
@@ -195,7 +195,8 @@ class _AIChatScreenState extends State<AIChatScreen> {
     return cards;
   }
 
-  String get _systemPrompt => """
+  String get _systemPrompt =>
+      """
 You are EngiNet AI, a smart assistant for an engineering education platform.
 
 PLATFORM CONTENT:
@@ -220,17 +221,6 @@ Always be friendly, professional, and accurate.
     final text = _controller.text.trim();
     if (text.isEmpty || _isLoading) return;
 
-    if (_groqApiKey.isEmpty) {
-      setState(() {
-        _messages.add({
-          "role": "error",
-          "content": "❌ GROQ_API_KEY not configured.",
-          "cards": [],
-        });
-      });
-      return;
-    }
-
     setState(() {
       _messages.add({"role": "user", "content": text, "cards": []});
       _isLoading = true;
@@ -238,37 +228,38 @@ Always be friendly, professional, and accurate.
     _controller.clear();
     _scrollToBottom();
 
-    // Kullanıcı mesajını kaydet
     _saveMsgToSupabase("user", text);
 
     try {
+      final token = await SessionManager.getToken();
+
       final conversationMessages = _messages
           .where((m) => m["role"] != "error")
-          .map((m) => {"role": m["role"] as String, "content": m["content"] as String})
+          .map(
+            (m) => {
+              "role": m["role"] as String,
+              "content": m["content"] as String,
+            },
+          )
           .toList();
 
+      // ✅ استدعاء الـ backend بدل Groq مباشرة
       final response = await http.post(
-        Uri.parse(_groqUrl),
+        Uri.parse("$_backendUrl/ai/chat"),
         headers: {
           "Content-Type": "application/json",
-          "Authorization": "Bearer $_groqApiKey",
+          if (token != null) "Authorization": "Bearer $token",
         },
         body: jsonEncode({
-          "model": _groqModel,
-          "max_tokens": 1500,
-          "temperature": 0.7,
-          "messages": [
-            {"role": "system", "content": _systemPrompt},
-            ...conversationMessages,
-          ],
+          "messages": conversationMessages,
+          "system_prompt": _systemPrompt,
         }),
       );
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final reply = data["choices"][0]["message"]["content"].toString();
+        final reply = data["reply"].toString();
 
-        // AI cevabındaki kurs/kitap kartlarını çıkar
         final cards = _extractMentionedCards(reply);
 
         setState(() {
@@ -280,14 +271,13 @@ Always be friendly, professional, and accurate.
           _isLoading = false;
         });
 
-        // AI cevabını kaydet
         _saveMsgToSupabase("assistant", reply);
       } else {
         final error = jsonDecode(response.body);
         setState(() {
           _messages.add({
             "role": "error",
-            "content": "❌ ${error['error']?['message'] ?? 'Unexpected error'}",
+            "content": "❌ ${error['detail'] ?? 'Unexpected error'}",
             "cards": [],
           });
           _isLoading = false;
@@ -352,15 +342,16 @@ Always be friendly, professional, and accurate.
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: Column(
           children: [
             _buildHeader(),
             if (!_contextLoaded)
               const LinearProgressIndicator(
-                  backgroundColor: Color(0xFF1E3A5F),
-                  color: Color(0xFFE3C39D)),
+                backgroundColor: AppColors.cardBg,
+                color: AppColors.accent,
+              ),
             const Divider(color: Colors.white12),
             Expanded(
               child: _messages.isEmpty
@@ -394,7 +385,8 @@ Always be friendly, professional, and accurate.
             height: 42,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                  colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
+                colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
+              ),
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.smart_toy, color: Colors.white, size: 22),
@@ -403,9 +395,13 @@ Always be friendly, professional, and accurate.
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text("EngiNet AI",
-                  style: GoogleFonts.agbalumo(
-                      fontSize: 22, color: const Color(0xFFE3C39D))),
+              Text(
+                "EngiNet AI",
+                style: GoogleFonts.agbalumo(
+                  fontSize: 22,
+                  color: AppColors.accent,
+                ),
+              ),
               Text(
                 _contextLoaded
                     ? "Powered by Groq • Platform-aware"
@@ -437,29 +433,41 @@ Always be friendly, professional, and accurate.
               height: 90,
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
-                    colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
+                  colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
+                ),
                 borderRadius: BorderRadius.circular(24),
               ),
               child: const Icon(Icons.smart_toy, color: Colors.white, size: 50),
             ),
             const SizedBox(height: 20),
-            Text("Hello! I'm EngiNet AI",
-                style: GoogleFonts.agbalumo(
-                    color: const Color(0xFFE3C39D), fontSize: 22)),
+            Text(
+              "Hello! I'm EngiNet AI",
+              style: GoogleFonts.agbalumo(
+                color: AppColors.accent,
+                fontSize: 22,
+              ),
+            ),
             const SizedBox(height: 8),
             const Text(
               "I know all courses, books & articles\non this platform. Ask me anything!",
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white54, fontSize: 14, height: 1.5),
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 14,
+                height: 1.5,
+              ),
             ),
             const SizedBox(height: 30),
             _buildSuggestedQuestion(
-                "What courses do you recommend for a Flutter beginner?"),
+              "What courses do you recommend for a Flutter beginner?",
+            ),
             _buildSuggestedQuestion("اقترح لي كتب برمجة للمبتدئين"),
             _buildSuggestedQuestion(
-                "Explain the difference between OOP and functional programming"),
+              "Explain the difference between OOP and functional programming",
+            ),
             _buildSuggestedQuestion(
-                "ما هي أفضل مقالات الذكاء الاصطناعي في المنصة؟"),
+              "ما هي أفضل مقالات الذكاء الاصطناعي في المنصة؟",
+            ),
           ],
         ),
       ),
@@ -476,18 +484,23 @@ Always be friendly, professional, and accurate.
         margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFF1E3A5F),
+          color: AppColors.cardBg,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: const Color(0xFF4A6FA5)),
         ),
         child: Row(
           children: [
-            const Icon(Icons.lightbulb_outline,
-                color: Color(0xFFE3C39D), size: 16),
+            const Icon(
+              Icons.lightbulb_outline,
+              color: AppColors.accent,
+              size: 16,
+            ),
             const SizedBox(width: 8),
             Expanded(
-              child: Text(question,
-                  style: const TextStyle(color: Colors.white70, fontSize: 13)),
+              child: Text(
+                question,
+                style: const TextStyle(color: Colors.white70, fontSize: 13),
+              ),
             ),
           ],
         ),
@@ -503,13 +516,15 @@ Always be friendly, professional, and accurate.
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Column(
-        crossAxisAlignment:
-            isUser ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: isUser
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisAlignment:
-                isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
+            mainAxisAlignment: isUser
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
             children: [
               if (!isUser) ...[
                 Container(
@@ -517,24 +532,30 @@ Always be friendly, professional, and accurate.
                   height: 34,
                   decoration: const BoxDecoration(
                     gradient: LinearGradient(
-                        colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
+                      colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
+                    ),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.smart_toy,
-                      color: Colors.white, size: 18),
+                  child: const Icon(
+                    Icons.smart_toy,
+                    color: Colors.white,
+                    size: 18,
+                  ),
                 ),
                 const SizedBox(width: 8),
               ],
               Flexible(
                 child: Container(
                   padding: const EdgeInsets.symmetric(
-                      horizontal: 14, vertical: 10),
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
                   decoration: BoxDecoration(
                     color: isError
                         ? const Color(0xFF5C1A1A)
                         : isUser
-                            ? const Color(0xFF4A6FA5)
-                            : const Color(0xFF1E3A5F),
+                        ? const Color(0xFF4A6FA5)
+                        : AppColors.cardBg,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
                       topRight: const Radius.circular(16),
@@ -556,7 +577,7 @@ Always be friendly, professional, and accurate.
                 const SizedBox(width: 8),
                 const CircleAvatar(
                   radius: 17,
-                  backgroundColor: Color(0xFFE3C39D),
+                  backgroundColor: AppColors.accent,
                   child: Icon(Icons.person, color: Colors.black, size: 18),
                 ),
               ],
@@ -598,7 +619,7 @@ Always be friendly, professional, and accurate.
         border: Border.all(
           color: isCourse
               ? const Color(0xFF4A6FA5)
-              : const Color(0xFFE3C39D).withOpacity(0.5),
+              : AppColors.accent.withOpacity(0.5),
         ),
       ),
       child: Column(
@@ -608,9 +629,7 @@ Always be friendly, professional, and accurate.
             children: [
               Icon(
                 isCourse ? Icons.play_circle_outline : Icons.menu_book,
-                color: isCourse
-                    ? const Color(0xFF6C94C6)
-                    : const Color(0xFFE3C39D),
+                color: isCourse ? const Color(0xFF6C94C6) : AppColors.accent,
                 size: 16,
               ),
               const SizedBox(width: 6),
@@ -620,17 +639,16 @@ Always be friendly, professional, and accurate.
                   style: TextStyle(
                     color: isCourse
                         ? const Color(0xFF6C94C6)
-                        : const Color(0xFFE3C39D),
+                        : AppColors.accent,
                     fontSize: 11,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E3A5F),
+                  color: AppColors.cardBg,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: Text(
@@ -677,18 +695,17 @@ Always be friendly, professional, and accurate.
             height: 34,
             decoration: const BoxDecoration(
               gradient: LinearGradient(
-                  colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)]),
+                colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
+              ),
               shape: BoxShape.circle,
             ),
-            child:
-                const Icon(Icons.smart_toy, color: Colors.white, size: 18),
+            child: const Icon(Icons.smart_toy, color: Colors.white, size: 18),
           ),
           const SizedBox(width: 8),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: const Color(0xFF1E3A5F),
+              color: AppColors.cardBg,
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(16),
                 topRight: Radius.circular(16),
@@ -724,7 +741,7 @@ Always be friendly, professional, and accurate.
           Expanded(
             child: Container(
               decoration: BoxDecoration(
-                color: const Color(0xFF1E3A5F),
+                color: AppColors.cardBg,
                 borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: const Color(0xFF4A6FA5)),
               ),
@@ -736,8 +753,10 @@ Always be friendly, professional, and accurate.
                 decoration: const InputDecoration(
                   hintText: "Ask about courses, books, or any topic...",
                   hintStyle: TextStyle(color: Colors.white38),
-                  contentPadding:
-                      EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
                   border: InputBorder.none,
                 ),
                 onSubmitted: (_) => _sendMessage(),
@@ -760,7 +779,9 @@ Always be friendly, professional, and accurate.
                   ? const Padding(
                       padding: EdgeInsets.all(12),
                       child: CircularProgressIndicator(
-                          color: Colors.white, strokeWidth: 2),
+                        color: Colors.white,
+                        strokeWidth: 2,
+                      ),
                     )
                   : const Icon(Icons.send, color: Colors.white, size: 20),
             ),
@@ -792,7 +813,9 @@ class _DotAnimationState extends State<_DotAnimation>
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 600));
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
     Future.delayed(Duration(milliseconds: widget.delay), () {
       if (mounted) _ctrl.repeat(reverse: true);
     });
@@ -813,7 +836,9 @@ class _DotAnimationState extends State<_DotAnimation>
         width: 7,
         height: 7,
         decoration: const BoxDecoration(
-            color: Color(0xFF6C94C6), shape: BoxShape.circle),
+          color: Color(0xFF6C94C6),
+          shape: BoxShape.circle,
+        ),
       ),
     );
   }

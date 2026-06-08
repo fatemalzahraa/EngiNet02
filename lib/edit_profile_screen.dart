@@ -10,6 +10,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/constants.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -49,56 +50,56 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> loadUser() async {
-  try {
-    final email = await SessionManager.getEmail();
+    try {
+      final email = await SessionManager.getEmail();
 
-    if (email == null) return;
+      if (email == null) return;
 
-    final user = await supabase
-        .from('users')
-        .select()
-        .eq('email', email)
-        .maybeSingle();
+      final user = await supabase
+          .from('users')
+          .select()
+          .eq('email', email)
+          .maybeSingle();
 
-    if (user == null) {
+      if (user == null) {
+        if (!mounted) return;
+        setState(() => isLoading = false);
+        return;
+      }
+
+      final studentProfile = await supabase
+          .from('student_profiles')
+          .select()
+          .eq('user_id', user['id'])
+          .maybeSingle();
+
+      usernameCtrl.text = user['username'] ?? '';
+      emailCtrl.text = user['email'] ?? '';
+      bioCtrl.text = user['bio'] ?? '';
+      phoneCtrl.text = user['phone'] ?? '';
+      universityCtrl.text =
+          studentProfile?['university'] ?? user['university'] ?? '';
+      specialtyCtrl.text =
+          studentProfile?['specialty'] ?? user['specialty'] ?? '';
+      locationCtrl.text = user['location'] ?? '';
+      linkedinCtrl.text = user['linkedin'] ?? '';
+      githubCtrl.text = user['github'] ?? '';
+      websiteCtrl.text = user['website'] ?? '';
+      skillsCtrl.text = user['skills'] ?? '';
+
+      showEmail = user['show_email'] ?? false;
+      profileImage = user['profile_image'] ?? '';
+
+      if (!mounted) return;
+
+      setState(() => isLoading = false);
+    } catch (e) {
+      debugPrint('LOAD USER ERROR: $e');
+
       if (!mounted) return;
       setState(() => isLoading = false);
-      return;
     }
-
-    final studentProfile = await supabase
-        .from('student_profiles')
-        .select()
-        .eq('user_id', user['id'])
-        .maybeSingle();
-
-    usernameCtrl.text = user['username'] ?? '';
-    emailCtrl.text = user['email'] ?? '';
-    bioCtrl.text = user['bio'] ?? '';
-    phoneCtrl.text = user['phone'] ?? '';
-    universityCtrl.text =
-        studentProfile?['university'] ?? user['university'] ?? '';
-    specialtyCtrl.text =
-        studentProfile?['specialty'] ?? user['specialty'] ?? '';
-    locationCtrl.text = user['location'] ?? '';
-    linkedinCtrl.text = user['linkedin'] ?? '';
-    githubCtrl.text = user['github'] ?? '';
-    websiteCtrl.text = user['website'] ?? '';
-    skillsCtrl.text = user['skills'] ?? '';
-
-    showEmail = user['show_email'] ?? false;
-    profileImage = user['profile_image'] ?? '';
-
-    if (!mounted) return;
-
-    setState(() => isLoading = false);
-  } catch (e) {
-    debugPrint('LOAD USER ERROR: $e');
-
-    if (!mounted) return;
-    setState(() => isLoading = false);
   }
-}
 
   Future<void> pickImage() async {
     final pickedFile = await picker.pickImage(
@@ -123,9 +124,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (token == null || token.isEmpty) {
         if (!mounted) return;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please login again')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Please login again')));
 
         setState(() => isSaving = false);
         return;
@@ -136,9 +137,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       if (!newEmail.contains('@') || !newEmail.contains('.')) {
         if (!mounted) return;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Enter a valid email')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Enter a valid email')));
 
         setState(() => isSaving = false);
         return;
@@ -146,8 +147,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       bool validUrl(String value) {
         if (value.trim().isEmpty) return true;
-        return value.startsWith('http://') ||
-            value.startsWith('https://');
+        return value.startsWith('http://') || value.startsWith('https://');
       }
 
       if (!validUrl(linkedinCtrl.text) ||
@@ -157,9 +157,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text(
-              'Links must start with http:// or https://',
-            ),
+            content: Text('Links must start with http:// or https://'),
           ),
         );
 
@@ -188,8 +186,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       request.fields['show_email'] = showEmail.toString();
 
       if (selectedImageFile != null) {
-        final ext =
-            path.extension(selectedImageFile!.path).toLowerCase();
+        final ext = path.extension(selectedImageFile!.path).toLowerCase();
 
         final subtype = ext == '.png' ? 'png' : 'jpeg';
 
@@ -204,8 +201,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       final streamedResponse = await request.send();
 
-      final responseBody =
-          await streamedResponse.stream.bytesToString();
+      final responseBody = await streamedResponse.stream.bytesToString();
 
       if (streamedResponse.statusCode >= 400) {
         throw Exception(responseBody);
@@ -215,7 +211,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: const Color(0xFFE3C39D),
+          backgroundColor: AppColors.accent,
           content: Text(
             'Profile updated successfully',
             style: GoogleFonts.poppins(
@@ -235,10 +231,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           backgroundColor: Colors.red,
-          content: Text(
-            'Error: $e',
-            style: GoogleFonts.poppins(),
-          ),
+          content: Text('Error: $e', style: GoogleFonts.poppins()),
         ),
       );
     } finally {
@@ -246,11 +239,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
-  Widget field(
-    TextEditingController ctrl,
-    String hint,
-    IconData icon,
-  ) {
+  Widget field(TextEditingController ctrl, String hint, IconData icon) {
     return Container(
       margin: const EdgeInsets.only(bottom: 18),
 
@@ -258,10 +247,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         borderRadius: BorderRadius.circular(22),
 
         gradient: LinearGradient(
-          colors: [
-            const Color(0xFFD8C09A),
-            const Color(0xFFE6D0AF),
-          ],
+          colors: [const Color(0xFFD8C09A), const Color(0xFFE6D0AF)],
         ),
 
         boxShadow: [
@@ -277,7 +263,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         controller: ctrl,
 
         style: GoogleFonts.poppins(
-          color: const Color(0xFF071739),
+          color: AppColors.primary,
           fontWeight: FontWeight.w600,
         ),
 
@@ -287,13 +273,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
           hintText: hint,
 
           hintStyle: GoogleFonts.poppins(
-            color: const Color(0xFF071739).withOpacity(0.55),
+            color: AppColors.primary.withOpacity(0.55),
           ),
 
-          prefixIcon: Icon(
-            icon,
-            color: const Color(0xFF071739),
-          ),
+          prefixIcon: Icon(icon, color: AppColors.primary),
 
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 18,
@@ -307,7 +290,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
 
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -316,28 +299,21 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
         title: Text(
           'Edit Profile',
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 28,
-          ),
+          style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 28),
         ),
 
-        iconTheme: const IconThemeData(
-          color: Color(0xFFE3C39D),
-        ),
+        iconTheme: const IconThemeData(color: AppColors.accent),
       ),
 
       body: isLoading
           ? const Center(
-              child: CircularProgressIndicator(
-                color: Color(0xFFE3C39D),
-              ),
+              child: CircularProgressIndicator(color: AppColors.accent),
             )
           : Container(
               decoration: const BoxDecoration(
                 gradient: LinearGradient(
                   colors: [
-                    Color(0xFF071739),
+                    AppColors.primary,
                     Color(0xFF0B2A5B),
                     Color(0xFF132F5C),
                   ],
@@ -374,19 +350,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
                             child: CircleAvatar(
                               radius: 62,
-                              backgroundColor:
-                                  const Color(0xFFD8C09A),
+                              backgroundColor: const Color(0xFFD8C09A),
 
-                              backgroundImage:
-                                  selectedImageFile != null
-                                      ? FileImage(
-                                          selectedImageFile!,
-                                        )
-                                      : profileImage.isNotEmpty
-                                          ? CachedNetworkImageProvider(
-                                              profileImage,
-                                            )
-                                          : null,
+                              backgroundImage: selectedImageFile != null
+                                  ? FileImage(selectedImageFile!)
+                                  : profileImage.isNotEmpty
+                                  ? CachedNetworkImageProvider(profileImage)
+                                  : null,
 
                               child: profileImage.isEmpty
                                   ? const Icon(
@@ -402,10 +372,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             padding: const EdgeInsets.all(10),
 
                             decoration: BoxDecoration(
-                              color: const Color(0xFFE3C39D),
+                              color: AppColors.accent,
                               shape: BoxShape.circle,
                               border: Border.all(
-                                color: const Color(0xFF071739),
+                                color: AppColors.primary,
                                 width: 2,
                               ),
                             ),
@@ -413,7 +383,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                             child: const Icon(
                               Icons.camera_alt_rounded,
                               size: 20,
-                              color: Color(0xFF071739),
+                              color: AppColors.primary,
                             ),
                           ),
                         ],
@@ -425,7 +395,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     Text(
                       'Tap to change photo',
                       style: GoogleFonts.poppins(
-                        color: const Color(0xFFE3C39D),
+                        color: AppColors.accent,
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
                       ),
@@ -433,35 +403,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
                     const SizedBox(height: 36),
 
-                    field(
-                      usernameCtrl,
-                      'Username',
-                      Icons.person_rounded,
-                    ),
+                    field(usernameCtrl, 'Username', Icons.person_rounded),
 
-                    field(
-                      emailCtrl,
-                      'Email',
-                      Icons.email_rounded,
-                    ),
+                    field(emailCtrl, 'Email', Icons.email_rounded),
 
-                    field(
-                      phoneCtrl,
-                      'Phone',
-                      Icons.phone_rounded,
-                    ),
+                    field(phoneCtrl, 'Phone', Icons.phone_rounded),
 
-                    field(
-                      bioCtrl,
-                      'Bio',
-                      Icons.edit_note_rounded,
-                    ),
+                    field(bioCtrl, 'Bio', Icons.edit_note_rounded),
 
-                    field(
-                      universityCtrl,
-                      'University',
-                      Icons.school_rounded,
-                    ),
+                    field(universityCtrl, 'University', Icons.school_rounded),
 
                     field(
                       specialtyCtrl,
@@ -469,35 +419,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       Icons.workspace_premium_rounded,
                     ),
 
-                    field(
-                      locationCtrl,
-                      'Location',
-                      Icons.location_on_rounded,
-                    ),
+                    field(locationCtrl, 'Location', Icons.location_on_rounded),
 
-                    field(
-                      linkedinCtrl,
-                      'LinkedIn',
-                      Icons.link_rounded,
-                    ),
+                    field(linkedinCtrl, 'LinkedIn', Icons.link_rounded),
 
-                    field(
-                      githubCtrl,
-                      'GitHub',
-                      Icons.code_rounded,
-                    ),
+                    field(githubCtrl, 'GitHub', Icons.code_rounded),
 
-                    field(
-                      websiteCtrl,
-                      'Website',
-                      Icons.language_rounded,
-                    ),
+                    field(websiteCtrl, 'Website', Icons.language_rounded),
 
-                    field(
-                      skillsCtrl,
-                      'Skills',
-                      Icons.psychology_rounded,
-                    ),
+                    field(skillsCtrl, 'Skills', Icons.psychology_rounded),
 
                     Container(
                       margin: const EdgeInsets.only(top: 8),
@@ -510,7 +440,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       child: SwitchListTile(
                         value: showEmail,
 
-                        activeColor: const Color(0xFFE3C39D),
+                        activeColor: AppColors.accent,
 
                         title: Text(
                           'Show Email',
@@ -535,16 +465,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       height: 58,
 
                       child: ElevatedButton(
-                        onPressed:
-                            isSaving ? null : saveProfile,
+                        onPressed: isSaving ? null : saveProfile,
 
                         style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                              const Color(0xFFE3C39D),
+                          backgroundColor: AppColors.accent,
 
                           shape: RoundedRectangleBorder(
-                            borderRadius:
-                                BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(20),
                           ),
 
                           elevation: 8,
@@ -552,12 +479,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
                         child: isSaving
                             ? const CircularProgressIndicator(
-                                color: Color(0xFF071739),
+                                color: AppColors.primary,
                               )
                             : Text(
                                 'Save Changes',
                                 style: GoogleFonts.poppins(
-                                  color: const Color(0xFF071739),
+                                  color: AppColors.primary,
                                   fontSize: 16,
                                   fontWeight: FontWeight.bold,
                                 ),

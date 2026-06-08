@@ -22,6 +22,7 @@ from profile_router import router as profile_router
 from questions_router import router as question_router
 from recommendations_router import router as recommendations_router
 from search_router import router as search_router
+from routers.ai_router import router as ai_router
 
 from dependencies import (
     SECRET_KEY,
@@ -47,6 +48,7 @@ app.include_router(post_router)
 app.include_router(question_router)
 app.include_router(recommendations_router)
 app.include_router(search_router)
+app.include_router(ai_router)
 
 app.add_middleware(
     CORSMiddleware,

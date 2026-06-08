@@ -10,6 +10,7 @@ import 'package:enginet/engineer_profile.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/post_comments_screen.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -118,154 +119,159 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> loadData() async {
-  try {
-    await _loadCurrentUser();
+    try {
+      await _loadCurrentUser();
 
-    if (currentUserId != null) {
-      final followsRes = await _supabase
-          .from('follows')
-          .select('following_id')
-          .eq('follower_id', currentUserId!);
+      if (currentUserId != null) {
+        final followsRes = await _supabase
+            .from('follows')
+            .select('following_id')
+            .eq('follower_id', currentUserId!);
 
-      followedEngineerIds = (followsRes as List)
-          .map((e) => e['following_id'] as int)
-          .toSet();
-    }
-
-    _page = 0;
-
-    // ── Öğrencinin ilgi alanlarını al ──
-    List<String> studentInterests = [];
-    String studentSpecialty = '';
-
-    if (currentUserId != null) {
-      try {
-        final profileRes = await _supabase
-            .from('student_profiles')
-            .select('interests, specialty')
-            .eq('user_id', currentUserId!)
-            .maybeSingle();
-
-        if (profileRes != null) {
-          studentSpecialty = profileRes['specialty']?.toString() ?? '';
-          final interestsStr = profileRes['interests']?.toString() ?? '';
-          studentInterests = interestsStr
-              .split(',')
-              .map((e) => e.trim().toLowerCase())
-              .where((e) => e.isNotEmpty)
-              .toList();
-        }
-      } catch (e) {
-        debugPrint('Student profile fetch error: $e');
+        followedEngineerIds = (followsRes as List)
+            .map((e) => e['following_id'] as int)
+            .toSet();
       }
-    }
 
-    // ── Tüm mühendisleri al ──
-    final allEngineersRes = await _supabase
-        .from('users')
-        .select('id, username, profile_image, points, university')
-        .eq('role', 'engineer');
+      _page = 0;
 
-    List<dynamic> allEngineers = allEngineersRes as List;
+      // ── Öğrencinin ilgi alanlarını al ──
+      List<String> studentInterests = [];
+      String studentSpecialty = '';
 
-    // ── İlgi alanına göre filtrele ──
-    List<dynamic> matchedEngineers = [];
-    List<dynamic> otherEngineers = [];
+      if (currentUserId != null) {
+        try {
+          final profileRes = await _supabase
+              .from('student_profiles')
+              .select('interests, specialty')
+              .eq('user_id', currentUserId!)
+              .maybeSingle();
 
-    if (studentInterests.isNotEmpty || studentSpecialty.isNotEmpty) {
-      // Mühendis profillerini al
-      final engineerIds = allEngineers
-          .map((e) => e['id'] as int)
-          .toList();
-
-      final engProfiles = engineerIds.isNotEmpty
-          ? await _supabase
-              .from('engineer_profiles')
-              .select('user_id, specialty, skills')
-              .inFilter('user_id', engineerIds)
-          : [];
-
-      final profileMap = {
-        for (var p in engProfiles) p['user_id'] as int: p
-      };
-
-      for (final eng in allEngineers) {
-        final engId = eng['id'] as int;
-        if (followedEngineerIds.contains(engId) || engId == currentUserId) {
-          continue;
-        }
-
-        final profile = profileMap[engId];
-        if (profile == null) {
-          otherEngineers.add(eng);
-          continue;
-        }
-
-        final engSpecialty = (profile['specialty'] ?? '').toString().toLowerCase();
-        final engSkills = (profile['skills'] ?? '').toString().toLowerCase();
-
-        final isMatch = studentInterests.any((interest) =>
-            engSpecialty.contains(interest) || engSkills.contains(interest)) ||
-            (studentSpecialty.isNotEmpty &&
-                engSpecialty.contains(studentSpecialty.toLowerCase()));
-
-        if (isMatch) {
-          matchedEngineers.add(eng);
-        } else {
-          otherEngineers.add(eng);
+          if (profileRes != null) {
+            studentSpecialty = profileRes['specialty']?.toString() ?? '';
+            final interestsStr = profileRes['interests']?.toString() ?? '';
+            studentInterests = interestsStr
+                .split(',')
+                .map((e) => e.trim().toLowerCase())
+                .where((e) => e.isNotEmpty)
+                .toList();
+          }
+        } catch (e) {
+          debugPrint('Student profile fetch error: $e');
         }
       }
-    } else {
-      otherEngineers = allEngineers
-          .where((e) =>
-              !followedEngineerIds.contains(e['id'] as int) &&
-              e['id'] != currentUserId)
-          .toList();
+
+      // ── Tüm mühendisleri al ──
+      final allEngineersRes = await _supabase
+          .from('users')
+          .select('id, username, profile_image, points, university')
+          .eq('role', 'engineer');
+
+      List<dynamic> allEngineers = allEngineersRes as List;
+
+      // ── İlgi alanına göre filtrele ──
+      List<dynamic> matchedEngineers = [];
+      List<dynamic> otherEngineers = [];
+
+      if (studentInterests.isNotEmpty || studentSpecialty.isNotEmpty) {
+        // Mühendis profillerini al
+        final engineerIds = allEngineers.map((e) => e['id'] as int).toList();
+
+        final engProfiles = engineerIds.isNotEmpty
+            ? await _supabase
+                  .from('engineer_profiles')
+                  .select('user_id, specialty, skills')
+                  .inFilter('user_id', engineerIds)
+            : [];
+
+        final profileMap = {for (var p in engProfiles) p['user_id'] as int: p};
+
+        for (final eng in allEngineers) {
+          final engId = eng['id'] as int;
+          if (followedEngineerIds.contains(engId) || engId == currentUserId) {
+            continue;
+          }
+
+          final profile = profileMap[engId];
+          if (profile == null) {
+            otherEngineers.add(eng);
+            continue;
+          }
+
+          final engSpecialty = (profile['specialty'] ?? '')
+              .toString()
+              .toLowerCase();
+          final engSkills = (profile['skills'] ?? '').toString().toLowerCase();
+
+          final isMatch =
+              studentInterests.any(
+                (interest) =>
+                    engSpecialty.contains(interest) ||
+                    engSkills.contains(interest),
+              ) ||
+              (studentSpecialty.isNotEmpty &&
+                  engSpecialty.contains(studentSpecialty.toLowerCase()));
+
+          if (isMatch) {
+            matchedEngineers.add(eng);
+          } else {
+            otherEngineers.add(eng);
+          }
+        }
+      } else {
+        otherEngineers = allEngineers
+            .where(
+              (e) =>
+                  !followedEngineerIds.contains(e['id'] as int) &&
+                  e['id'] != currentUserId,
+            )
+            .toList();
+      }
+
+      // Matched önce, sonra diğerleri
+      final engineersData = [...matchedEngineers, ...otherEngineers];
+
+      // ── Posts ──
+      final supabaseUrl = dotenv.env['SUPABASE_URL']!;
+      final supabaseKey = dotenv.env['SUPABASE_ANON_KEY']!;
+
+      final postsRes = await http.get(
+        Uri.parse(
+          '$supabaseUrl/rest/v1/posts'
+          '?select=*'
+          '&order=created_at.desc'
+          '&limit=$_limit'
+          '&offset=0',
+        ),
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': 'Bearer $supabaseKey',
+        },
+      );
+
+      final postsData = postsRes.statusCode == 200
+          ? jsonDecode(postsRes.body) as List<dynamic>
+          : <dynamic>[];
+
+      final enrichedPosts = await _enrichPosts(postsData);
+
+      if (!mounted) return;
+      setState(() {
+        engineers = engineersData;
+        posts = enrichedPosts;
+        _hasMore = postsData.length == _limit;
+        isLoading = false;
+        recommendedCourses = [];
+        recommendedArticles = [];
+        recommendedBooks = [];
+      });
+    } catch (e) {
+      debugPrint('Error loading data: $e');
+      if (!mounted) return;
+      setState(() => isLoading = false);
     }
-
-    // Matched önce, sonra diğerleri
-    final engineersData = [...matchedEngineers, ...otherEngineers];
-
-    // ── Posts ──
-    final supabaseUrl = dotenv.env['SUPABASE_URL']!;
-    final supabaseKey = dotenv.env['SUPABASE_ANON_KEY']!;
-
-    final postsRes = await http.get(
-      Uri.parse(
-        '$supabaseUrl/rest/v1/posts'
-        '?select=*'
-        '&order=created_at.desc'
-        '&limit=$_limit'
-        '&offset=0',
-      ),
-      headers: {
-        'apikey': supabaseKey,
-        'Authorization': 'Bearer $supabaseKey',
-      },
-    );
-
-    final postsData = postsRes.statusCode == 200
-        ? jsonDecode(postsRes.body) as List<dynamic>
-        : <dynamic>[];
-
-    final enrichedPosts = await _enrichPosts(postsData);
-
-    if (!mounted) return;
-    setState(() {
-      engineers = engineersData;
-      posts = enrichedPosts;
-      _hasMore = postsData.length == _limit;
-      isLoading = false;
-      recommendedCourses = [];
-      recommendedArticles = [];
-      recommendedBooks = [];
-    });
-  } catch (e) {
-    debugPrint('Error loading data: $e');
-    if (!mounted) return;
-    setState(() => isLoading = false);
   }
-}
+
   Future<void> toggleFollowEngineer(int engineerId) async {
     if (currentUserId == null) return;
 
@@ -559,7 +565,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: isLoading
           ? ListView(
               padding: const EdgeInsets.all(16),
@@ -774,7 +780,7 @@ class _HomeScreenState extends State<HomeScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFFD8C09A),
                 borderRadius: BorderRadius.circular(24),
-                border: Border.all(color: const Color(0xFFE3C39D), width: 2),
+                border: Border.all(color: AppColors.accent, width: 2),
               ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1055,7 +1061,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? Icons.bookmark
                       : Icons.bookmark_border,
                   size: 22,
-                  color: const Color(0xFF071739),
+                  color: AppColors.primary,
                 ),
               ),
             ],
@@ -1071,7 +1077,7 @@ class _HomeScreenState extends State<HomeScreen> {
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(color: const Color(0xFFE3C39D), width: 1.5),
+        border: Border.all(color: AppColors.accent, width: 1.5),
       ),
       child: ClipOval(
         child: imageUrl.isNotEmpty

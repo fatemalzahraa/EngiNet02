@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:enginet/post_comments_screen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class SavedPostsScreen extends StatelessWidget {
   final List posts;
@@ -11,19 +12,16 @@ class SavedPostsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: Color(0xFFE3C39D)),
+          icon: const Icon(Icons.arrow_back, color: AppColors.accent),
           onPressed: () => Navigator.pop(context),
         ),
         title: Text(
           'Posts',
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 24,
-          ),
+          style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 24),
         ),
       ),
       body: ListView.builder(

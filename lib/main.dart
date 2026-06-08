@@ -15,24 +15,21 @@ import 'package:enginet/add_article.dart';
 import 'package:enginet/add_book.dart';
 import 'student_questions_screen.dart';
 import 'engineer_questions_screen.dart';
-
-
+import 'package:enginet/core/app_colors.dart';
 
 const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await dotenv.load(fileName: '.env');
-  
+
   await Supabase.initialize(
     url: dotenv.env['SUPABASE_URL']!,
     anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
   );
 
   runApp(
-    _supabaseAnonKey.isEmpty
-        ? const MissingSupabaseConfigApp()
-        : const MyApp(),
+    _supabaseAnonKey.isEmpty ? const MissingSupabaseConfigApp() : const MyApp(),
   );
 }
 
@@ -72,24 +69,20 @@ class MissingSupabaseConfigApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         body: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(
-                  Icons.cloud_off,
-                  color: Color(0xFFE3C39D),
-                  size: 56,
-                ),
+                const Icon(Icons.cloud_off, color: AppColors.accent, size: 56),
                 const SizedBox(height: 16),
                 const Text(
                   'Supabase configuration is missing.',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    color: Color(0xFFE3C39D),
+                    color: AppColors.accent,
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
                   ),

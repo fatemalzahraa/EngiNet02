@@ -4,12 +4,14 @@ import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:enginet/core/app_colors.dart';
 
 class EngineerQuestionsScreen extends StatefulWidget {
   const EngineerQuestionsScreen({super.key});
 
   @override
-  State<EngineerQuestionsScreen> createState() => _EngineerQuestionsScreenState();
+  State<EngineerQuestionsScreen> createState() =>
+      _EngineerQuestionsScreenState();
 }
 
 class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
@@ -120,7 +122,7 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
-        color: const Color(0xFFE3C39D),
+        color: AppColors.accent,
         borderRadius: BorderRadius.circular(30),
       ),
       child: TextField(
@@ -139,7 +141,7 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
@@ -150,7 +152,7 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
                 'Engineer Info',
                 style: GoogleFonts.agbalumo(
                   fontSize: 36,
-                  color: const Color(0xFFE3C39D),
+                  color: AppColors.accent,
                 ),
               ),
               const SizedBox(height: 8),
@@ -233,7 +235,7 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
                   return ChoiceChip(
                     label: Text(skill),
                     selected: selected,
-                    selectedColor: const Color(0xFFE3C39D),
+                    selectedColor: AppColors.accent,
                     backgroundColor: Colors.white24,
                     labelStyle: TextStyle(
                       color: selected ? Colors.black : Colors.white,
@@ -260,7 +262,7 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF4B6382),
+                      color: AppColors.cardBg,
                       borderRadius: BorderRadius.circular(34),
                     ),
                     child: Center(

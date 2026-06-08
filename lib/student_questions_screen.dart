@@ -4,6 +4,7 @@ import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
+import 'package:enginet/core/app_colors.dart';
 
 class StudentQuestionsScreen extends StatefulWidget {
   const StudentQuestionsScreen({super.key});
@@ -144,8 +145,10 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
                 fillColor: Colors.white,
                 hintText: hint,
                 hintStyle: const TextStyle(color: Colors.black45),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(9),
                   borderSide: BorderSide.none,
@@ -170,24 +173,29 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
         duration: const Duration(milliseconds: 180),
         padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 13),
         decoration: BoxDecoration(
-          color: selected ? const Color(0xFFE3C39D).withOpacity(0.16) : Colors.white.withOpacity(0.06),
+          color: selected
+              ? AppColors.accent.withOpacity(0.16)
+              : Colors.white.withOpacity(0.06),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: selected ? const Color(0xFFE3C39D) : Colors.white.withOpacity(0.13),
+            color: selected ? AppColors.accent : Colors.white.withOpacity(0.13),
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             if (selected && withCheck) ...[
-              const Icon(Icons.check_circle_outline,
-                  color: Color(0xFF87E0CB), size: 18),
+              const Icon(
+                Icons.check_circle_outline,
+                color: Color(0xFF87E0CB),
+                size: 18,
+              ),
               const SizedBox(width: 8),
             ],
             Text(
               text,
               style: GoogleFonts.robotoCondensed(
-                color: selected ? const Color(0xFFE3C39D) : Colors.white54,
+                color: selected ? AppColors.accent : Colors.white54,
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
               ),
@@ -207,7 +215,7 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
             margin: EdgeInsets.only(right: index == 3 ? 0 : 8),
             decoration: BoxDecoration(
               color: index < 2
-                  ? const Color(0xFFE3C39D)
+                  ? AppColors.accent
                   : Colors.white.withOpacity(0.13),
               borderRadius: BorderRadius.circular(20),
             ),
@@ -219,12 +227,13 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final canContinue = _universityController.text.trim().isNotEmpty &&
+    final canContinue =
+        _universityController.text.trim().isNotEmpty &&
         _specialtyController.text.trim().isNotEmpty &&
         _selectedInterests.isNotEmpty;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.fromLTRB(28, 34, 28, 28),
@@ -236,7 +245,7 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
                   Text(
                     'Student info',
                     style: GoogleFonts.robotoCondensed(
-                      color: const Color(0xFFE3C39D),
+                      color: AppColors.accent,
                       fontSize: 43,
                       fontWeight: FontWeight.bold,
                     ),
@@ -344,7 +353,7 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
                         padding: const EdgeInsets.all(17),
                         decoration: BoxDecoration(
                           color: canContinue
-                              ? const Color(0xFFE3C39D)
+                              ? AppColors.accent
                               : Colors.white.withOpacity(0.05),
                           borderRadius: BorderRadius.circular(8),
                         ),

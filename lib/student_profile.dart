@@ -18,6 +18,7 @@ import 'package:enginet/saved_posts_screen.dart';
 import 'package:enginet/questions_screen.dart';
 import 'package:enginet/settings_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class StudentProfileScreen extends StatefulWidget {
   const StudentProfileScreen({super.key});
@@ -42,56 +43,57 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   List<dynamic> myQuestions = [];
   bool _realtimeStarted = false;
   bool _isRefreshingProfile = false;
-  
 
   @override
   void initState() {
     super.initState();
     loadProfile();
   }
+
   StreamSubscription<List<Map<String, dynamic>>>? _articleBookmarksSub;
-StreamSubscription<List<Map<String, dynamic>>>? _savedPostsSub;
-StreamSubscription<List<Map<String, dynamic>>>? _savedBooksSub;
-@override
-void dispose() {
-  _articleBookmarksSub?.cancel();
-  _savedPostsSub?.cancel();
-  _savedBooksSub?.cancel();
-  super.dispose();
-}
-  Future<void> openLink(String url) async {
-  if (url.isEmpty) return;
-
-  final uri = Uri.parse(url);
-
-  if (await canLaunchUrl(uri)) {
-    await launchUrl(uri);
+  StreamSubscription<List<Map<String, dynamic>>>? _savedPostsSub;
+  StreamSubscription<List<Map<String, dynamic>>>? _savedBooksSub;
+  @override
+  void dispose() {
+    _articleBookmarksSub?.cancel();
+    _savedPostsSub?.cancel();
+    _savedBooksSub?.cancel();
+    super.dispose();
   }
-}
-void _startRealtime(int userId) {
-  _articleBookmarksSub?.cancel();
-  _savedPostsSub?.cancel();
-  _savedBooksSub?.cancel();
 
-  _articleBookmarksSub = _supabase
-      .from('article_bookmarks')
-      .stream(primaryKey: ['user_id', 'article_id'])
-      .eq('user_id', userId)
-      .listen((_) => loadProfile());
+  Future<void> openLink(String url) async {
+    if (url.isEmpty) return;
 
-  _savedPostsSub = _supabase
-      .from('saved_posts')
-      .stream(primaryKey: ['user_id', 'post_id'])
-      .eq('user_id', userId)
-      .listen((_) => loadProfile());
+    final uri = Uri.parse(url);
 
-  _savedBooksSub = _supabase
-      .from('bookmarks')
-      .stream(primaryKey: ['user_id', 'book_id'])
-      .eq('user_id', userId)
-      .listen((_) => loadProfile());
-}
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    }
+  }
 
+  void _startRealtime(int userId) {
+    _articleBookmarksSub?.cancel();
+    _savedPostsSub?.cancel();
+    _savedBooksSub?.cancel();
+
+    _articleBookmarksSub = _supabase
+        .from('article_bookmarks')
+        .stream(primaryKey: ['user_id', 'article_id'])
+        .eq('user_id', userId)
+        .listen((_) => loadProfile());
+
+    _savedPostsSub = _supabase
+        .from('saved_posts')
+        .stream(primaryKey: ['user_id', 'post_id'])
+        .eq('user_id', userId)
+        .listen((_) => loadProfile());
+
+    _savedBooksSub = _supabase
+        .from('bookmarks')
+        .stream(primaryKey: ['user_id', 'book_id'])
+        .eq('user_id', userId)
+        .listen((_) => loadProfile());
+  }
 
   // ─── Pick & upload profile image ─────────────────────────────────────────
   Future<String?> _pickAndUploadProfileImage() async {
@@ -135,21 +137,19 @@ void _startRealtime(int userId) {
 
       final userId = userRes['id'];
       if (!_realtimeStarted) {
-  _realtimeStarted = true;
-  _startRealtime(userId);
-}
-    final studentProfileList = await _supabase
-    .from('student_profiles')
-    .select()
-    .eq('user_id', userId);
+        _realtimeStarted = true;
+        _startRealtime(userId);
+      }
+      final studentProfileList = await _supabase
+          .from('student_profiles')
+          .select()
+          .eq('user_id', userId);
 
+      Map<String, dynamic>? studentProfileRes;
 
-
-Map<String, dynamic>? studentProfileRes;
-
-if (studentProfileList.isNotEmpty) {
-  studentProfileRes = studentProfileList.first;
-}
+      if (studentProfileList.isNotEmpty) {
+        studentProfileRes = studentProfileList.first;
+      }
 
       final followingRes = await _supabase
           .from('follows')
@@ -245,13 +245,13 @@ if (studentProfileList.isNotEmpty) {
       }
 
       if (!mounted) return;
-    
+
       setState(() {
         user = {
           ...userRes,
-         if (studentProfileRes != null) ...studentProfileRes,
-        'id': userRes['id'],
-};
+          if (studentProfileRes != null) ...studentProfileRes,
+          'id': userRes['id'],
+        };
         myCourses = uniqueCourses;
         isLoading = false;
         followingCount = engineersOnly.length;
@@ -271,7 +271,7 @@ if (studentProfileList.isNotEmpty) {
         myQuestions = enrichedQuestions;
       });
     } finally {
-    _isRefreshingProfile = false;
+      _isRefreshingProfile = false;
       if (!mounted) return;
       setState(() => isLoading = false);
     }
@@ -285,10 +285,10 @@ if (studentProfileList.isNotEmpty) {
     showDialog(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         title: Text(
           'Edit Profile',
-          style: GoogleFonts.agbalumo(color: const Color(0xFFE3C39D)),
+          style: GoogleFonts.agbalumo(color: AppColors.accent),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
@@ -311,7 +311,7 @@ if (studentProfileList.isNotEmpty) {
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFE3C39D),
+                  color: AppColors.accent,
                   borderRadius: BorderRadius.circular(16),
                 ),
                 child: const Row(
@@ -354,7 +354,7 @@ if (studentProfileList.isNotEmpty) {
             },
             child: Text(
               'Save',
-              style: GoogleFonts.agbalumo(color: const Color(0xFFE3C39D)),
+              style: GoogleFonts.agbalumo(color: AppColors.accent),
             ),
           ),
         ],
@@ -369,7 +369,7 @@ if (studentProfileList.isNotEmpty) {
   }) {
     return Container(
       decoration: BoxDecoration(
-        color: const Color(0xFFE3C39D),
+        color: AppColors.accent,
         borderRadius: BorderRadius.circular(16),
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -389,7 +389,7 @@ if (studentProfileList.isNotEmpty) {
         Text(
           title,
           style: const TextStyle(
-            color: Color(0xFFE3C39D),
+            color: AppColors.accent,
             fontSize: 20,
             fontWeight: FontWeight.bold,
           ),
@@ -400,7 +400,7 @@ if (studentProfileList.isNotEmpty) {
             child: const Text(
               'See more >',
               style: TextStyle(
-                color: Color(0xFFE3C39D),
+                color: AppColors.accent,
                 fontSize: 14,
                 fontWeight: FontWeight.bold,
               ),
@@ -454,7 +454,7 @@ if (studentProfileList.isNotEmpty) {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Color(0xFFE3C39D),
+                      color: AppColors.accent,
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                     ),
@@ -513,7 +513,7 @@ if (studentProfileList.isNotEmpty) {
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Color(0xFFE3C39D),
+                      color: AppColors.accent,
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                     ),
@@ -575,7 +575,7 @@ if (studentProfileList.isNotEmpty) {
                 IconButton(
                   icon: const Icon(
                     Icons.bookmark_remove,
-                    color: Color(0xFF071739),
+                    color: AppColors.primary,
                   ),
                   onPressed: () async {
                     final userId = user?['id'];
@@ -906,7 +906,7 @@ if (studentProfileList.isNotEmpty) {
               margin: const EdgeInsets.only(bottom: 14),
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                color: const Color(0xFFE3C39D),
+                color: AppColors.accent,
                 borderRadius: BorderRadius.circular(16),
               ),
               child: Column(
@@ -915,7 +915,7 @@ if (studentProfileList.isNotEmpty) {
                   Text(
                     title,
                     style: const TextStyle(
-                      color: Color(0xFF071739),
+                      color: AppColors.primary,
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
@@ -926,7 +926,7 @@ if (studentProfileList.isNotEmpty) {
                     maxLines: 3,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Color(0xFF071739),
+                      color: AppColors.primary,
                       fontSize: 13,
                     ),
                   ),
@@ -956,7 +956,7 @@ if (studentProfileList.isNotEmpty) {
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Scaffold(
-        backgroundColor: Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         body: Center(
           child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
         ),
@@ -969,7 +969,7 @@ if (studentProfileList.isNotEmpty) {
     final points = user?['points'] ?? 0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: Column(
           children: [
@@ -991,7 +991,7 @@ if (studentProfileList.isNotEmpty) {
                       width: 36,
                       height: 36,
                       decoration: const BoxDecoration(
-                        color: Color(0xFFE3C39D),
+                        color: AppColors.accent,
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -1005,24 +1005,21 @@ if (studentProfileList.isNotEmpty) {
                   Text(
                     username,
                     style: GoogleFonts.agbalumo(
-                      color: const Color(0xFFE3C39D),
+                      color: AppColors.accent,
                       fontSize: 22,
                     ),
                   ),
                   const Spacer(),
                   GestureDetector(
                     onTap: () {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => const SettingsScreen(),
-    ),
-  );
-},
-                    child: const Icon(
-  Icons.settings,
-  color: Color(0xFFE3C39D),
-)
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const SettingsScreen(),
+                        ),
+                      );
+                    },
+                    child: const Icon(Icons.settings, color: AppColors.accent),
                   ),
                 ],
               ),
@@ -1051,7 +1048,7 @@ if (studentProfileList.isNotEmpty) {
                   Text(
                     username,
                     style: GoogleFonts.agbalumo(
-                      color: const Color(0xFFE3C39D),
+                      color: AppColors.accent,
                       fontSize: 22,
                     ),
                   ),
@@ -1101,25 +1098,23 @@ if (studentProfileList.isNotEmpty) {
                   ),
                 ),
               ),
-             
 
-Column(
-  children: [
-    _buildInfoLine('University', user?['university']),
-    _buildInfoLine('Specialty', user?['specialty']),
-    _buildInfoLine('Year', user?['study_year']),
-    _buildInfoLine('Level', user?['level']),
-    _buildInfoLine('Interests', user?['interests']),
-    _buildInfoLine('Language', user?['preferred_language']),
-  ],
-),
+            Column(
+              children: [
+                _buildInfoLine('University', user?['university']),
+                _buildInfoLine('Specialty', user?['specialty']),
+                _buildInfoLine('Year', user?['study_year']),
+                _buildInfoLine('Level', user?['level']),
+                _buildInfoLine('Interests', user?['interests']),
+                _buildInfoLine('Language', user?['preferred_language']),
+              ],
+            ),
 
-if (user?['show_email'] == true)
-  Text(
-    'Email: ${user!['email']}',
-    style: const TextStyle(color: Colors.white70),
-  ),
-
+            if (user?['show_email'] == true)
+              Text(
+                'Email: ${user!['email']}',
+                style: const TextStyle(color: Colors.white70),
+              ),
 
             const Divider(color: Colors.white24),
 
@@ -1179,9 +1174,7 @@ if (user?['show_email'] == true)
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                color: isSelected
-                    ? const Color(0xFFE3C39D)
-                    : Colors.transparent,
+                color: isSelected ? AppColors.accent : Colors.transparent,
                 width: 2,
               ),
             ),
@@ -1190,7 +1183,7 @@ if (user?['show_email'] == true)
             child: Text(
               label,
               style: GoogleFonts.agbalumo(
-                color: isSelected ? const Color(0xFFE3C39D) : Colors.white54,
+                color: isSelected ? AppColors.accent : Colors.white54,
                 fontSize: 16,
               ),
             ),
@@ -1200,6 +1193,7 @@ if (user?['show_email'] == true)
     );
   }
 }
+
 Widget _buildInfoLine(String label, dynamic value) {
   final text = value?.toString() ?? '';
   if (text.isEmpty) return const SizedBox.shrink();
@@ -1210,10 +1204,7 @@ Widget _buildInfoLine(String label, dynamic value) {
       alignment: Alignment.centerLeft,
       child: Text(
         '$label: $text',
-        style: const TextStyle(
-          color: Colors.white70,
-          fontSize: 14,
-        ),
+        style: const TextStyle(color: Colors.white70, fontSize: 14),
       ),
     ),
   );

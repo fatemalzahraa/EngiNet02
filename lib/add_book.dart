@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class AddBookScreen extends StatefulWidget {
   const AddBookScreen({super.key});
@@ -75,7 +76,9 @@ class _AddBookScreenState extends State<AddBookScreen> {
     final username = await SessionManager.getUsername() ?? 'user';
     final fileName = '${DateTime.now().millisecondsSinceEpoch}_$username.pdf';
     final filePath = 'book-files/$fileName';
-    await _supabase.storage.from('books').upload(
+    await _supabase.storage
+        .from('books')
+        .upload(
           filePath,
           _selectedBookFile!,
           fileOptions: const FileOptions(upsert: true),
@@ -93,9 +96,9 @@ class _AddBookScreenState extends State<AddBookScreen> {
       setState(() => _selectedImage = File(pickedFile.path));
     } catch (e) {
       debugPrint('Error picking image: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to pick image')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Failed to pick image')));
     }
   }
 
@@ -103,9 +106,12 @@ class _AddBookScreenState extends State<AddBookScreen> {
     if (_selectedImage == null) return null;
     final username = await SessionManager.getUsername() ?? 'user';
     final fileExt = path.extension(_selectedImage!.path);
-    final fileName = '${DateTime.now().millisecondsSinceEpoch}_$username$fileExt';
+    final fileName =
+        '${DateTime.now().millisecondsSinceEpoch}_$username$fileExt';
     final filePath = 'book-images/$fileName';
-    await _supabase.storage.from('books').upload(
+    await _supabase.storage
+        .from('books')
+        .upload(
           filePath,
           _selectedImage!,
           fileOptions: const FileOptions(upsert: true),
@@ -163,16 +169,16 @@ class _AddBookScreenState extends State<AddBookScreen> {
       await addPoints(userData['id'], 5);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Book added!')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Book added!')));
       Navigator.pop(context, true);
     } catch (e) {
       debugPrint('Error adding book: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to add book')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Failed to add book')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -181,15 +187,15 @@ class _AddBookScreenState extends State<AddBookScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         leading: GestureDetector(
           onTap: () => Navigator.pop(context),
           child: Container(
             margin: const EdgeInsets.all(8),
             decoration: const BoxDecoration(
-              color: Color(0xFFE3C39D),
+              color: AppColors.accent,
               shape: BoxShape.circle,
             ),
             child: const Icon(Icons.arrow_back, color: Colors.black, size: 18),
@@ -197,10 +203,7 @@ class _AddBookScreenState extends State<AddBookScreen> {
         ),
         title: Text(
           'New Book',
-          style: GoogleFonts.agbalumo(
-            color: const Color(0xFFE3C39D),
-            fontSize: 22,
-          ),
+          style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 22),
         ),
         actions: [
           Padding(
@@ -208,7 +211,7 @@ class _AddBookScreenState extends State<AddBookScreen> {
             child: ElevatedButton(
               onPressed: _isLoading ? null : _submitBook,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFE3C39D),
+                backgroundColor: AppColors.accent,
                 foregroundColor: Colors.black,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
@@ -235,12 +238,20 @@ class _AddBookScreenState extends State<AddBookScreen> {
           children: [
             _label('Book Title *'),
             const SizedBox(height: 8),
-            _field(controller: _titleController, hint: 'Book title', maxLines: 1),
+            _field(
+              controller: _titleController,
+              hint: 'Book title',
+              maxLines: 1,
+            ),
 
             const SizedBox(height: 16),
             _label('Author'),
             const SizedBox(height: 8),
-            _field(controller: _authorController, hint: 'Author name', maxLines: 1),
+            _field(
+              controller: _authorController,
+              hint: 'Author name',
+              maxLines: 1,
+            ),
 
             const SizedBox(height: 16),
             _label('Category'),
@@ -274,12 +285,20 @@ class _AddBookScreenState extends State<AddBookScreen> {
             const SizedBox(height: 16),
             _label('Description (optional)'),
             const SizedBox(height: 8),
-            _field(controller: _descriptionController, hint: 'Short description...', maxLines: 4),
+            _field(
+              controller: _descriptionController,
+              hint: 'Short description...',
+              maxLines: 4,
+            ),
 
             const SizedBox(height: 16),
             _label('Book Link or PDF File *'),
             const SizedBox(height: 8),
-            _field(controller: _bookUrlController, hint: 'https://example.com/book.pdf', maxLines: 1),
+            _field(
+              controller: _bookUrlController,
+              hint: 'https://example.com/book.pdf',
+              maxLines: 1,
+            ),
             const SizedBox(height: 8),
             GestureDetector(
               onTap: _pickBookFile,
@@ -296,7 +315,9 @@ class _AddBookScreenState extends State<AddBookScreen> {
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        _selectedBookFile == null ? 'Choose PDF file' : 'PDF file selected ✓',
+                        _selectedBookFile == null
+                            ? 'Choose PDF file'
+                            : 'PDF file selected ✓',
                         style: const TextStyle(color: Colors.black87),
                       ),
                     ),
@@ -320,14 +341,25 @@ class _AddBookScreenState extends State<AddBookScreen> {
                 child: _selectedImage != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.file(_selectedImage!, fit: BoxFit.cover, width: double.infinity),
+                        child: Image.file(
+                          _selectedImage!,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                        ),
                       )
                     : const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.add_photo_alternate, size: 42, color: Colors.black54),
+                          Icon(
+                            Icons.add_photo_alternate,
+                            size: 42,
+                            color: Colors.black54,
+                          ),
                           SizedBox(height: 8),
-                          Text('Tap to choose cover image', style: TextStyle(color: Colors.black54)),
+                          Text(
+                            'Tap to choose cover image',
+                            style: TextStyle(color: Colors.black54),
+                          ),
                         ],
                       ),
               ),
@@ -336,7 +368,10 @@ class _AddBookScreenState extends State<AddBookScreen> {
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => setState(() => _selectedImage = null),
-                child: const Text('Remove image', style: TextStyle(color: Colors.redAccent)),
+                child: const Text(
+                  'Remove image',
+                  style: TextStyle(color: Colors.redAccent),
+                ),
               ),
             ],
 
@@ -397,7 +432,9 @@ class _AddBookScreenState extends State<AddBookScreen> {
           isExpanded: true,
           dropdownColor: const Color(0xFFD8C09A),
           style: const TextStyle(color: Colors.black87, fontSize: 15),
-          items: items.map((item) => DropdownMenuItem(value: item, child: Text(item))).toList(),
+          items: items
+              .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+              .toList(),
           onChanged: onChanged,
         ),
       ),

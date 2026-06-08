@@ -7,7 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'article_comments_screen.dart';
 import 'package:enginet/engineer_profile.dart';
-
+import 'package:enginet/core/app_colors.dart';
 
 class ArticleDetailScreen extends StatefulWidget {
   final String articleId;
@@ -30,7 +30,7 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
   String? replyingToCommentId;
   String? replyingToUsername;
   int myRating = 0;
-bool _isRating = false;
+  bool _isRating = false;
 
   // Debounce flags
   bool _isProcessingLike = false;
@@ -55,54 +55,54 @@ bool _isRating = false;
     _commentFocusNode.dispose();
     super.dispose();
   }
-Future<void> _openAuthorProfile() async {
-  final authorName = article?['author_name']?.toString() ?? '';
-  if (authorName.isEmpty) return;
 
-  try {
-    final owner = await supabase
-        .from('users')
-        .select('id')
-        .eq('username', authorName)
-        .maybeSingle();
+  Future<void> _openAuthorProfile() async {
+    final authorName = article?['author_name']?.toString() ?? '';
+    if (authorName.isEmpty) return;
 
-    if (owner == null || owner['id'] == null) {
-      _showSnack('User profile not found');
-      return;
+    try {
+      final owner = await supabase
+          .from('users')
+          .select('id')
+          .eq('username', authorName)
+          .maybeSingle();
+
+      if (owner == null || owner['id'] == null) {
+        _showSnack('User profile not found');
+        return;
+      }
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EngineerProfileScreen(targetUserId: owner['id']),
+        ),
+      );
+    } catch (e) {
+      debugPrint('❌ open author profile error: $e');
+      _showSnack('Failed to open profile');
     }
+  }
+
+  Future<void> loadMyRating() async {
+    if (_currentUser == null) return;
+
+    final res = await supabase
+        .from('article_ratings')
+        .select('rating')
+        .eq('user_id', _currentUser!['id'])
+        .eq('article_id', _articleId)
+        .maybeSingle();
 
     if (!mounted) return;
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => EngineerProfileScreen(
-          targetUserId: owner['id'],
-        ),
-      ),
-    );
-  } catch (e) {
-    debugPrint('❌ open author profile error: $e');
-    _showSnack('Failed to open profile');
+    setState(() {
+      myRating = res?['rating'] ?? 0;
+    });
   }
-}
 
-Future<void> loadMyRating() async {
-  if (_currentUser == null) return;
-
-  final res = await supabase
-      .from('article_ratings')
-      .select('rating')
-      .eq('user_id', _currentUser!['id'])
-      .eq('article_id', _articleId)
-      .maybeSingle();
-
-  if (!mounted) return;
-
-  setState(() {
-    myRating = res?['rating'] ?? 0;
-  });
-}
   // ─── Init: fetch user once, then everything in parallel ──────────────────
   Future<void> _initData() async {
     if (_articleId == 0) {
@@ -113,12 +113,12 @@ Future<void> loadMyRating() async {
     try {
       _currentUser = await _fetchCurrentUser();
       await Future.wait([
-  loadArticle(),
-  loadComments(),
-  checkLike(),
-  checkSaved(),
-  loadMyRating(),
-]);
+        loadArticle(),
+        loadComments(),
+        checkLike(),
+        checkSaved(),
+        loadMyRating(),
+      ]);
     } catch (e) {
       debugPrint('❌ _initData error: $e');
     }
@@ -194,20 +194,20 @@ Future<void> loadMyRating() async {
         'parent_comment_id': replyingToCommentId,
       });
       final owner = await supabase
-    .from('users')
-    .select('id')
-    .eq('username', article!['author_name'])
-    .maybeSingle();
+          .from('users')
+          .select('id')
+          .eq('username', article!['author_name'])
+          .maybeSingle();
 
-if (owner != null && owner['id'] != _currentUser!['id']) {
-  await supabase.from('notifications').insert({
-    'user_id': owner['id'],
-    'message': '${_currentUser!['username']} commented on your article.',
-    'is_read': 0,
-    'article_id': int.parse(widget.articleId),
-    'type': 'article_comment',
-  });
-}
+      if (owner != null && owner['id'] != _currentUser!['id']) {
+        await supabase.from('notifications').insert({
+          'user_id': owner['id'],
+          'message': '${_currentUser!['username']} commented on your article.',
+          'is_read': 0,
+          'article_id': int.parse(widget.articleId),
+          'type': 'article_comment',
+        });
+      }
 
       _commentController.clear();
       if (!mounted) return;
@@ -252,8 +252,9 @@ if (owner != null && owner['id'] != _currentUser!['id']) {
     // Optimistic UI
     setState(() {
       isLiked = !wasLiked;
-      article!['likes'] =
-          wasLiked ? (currentLikes > 0 ? currentLikes - 1 : 0) : currentLikes + 1;
+      article!['likes'] = wasLiked
+          ? (currentLikes > 0 ? currentLikes - 1 : 0)
+          : currentLikes + 1;
     });
 
     try {
@@ -264,36 +265,37 @@ if (owner != null && owner['id'] != _currentUser!['id']) {
             .eq('user_id', _currentUser!['id'])
             .eq('article_id', _articleId);
 
-        await supabase.from('articles').update({
-          'likes': currentLikes > 0 ? currentLikes - 1 : 0,
-        }).eq('id', _articleId);
+        await supabase
+            .from('articles')
+            .update({'likes': currentLikes > 0 ? currentLikes - 1 : 0})
+            .eq('id', _articleId);
       } else {
-  await supabase.from('likes').insert({
-    'user_id': _currentUser!['id'],
-    'article_id': _articleId,
-  });
+        await supabase.from('likes').insert({
+          'user_id': _currentUser!['id'],
+          'article_id': _articleId,
+        });
 
-  await supabase.from('articles').update({
-    'likes': currentLikes + 1,
-  }).eq('id', _articleId);
+        await supabase
+            .from('articles')
+            .update({'likes': currentLikes + 1})
+            .eq('id', _articleId);
 
+        final owner = await supabase
+            .from('users')
+            .select('id')
+            .eq('username', article!['author_name'])
+            .maybeSingle();
 
-  final owner = await supabase
-    .from('users')
-    .select('id')
-    .eq('username', article!['author_name'])
-    .maybeSingle();
-
-if (owner != null && owner['id'] != _currentUser!['id']) {
-  await supabase.from('notifications').insert({
-    'user_id': owner['id'],
-    'message': '${_currentUser!['username']} liked your article.',
-    'is_read': 0,
-    'article_id': _articleId,
-    'type': 'article_like',
-  });
-}
-}
+        if (owner != null && owner['id'] != _currentUser!['id']) {
+          await supabase.from('notifications').insert({
+            'user_id': owner['id'],
+            'message': '${_currentUser!['username']} liked your article.',
+            'is_read': 0,
+            'article_id': _articleId,
+            'type': 'article_like',
+          });
+        }
+      }
     } catch (e) {
       debugPrint('❌ toggleLike error: $e');
       // Revert
@@ -363,106 +365,101 @@ if (owner != null && owner['id'] != _currentUser!['id']) {
   // ─── Helpers ──────────────────────────────────────────────────────────────
   void _showSnack(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
+
   Future<void> _confirmDeleteArticle() async {
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text("Delete Article"),
-      content: const Text("Are you sure you want to delete this article?"),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, false),
-          child: const Text("Cancel"),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context, true),
-          child: const Text(
-            "Delete",
-            style: TextStyle(color: Colors.red),
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Delete Article"),
+        content: const Text("Are you sure you want to delete this article?"),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
           ),
-        ),
-      ],
-    ),
-  );
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text("Delete", style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
 
-  if (confirmed == true) {
-    await _deleteArticle();
-  }
-}
-
-Future<void> _deleteArticle() async {
-  try {
-    await supabase.from('articles').delete().eq('id', _articleId);
-
-    if (!mounted) return;
-
-    _showSnack('Article deleted successfully');
-    Navigator.pop(context);
-  } catch (e) {
-    debugPrint('❌ deleteArticle error: $e');
-    _showSnack('Failed to delete article');
-  }
-}
-Future<void> rateArticle(int value) async {
-  if (_currentUser == null || article == null || _isRating) return;
-
-  setState(() {
-    _isRating = true;
-    myRating = value;
-  });
-
-  try {
-   await supabase.from('article_ratings').upsert(
-  {
-    'user_id': _currentUser!['id'],
-    'article_id': _articleId,
-    'rating': value,
-  },
-  onConflict: 'user_id,article_id',
-);
-
-    final ratingsRes = await supabase
-        .from('article_ratings')
-        .select('rating')
-        .eq('article_id', _articleId);
-
-    final ratings = List<Map<String, dynamic>>.from(ratingsRes);
-    final avg = ratings.isEmpty
-        ? 0.0
-        : ratings
-                .map((r) => (r['rating'] as num).toDouble())
-                .reduce((a, b) => a + b) /
-            ratings.length;
-
-    await supabase
-        .from('articles')
-        .update({'rating': avg})
-        .eq('id', _articleId);
-
-    if (!mounted) return;
-
-    setState(() {
-      article!['rating'] = avg;
-    });
-  } catch (e) {
-    debugPrint('❌ rateArticle error: $e');
-    _showSnack('Failed to rate article');
-  } finally {
-    if (mounted) {
-      setState(() => _isRating = false);
+    if (confirmed == true) {
+      await _deleteArticle();
     }
   }
-}
+
+  Future<void> _deleteArticle() async {
+    try {
+      await supabase.from('articles').delete().eq('id', _articleId);
+
+      if (!mounted) return;
+
+      _showSnack('Article deleted successfully');
+      Navigator.pop(context);
+    } catch (e) {
+      debugPrint('❌ deleteArticle error: $e');
+      _showSnack('Failed to delete article');
+    }
+  }
+
+  Future<void> rateArticle(int value) async {
+    if (_currentUser == null || article == null || _isRating) return;
+
+    setState(() {
+      _isRating = true;
+      myRating = value;
+    });
+
+    try {
+      await supabase.from('article_ratings').upsert({
+        'user_id': _currentUser!['id'],
+        'article_id': _articleId,
+        'rating': value,
+      }, onConflict: 'user_id,article_id');
+
+      final ratingsRes = await supabase
+          .from('article_ratings')
+          .select('rating')
+          .eq('article_id', _articleId);
+
+      final ratings = List<Map<String, dynamic>>.from(ratingsRes);
+      final avg = ratings.isEmpty
+          ? 0.0
+          : ratings
+                    .map((r) => (r['rating'] as num).toDouble())
+                    .reduce((a, b) => a + b) /
+                ratings.length;
+
+      await supabase
+          .from('articles')
+          .update({'rating': avg})
+          .eq('id', _articleId);
+
+      if (!mounted) return;
+
+      setState(() {
+        article!['rating'] = avg;
+      });
+    } catch (e) {
+      debugPrint('❌ rateArticle error: $e');
+      _showSnack('Failed to rate article');
+    } finally {
+      if (mounted) {
+        setState(() => _isRating = false);
+      }
+    }
+  }
 
   // ─── Build ────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Scaffold(
-        backgroundColor: Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         body: Center(
           child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
         ),
@@ -471,11 +468,13 @@ Future<void> rateArticle(int value) async {
 
     if (article == null) {
       return Scaffold(
-        backgroundColor: const Color(0xFF071739),
-        appBar: AppBar(backgroundColor: const Color(0xFF071739)),
+        backgroundColor: AppColors.primary,
+        appBar: AppBar(backgroundColor: AppColors.primary),
         body: const Center(
-          child: Text('Article not found',
-              style: TextStyle(color: Colors.white)),
+          child: Text(
+            'Article not found',
+            style: TextStyle(color: Colors.white),
+          ),
         ),
       );
     }
@@ -487,95 +486,105 @@ Future<void> rateArticle(int value) async {
     final authorImage = article!['author_image']?.toString() ?? '';
     final rating =
         double.tryParse(article!['rating']?.toString() ?? '0') ?? 0.0;
-    final currentUsername =
-    _currentUser?['username']?.toString().trim().toLowerCase();
+    final currentUsername = _currentUser?['username']
+        ?.toString()
+        .trim()
+        .toLowerCase();
 
-final articleAuthor =
-    article?['author_name']?.toString().trim().toLowerCase();
+    final articleAuthor = article?['author_name']
+        ?.toString()
+        .trim()
+        .toLowerCase();
 
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       body: SafeArea(
         child: Column(
           children: [
             // ── App bar ──────────────────────────────────────────────
             Padding(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
-  children: [
-    GestureDetector(
-      onTap: () {
-        if (Navigator.canPop(context)) {
-          Navigator.pop(context);
-        } else {
-          Navigator.pushReplacementNamed(context, '/home');
-        }
-      },
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: const BoxDecoration(
-          color: Color(0xFFE3C39D),
-          shape: BoxShape.circle,
-        ),
-        child: const Icon(Icons.arrow_back, color: Colors.black),
-      ),
-    ),
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      if (Navigator.canPop(context)) {
+                        Navigator.pop(context);
+                      } else {
+                        Navigator.pushReplacementNamed(context, '/home');
+                      }
+                    },
+                    child: Container(
+                      width: 38,
+                      height: 38,
+                      decoration: const BoxDecoration(
+                        color: AppColors.accent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.arrow_back, color: Colors.black),
+                    ),
+                  ),
 
-    const Spacer(),
+                  const Spacer(),
 
-const Spacer(),
+                  const Spacer(),
 
-if (_currentUser != null && currentUsername == articleAuthor)
-  Row(
-    children: [
-      GestureDetector(
-        onTap: () async {
-          if (article == null) return;
+                  if (_currentUser != null && currentUsername == articleAuthor)
+                    Row(
+                      children: [
+                        GestureDetector(
+                          onTap: () async {
+                            if (article == null) return;
 
-          final updated = await Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (_) => AddArticleScreen(
-      article: Map<String, dynamic>.from(article!),
-    ),
-  ),
-);
-if (updated == true && mounted) {
-  await loadArticle();
-}
-        },
-        child: Container(
-          width: 38,
-          height: 38,
-          decoration: const BoxDecoration(
-            color: Color(0xFFE3C39D),
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.edit, color: Colors.black, size: 20),
-        ),
-      ),
+                            final updated = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => AddArticleScreen(
+                                  article: Map<String, dynamic>.from(article!),
+                                ),
+                              ),
+                            );
+                            if (updated == true && mounted) {
+                              await loadArticle();
+                            }
+                          },
+                          child: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: const BoxDecoration(
+                              color: AppColors.accent,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.edit,
+                              color: Colors.black,
+                              size: 20,
+                            ),
+                          ),
+                        ),
 
-      const SizedBox(width: 8),
+                        const SizedBox(width: 8),
 
-      GestureDetector(
-        onTap: _confirmDeleteArticle,
-        child: Container(
-          width: 38,
-          height: 38,
-          decoration: const BoxDecoration(
-            color: Colors.red,
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(Icons.delete, color: Colors.white, size: 20),
-        ),
-      ),
-    ],
-  ),
-    ],
-  ),
-  
+                        GestureDetector(
+                          onTap: _confirmDeleteArticle,
+                          child: Container(
+                            width: 38,
+                            height: 38,
+                            decoration: const BoxDecoration(
+                              color: Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.delete,
+                              color: Colors.white,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                ],
+              ),
             ),
 
             // ── Body ─────────────────────────────────────────────────
@@ -583,7 +592,9 @@ if (updated == true && mounted) {
               child: Center(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(
-                      vertical: 8, horizontal: 12),
+                    vertical: 8,
+                    horizontal: 12,
+                  ),
                   child: Container(
                     width: double.infinity,
                     decoration: BoxDecoration(
@@ -600,39 +611,42 @@ if (updated == true && mounted) {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Author
-Padding(
-  padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-  child: GestureDetector(
-    onTap: _openAuthorProfile,
-    child: Row(
-      children: [
-        CircleAvatar(
-          radius: 22,
-          backgroundImage:
-              authorImage.isNotEmpty ? NetworkImage(authorImage) : null,
-          backgroundColor: const Color(0xFF6C94C6),
-          child: authorImage.isEmpty
-              ? const Icon(Icons.person, color: Colors.white)
-              : null,
-        ),
-        const SizedBox(width: 10),
-        Text(
-          authorName,
-          style: GoogleFonts.agbalumo(
-            fontSize: 16,
-            color: Colors.black87,
-          ),
-        ),
-      ],
-    ),
-  ),
-),
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                            child: GestureDetector(
+                              onTap: _openAuthorProfile,
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 22,
+                                    backgroundImage: authorImage.isNotEmpty
+                                        ? NetworkImage(authorImage)
+                                        : null,
+                                    backgroundColor: const Color(0xFF6C94C6),
+                                    child: authorImage.isEmpty
+                                        ? const Icon(
+                                            Icons.person,
+                                            color: Colors.white,
+                                          )
+                                        : null,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    authorName,
+                                    style: GoogleFonts.agbalumo(
+                                      fontSize: 16,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
 
                           // Cover image
                           if (imageUrl.isNotEmpty)
                             Padding(
-                              padding:
-                                  const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
                                 child: CachedNetworkImage(
@@ -643,15 +657,19 @@ Padding(
                                   errorWidget: (c, u, e) => Container(
                                     height: 200,
                                     color: const Color(0xFFDDE3EA),
-                                    child: const Icon(Icons.article,
-                                        size: 60, color: Colors.grey),
+                                    child: const Icon(
+                                      Icons.article,
+                                      size: 60,
+                                      color: Colors.grey,
+                                    ),
                                   ),
                                   placeholder: (c, u) => Shimmer.fromColors(
                                     baseColor: const Color(0xFF1A2F55),
-                                    highlightColor:
-                                        const Color(0xFF2A4A7F),
+                                    highlightColor: const Color(0xFF2A4A7F),
                                     child: Container(
-                                        height: 200, color: Colors.white),
+                                      height: 200,
+                                      color: Colors.white,
+                                    ),
                                   ),
                                 ),
                               ),
@@ -659,8 +677,7 @@ Padding(
 
                           // Title + stars
                           Padding(
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
@@ -675,99 +692,100 @@ Padding(
                                 ),
                                 const SizedBox(height: 8),
                                 Row(
-  children: [
-    ...List.generate(
-      5,
-      (i) {
-        final starValue = i + 1;
+                                  children: [
+                                    ...List.generate(5, (i) {
+                                      final starValue = i + 1;
 
-        return GestureDetector(
-          onTap: () => rateArticle(starValue),
-          child: Icon(
-            starValue <= myRating
-                ? Icons.star
-                : Icons.star_border,
-            color: Colors.orange,
-            size: 24,
-          ),
-        );
-      },
-    ),
-    const SizedBox(width: 6),
-    Text(
-      ' ${rating.toStringAsFixed(1)}',
-      style: const TextStyle(
-        color: Colors.black87,
-        fontWeight: FontWeight.bold,
-      ),
-    ),
-  ],
-),
+                                      return GestureDetector(
+                                        onTap: () => rateArticle(starValue),
+                                        child: Icon(
+                                          starValue <= myRating
+                                              ? Icons.star
+                                              : Icons.star_border,
+                                          color: Colors.orange,
+                                          size: 24,
+                                        ),
+                                      );
+                                    }),
+                                    const SizedBox(width: 6),
+                                    Text(
+                                      ' ${rating.toStringAsFixed(1)}',
+                                      style: const TextStyle(
+                                        color: Colors.black87,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ],
                             ),
                           ),
                           Padding(
-  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-  child: Row(
-    children: [
-      GestureDetector(
-        onTap: toggleLike,
-        child: Icon(
-          isLiked ? Icons.favorite : Icons.favorite_border,
-          color: Colors.red,
-          size: 22,
-        ),
-      ),
-      const SizedBox(width: 4),
-      Text(
-        '${article!['likes'] ?? 0}',
-        style: const TextStyle(
-          color: Colors.black87,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
+                            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                            child: Row(
+                              children: [
+                                GestureDetector(
+                                  onTap: toggleLike,
+                                  child: Icon(
+                                    isLiked
+                                        ? Icons.favorite
+                                        : Icons.favorite_border,
+                                    color: Colors.red,
+                                    size: 22,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${article!['likes'] ?? 0}',
+                                  style: const TextStyle(
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
 
-      const SizedBox(width: 16),
+                                const SizedBox(width: 16),
 
-      GestureDetector(
-       onTap: () {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => ArticleCommentsScreen(
-        articleId: widget.articleId,
-      ),
-    ),
-  ).then((_) => loadComments());
-},
-        child: const Icon(
-          Icons.chat_bubble,
-          color: Color(0xFF5B7FA6),
-          size: 20,
-        ),
-      ),
-      const SizedBox(width: 4),
-      Text(
-        '${comments.length}',
-        style: const TextStyle(
-          color: Colors.black87,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
+                                GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ArticleCommentsScreen(
+                                          articleId: widget.articleId,
+                                        ),
+                                      ),
+                                    ).then((_) => loadComments());
+                                  },
+                                  child: const Icon(
+                                    Icons.chat_bubble,
+                                    color: Color(0xFF5B7FA6),
+                                    size: 20,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '${comments.length}',
+                                  style: const TextStyle(
+                                    color: Colors.black87,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
 
-      const Spacer(),
+                                const Spacer(),
 
-      GestureDetector(
-        onTap: toggleSave,
-        child: Icon(
-          isSaved ? Icons.bookmark : Icons.bookmark_border,
-          color: const Color(0xFF071739),
-          size: 28,
-        ),
-      ),
-    ],
-  ),
-),
+                                GestureDetector(
+                                  onTap: toggleSave,
+                                  child: Icon(
+                                    isSaved
+                                        ? Icons.bookmark
+                                        : Icons.bookmark_border,
+                                    color: AppColors.primary,
+                                    size: 28,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
 
                           // Content
                           Padding(
@@ -781,8 +799,6 @@ Padding(
                               ),
                             ),
                           ),
-
-                          
                         ],
                       ),
                     ),

@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:enginet/book_detail.dart';
 import 'package:flutter/material.dart';
+import 'package:enginet/core/app_colors.dart';
 
 class SavedBooksScreen extends StatelessWidget {
   final List<dynamic> books;
@@ -10,9 +11,9 @@ class SavedBooksScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF071739),
+      backgroundColor: AppColors.primary,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF071739),
+        backgroundColor: AppColors.primary,
         elevation: 0,
         centerTitle: true,
         leading: Padding(
@@ -21,20 +22,17 @@ class SavedBooksScreen extends StatelessWidget {
             onTap: () => Navigator.pop(context),
             child: Container(
               decoration: const BoxDecoration(
-                color: Color(0xFFE3C39D),
+                color: AppColors.accent,
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.arrow_back,
-                color: Color(0xFF071739),
-              ),
+              child: const Icon(Icons.arrow_back, color: AppColors.primary),
             ),
           ),
         ),
         title: const Text(
           'Saved Books',
           style: TextStyle(
-            color: Color(0xFFE3C39D),
+            color: AppColors.accent,
             fontWeight: FontWeight.bold,
           ),
         ),
@@ -57,9 +55,8 @@ class SavedBooksScreen extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => BookDetailScreen(
-                          bookId: book['id'].toString(),
-                        ),
+                        builder: (_) =>
+                            BookDetailScreen(bookId: book['id'].toString()),
                       ),
                     );
                   },
