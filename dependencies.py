@@ -7,8 +7,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
 if not SECRET_KEY:
     raise RuntimeError(
         "SECRET_KEY environment variable is not set.\n"
-        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\"\n"
-        "Then set it: export SECRET_KEY=50b5b93a9b3f6c47b82b72bc870f9a969271e2c7c874cfbf0b28381a6ff15fd7"
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
     )
 
 ALGORITHM = "HS256"
@@ -18,7 +17,6 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    """Verify JWT token and return user data. Used as Depends in all routers."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email: str = payload.get("sub")
@@ -31,10 +29,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
 
 
 def require_role(*allowed_roles: str):
-    """
-    Role-based access control dependency.
-    Usage: Depends(require_role("engineer", "admin"))
-    """
     def _check(current_user: dict = Depends(get_current_user)):
         if current_user["role"] not in allowed_roles:
             raise HTTPException(
@@ -45,15 +39,13 @@ def require_role(*allowed_roles: str):
     return _check
 
 
-def add_points(cursor, user_id: int, points: int) -> None:
-    """Add points to a user. Used across all routers."""
-    cursor.execute(
-        "UPDATE users SET points = points + %s WHERE id = %s",
-        (points, user_id)
-    )
-# في dependencies.py — أضيفي هذه الدالة
 def add_points_supabase(db, user_id: int, points: int) -> None:
-    """نسخة Supabase من add_points"""
+    """Supabase ile kullanıcıya puan ekle. Tüm router'larda bu kullanılır."""
     user = db.table("users").select("points").eq("id", user_id).single().execute().data
     if user:
-        db.table("users").update({"points": user["points"] + points}).eq("id", user_id).execute()
+        db.table("users").update({"points": (user["points"] or 0) + points}).eq("id", user_id).execute()
+
+
+# Geriye dönük uyumluluk için alias
+def add_points(db, user_id: int, points: int) -> None:
+    add_points_supabase(db, user_id, points)
