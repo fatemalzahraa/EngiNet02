@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from database import get_db
 from pydantic import BaseModel
 from typing import Optional
-from dependencies import get_current_user, require_role, add_points
+from dependencies import get_current_user, require_role, add_points_supabase
 
 router = APIRouter(prefix="/articles", tags=["Articles"])
 
@@ -21,63 +21,43 @@ class ArticleCreate(BaseModel):
 @router.get("/")
 def get_all_articles(search: Optional[str] = None):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        query = "SELECT * FROM articles WHERE 1=1"
-        params = []
-        if search:
-            query += " AND title ILIKE %s"
-            params.append(f"%{search}%")
-        query += " ORDER BY created_at DESC"
-        cursor.execute(query, params)
-        return cursor.fetchall()
-    finally:
-        db.close()
+    query = db.table("articles").select("*")
+    if search:
+        query = query.ilike("title", f"%{search}%")
+    return query.order("created_at", desc=True).execute().data
 
 
 @router.get("/{article_id}")
 def get_article(article_id: int):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT * FROM articles WHERE id = %s", (article_id,))
-        article = cursor.fetchone()
-        if not article:
-            raise HTTPException(status_code=404, detail="Article not found")
-        return article
-    finally:
-        db.close()
+    result = db.table("articles").select("*").eq("id", article_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Article not found")
+    return result.data[0]
 
 
 @router.post("/")
 def add_article(article: ArticleCreate, current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+    user_result = db.table("users").select("id").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user_id = user_result.data[0]["id"]
 
-        cursor.execute(
-            """
-            INSERT INTO articles (title, content, category, image_url, author_name,
-                                  author_image, rating, pdf_url)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-            RETURNING id
-            """,
-            (
-                article.title, article.content, article.category,
-                article.image_url, article.author_name, article.author_image,
-                article.rating, article.pdf_url,
-            ),
-        )
-        new_id = cursor.fetchone()["id"]
-        add_points(cursor, user["id"], 5)
-        db.commit()
-        return {"message": "Article added successfully", "article_id": new_id}
-    finally:
-        db.close()
+    result = db.table("articles").insert({
+        "title": article.title,
+        "content": article.content,
+        "category": article.category,
+        "image_url": article.image_url,
+        "author_name": article.author_name,
+        "author_image": article.author_image,
+        "rating": article.rating,
+        "pdf_url": article.pdf_url,
+    }).execute()
+
+    new_id = result.data[0]["id"]
+    add_points_supabase(db, user_id, 5)
+    return {"message": "Article added successfully", "article_id": new_id}
 
 
 @router.delete("/{article_id}")
@@ -86,13 +66,8 @@ def delete_article(
     current_user: dict = Depends(require_role("admin", "engineer")),
 ):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM articles WHERE id = %s", (article_id,))
-        if not cursor.fetchone():
-            raise HTTPException(status_code=404, detail="Article not found")
-        cursor.execute("DELETE FROM articles WHERE id = %s", (article_id,))
-        db.commit()
-        return {"message": "Article deleted successfully"}
-    finally:
-        db.close()
+    result = db.table("articles").select("id").eq("id", article_id).execute()
+    if not result.data:
+        raise HTTPException(status_code=404, detail="Article not found")
+    db.table("articles").delete().eq("id", article_id).execute()
+    return {"message": "Article deleted successfully"}

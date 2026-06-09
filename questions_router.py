@@ -22,35 +22,31 @@ class AnswerCreate(BaseModel):
 @router.get("")
 def get_questions(current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
 
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
-        user = cursor.fetchone()
-        user_id = user["id"] if user else 0
+    user_result = db.table("users").select("id").eq("email", current_user["email"]).execute()
+    user_id = user_result.data[0]["id"] if user_result.data else 0
 
-        cursor.execute("""
-            SELECT q.*, u.username, u.profile_image,
-              COALESCE((SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id), 0) AS answers_count,
-              EXISTS(
-                SELECT 1 FROM question_likes l
-                WHERE l.question_id = q.id AND l.user_id = %s
-              ) AS is_liked,
-              EXISTS(
-                SELECT 1 FROM saved_questions s
-                WHERE s.question_id = q.id AND s.user_id = %s
-              ) AS is_saved
-            FROM questions q
-            LEFT JOIN users u ON u.id = q.user_id
-            ORDER BY q.created_at DESC
-        """, (user_id, user_id))
+    questions = db.table("questions").select(
+        "*, users(username, profile_image)"
+    ).order("created_at", desc=True).execute().data
 
-        return cursor.fetchall()
-    finally:
-        db.close()
+    for q in questions:
+        answers_count = db.table("answers").select("id", count="exact").eq("question_id", q["id"]).execute().count or 0
+        q["answers_count"] = answers_count
+
+        liked = db.table("question_likes").select("id").eq("question_id", q["id"]).eq("user_id", user_id).execute().data
+        q["is_liked"] = len(liked) > 0
+
+        saved = db.table("saved_questions").select("id").eq("question_id", q["id"]).eq("user_id", user_id).execute().data
+        q["is_saved"] = len(saved) > 0
+
+        # Flatten user join
+        if q.get("users"):
+            q["username"] = q["users"].get("username")
+            q["profile_image"] = q["users"].get("profile_image")
+            del q["users"]
+
+    return questions
 
 
 @router.post("")
@@ -62,113 +58,80 @@ async def add_question(
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
-    try:
-        cursor = db.cursor()
 
-        cursor.execute(
-            "SELECT id, username, profile_image FROM users WHERE email = %s",
-            (current_user["email"],),
+    user_result = db.table("users").select("id, username, profile_image").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = user_result.data[0]
+
+    media_url = ""
+    media_type = ""
+
+    if media is not None:
+        content_type = media.content_type or ""
+        file_bytes = await media.read()
+        safe_name = media.filename.replace(" ", "_")
+        file_path = f"{user['id']}/{int(time.time() * 1000)}_{safe_name}"
+
+        if content_type.startswith("image/"):
+            bucket = "question-images"
+            media_type = "image"
+        elif content_type.startswith("video/"):
+            bucket = "question-videos"
+            media_type = "video"
+        else:
+            raise HTTPException(status_code=400, detail="Only image or video allowed")
+
+        supabase_admin.storage.from_(bucket).upload(
+            file_path,
+            file_bytes,
+            {"content-type": content_type},
         )
-        user = cursor.fetchone()
+        media_url = supabase_admin.storage.from_(bucket).get_public_url(file_path)
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+    result = db.table("questions").insert({
+        "user_id": user["id"],
+        "title": title,
+        "content": content,
+        "category": category,
+        "media_url": media_url,
+        "media_type": media_type,
+        "likes": 0,
+    }).execute()
 
-        media_url = ""
-        media_type = ""
+    question_id = result.data[0]["id"]
+    return {"message": "Question added", "question_id": question_id}
 
-        if media is not None:
-            content_type = media.content_type or ""
-            file_bytes = await media.read()
-            safe_name = media.filename.replace(" ", "_")
-            file_path = f"{user['id']}/{int(time.time() * 1000)}_{safe_name}"
-
-            if content_type.startswith("image/"):
-                bucket = "question-images"
-                media_type = "image"
-            elif content_type.startswith("video/"):
-                bucket = "question-videos"
-                media_type = "video"
-            else:
-                raise HTTPException(status_code=400, detail="Only image or video allowed")
-
-            supabase_admin.storage.from_(bucket).upload(
-                file_path,
-                file_bytes,
-                {"content-type": content_type},
-            )
-
-            media_url = supabase_admin.storage.from_(bucket).get_public_url(file_path)
-
-        cursor.execute(
-            """
-            INSERT INTO questions (
-              user_id, title, content, category, media_url, media_type, likes
-            )
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
-            RETURNING id
-            """,
-            (
-                user["id"],
-                title,
-                content,
-                category,
-                media_url,
-                media_type,
-                0,
-            ),
-        )
-
-        question_id = cursor.fetchone()["id"]
-        db.commit()
-
-        return {"message": "Question added", "question_id": question_id}
-
-    except HTTPException:
-        db.rollback()
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
 
 @router.get("/mine")
 def get_my_questions(current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
 
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
-        user = cursor.fetchone()
+    user_result = db.table("users").select("id").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user_id = user_result.data[0]["id"]
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+    questions = db.table("questions").select(
+        "*, users(username, profile_image)"
+    ).eq("user_id", user_id).order("created_at", desc=True).execute().data
 
-        cursor.execute("""
-    SELECT q.*, u.username, u.profile_image,
-      COALESCE((SELECT COUNT(*) FROM answers a WHERE a.question_id = q.id), 0) AS answers_count,
-      EXISTS(
-        SELECT 1 FROM question_likes l
-        WHERE l.question_id = q.id AND l.user_id = %s
-      ) AS is_liked,
-      EXISTS(
-        SELECT 1 FROM saved_questions s
-        WHERE s.question_id = q.id AND s.user_id = %s
-      ) AS is_saved
-    FROM questions q
-    LEFT JOIN users u ON u.id = q.user_id
-    WHERE q.user_id = %s
-    ORDER BY q.created_at DESC
-""", (user["id"], user["id"], user["id"]))
+    for q in questions:
+        answers_count = db.table("answers").select("id", count="exact").eq("question_id", q["id"]).execute().count or 0
+        q["answers_count"] = answers_count
 
-        return cursor.fetchall()
+        liked = db.table("question_likes").select("id").eq("question_id", q["id"]).eq("user_id", user_id).execute().data
+        q["is_liked"] = len(liked) > 0
 
-    finally:
-        db.close()
+        saved = db.table("saved_questions").select("id").eq("question_id", q["id"]).eq("user_id", user_id).execute().data
+        q["is_saved"] = len(saved) > 0
+
+        if q.get("users"):
+            q["username"] = q["users"].get("username")
+            q["profile_image"] = q["users"].get("profile_image")
+            del q["users"]
+
+    return questions
 
 
 @router.delete("/{question_id}")
@@ -178,60 +141,37 @@ def delete_question(
 ):
     db = get_db()
 
-    try:
-        cursor = db.cursor()
+    user_result = db.table("users").select("id").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user_id = user_result.data[0]["id"]
 
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
+    question_result = db.table("questions").select("user_id").eq("id", question_id).execute()
+    if not question_result.data:
+        raise HTTPException(status_code=404, detail="Question not found")
 
-        user = cursor.fetchone()
+    if question_result.data[0]["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not allowed")
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        cursor.execute(
-            "SELECT user_id FROM questions WHERE id = %s",
-            (question_id,),
-        )
-
-        question = cursor.fetchone()
-
-        if not question:
-            raise HTTPException(status_code=404, detail="Question not found")
-
-        if question["user_id"] != user["id"]:
-            raise HTTPException(status_code=403, detail="Not allowed")
-
-        cursor.execute(
-            "DELETE FROM questions WHERE id = %s",
-            (question_id,),
-        )
-
-        db.commit()
-
-        return {"message": "Question deleted"}
-
-    finally:
-        db.close()
+    db.table("questions").delete().eq("id", question_id).execute()
+    return {"message": "Question deleted"}
 
 
 @router.get("/{question_id}/answers")
 def get_answers(question_id: int):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("""
-            SELECT a.*, u.username, u.profile_image
-            FROM answers a
-            LEFT JOIN users u ON u.id = a.user_id
-            WHERE a.question_id = %s
-            ORDER BY a.created_at ASC
-        """, (question_id,))
-        return cursor.fetchall()
-    finally:
-        db.close()
+
+    answers = db.table("answers").select(
+        "*, users(username, profile_image)"
+    ).eq("question_id", question_id).order("created_at").execute().data
+
+    for a in answers:
+        if a.get("users"):
+            a["username"] = a["users"].get("username")
+            a["profile_image"] = a["users"].get("profile_image")
+            del a["users"]
+
+    return answers
 
 
 @router.post("/{question_id}/answers")
@@ -241,67 +181,35 @@ def add_answer(
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
-    try:
-        cursor = db.cursor()
 
-        cursor.execute(
-            "SELECT id, username, profile_image FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
-        user = cursor.fetchone()
+    user_result = db.table("users").select("id, username, profile_image").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = user_result.data[0]
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+    question_result = db.table("questions").select("user_id").eq("id", question_id).execute()
+    if not question_result.data:
+        raise HTTPException(status_code=404, detail="Question not found")
+    question = question_result.data[0]
 
-        cursor.execute("SELECT user_id FROM questions WHERE id = %s", (question_id,))
-        question = cursor.fetchone()
+    result = db.table("answers").insert({
+        "question_id": question_id,
+        "user_id": user["id"],
+        "content": answer.content,
+        "parent_answer_id": answer.parent_answer_id,
+    }).execute()
 
-        if not question:
-            raise HTTPException(status_code=404, detail="Question not found")
+    answer_id = result.data[0]["id"]
 
-        cursor.execute(
-            """
-            INSERT INTO answers (
-    question_id,
-    user_id,
-    content,
-    parent_answer_id
-)
-VALUES (%s,%s,%s,%s)
-            RETURNING id
-            """,
-            (
-    question_id,
-    user["id"],
-    answer.content,
-    answer.parent_answer_id,
-),
-        )
+    if question["user_id"] != user["id"]:
+        db.table("notifications").insert({
+            "user_id": question["user_id"],
+            "message": f"{user['username']} answered your question.",
+            "is_read": False,
+            "question_id": question_id,
+        }).execute()
 
-        answer_id = cursor.fetchone()["id"]
-
-        if question["user_id"] != user["id"]:
-            cursor.execute(
-                """
-                INSERT INTO notifications (user_id, message, is_read, question_id)
-                VALUES (%s,%s,%s,%s)
-                """,
-                (
-                    question["user_id"],
-                    f"{user['username']} answered your question.",
-                    0,
-                    question_id,
-                ),
-            )
-
-        db.commit()
-        return {"message": "Answer added", "answer_id": answer_id}
-
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
+    return {"message": "Answer added", "answer_id": answer_id}
 
 
 @router.post("/{question_id}/like")
@@ -310,98 +218,39 @@ def toggle_question_like(
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
-    try:
-        cursor = db.cursor()
 
-        cursor.execute(
-            "SELECT id, username FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
-        user = cursor.fetchone()
+    user_result = db.table("users").select("id, username").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = user_result.data[0]
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+    question_result = db.table("questions").select("id, user_id, likes").eq("id", question_id).execute()
+    if not question_result.data:
+        raise HTTPException(status_code=404, detail="Question not found")
+    question = question_result.data[0]
 
-        cursor.execute(
-            "SELECT id, user_id FROM questions WHERE id = %s",
-            (question_id,),
-        )
-        question = cursor.fetchone()
+    existing = db.table("question_likes").select("id").eq("user_id", user["id"]).eq("question_id", question_id).execute().data
 
-        if not question:
-            raise HTTPException(status_code=404, detail="Question not found")
+    if existing:
+        db.table("question_likes").delete().eq("user_id", user["id"]).eq("question_id", question_id).execute()
+        new_likes = max((question["likes"] or 0) - 1, 0)
+        db.table("questions").update({"likes": new_likes}).eq("id", question_id).execute()
+        return {"liked": False, "likes": new_likes}
 
-        cursor.execute(
-            """
-            SELECT id FROM question_likes
-            WHERE user_id = %s AND question_id = %s
-            """,
-            (user["id"], question_id),
-        )
-        existing = cursor.fetchone()
+    db.table("question_likes").insert({"user_id": user["id"], "question_id": question_id}).execute()
+    new_likes = (question["likes"] or 0) + 1
+    db.table("questions").update({"likes": new_likes}).eq("id", question_id).execute()
 
-        if existing:
-            cursor.execute(
-                """
-                DELETE FROM question_likes
-                WHERE user_id = %s AND question_id = %s
-                """,
-                (user["id"], question_id),
-            )
-            cursor.execute(
-                """
-                UPDATE questions
-                SET likes = GREATEST(COALESCE(likes, 0) - 1, 0)
-                WHERE id = %s
-                RETURNING likes
-                """,
-                (question_id,),
-            )
-            likes = cursor.fetchone()["likes"]
-            db.commit()
-            return {"liked": False, "likes": likes}
+    if question["user_id"] != user["id"]:
+        db.table("notifications").insert({
+            "user_id": question["user_id"],
+            "message": f"{user['username']} liked your question.",
+            "is_read": False,
+            "question_id": question_id,
+        }).execute()
 
-        cursor.execute(
-            """
-            INSERT INTO question_likes (user_id, question_id)
-            VALUES (%s, %s)
-            """,
-            (user["id"], question_id),
-        )
+    return {"liked": True, "likes": new_likes}
 
-        cursor.execute(
-            """
-            UPDATE questions
-            SET likes = COALESCE(likes, 0) + 1
-            WHERE id = %s
-            RETURNING likes
-            """,
-            (question_id,),
-        )
-        likes = cursor.fetchone()["likes"]
-
-        if question["user_id"] != user["id"]:
-            cursor.execute(
-                """
-                INSERT INTO notifications (user_id, message, is_read, question_id)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (
-                    question["user_id"],
-                    f"{user['username']} liked your question.",
-                    0,
-                    question_id,
-                ),
-            )
-
-        db.commit()
-        return {"liked": True, "likes": likes}
-
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
 
 @router.post("/{question_id}/save")
 def save_question(
@@ -409,35 +258,18 @@ def save_question(
     current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
-    try:
-        cursor = db.cursor()
 
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
-        user = cursor.fetchone()
+    user_result = db.table("users").select("id").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user_id = user_result.data[0]["id"]
 
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
+    existing = db.table("saved_questions").select("id").eq("user_id", user_id).eq("question_id", question_id).execute().data
+    if not existing:
+        db.table("saved_questions").insert({"user_id": user_id, "question_id": question_id}).execute()
 
-        cursor.execute(
-            """
-            INSERT INTO saved_questions (user_id, question_id)
-            VALUES (%s,%s)
-            ON CONFLICT (user_id, question_id) DO NOTHING
-            """,
-            (user["id"], question_id),
-        )
+    return {"message": "Question saved"}
 
-        db.commit()
-        return {"message": "Question saved"}
-
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        db.close()
 
 @router.put("/answers/{answer_id}")
 def update_answer(
@@ -447,47 +279,19 @@ def update_answer(
 ):
     db = get_db()
 
-    try:
-        cursor = db.cursor()
+    user_result = db.table("users").select("id").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user_id = user_result.data[0]["id"]
 
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
+    existing = db.table("answers").select("user_id").eq("id", answer_id).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Answer not found")
+    if existing.data[0]["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not allowed")
 
-        user = cursor.fetchone()
-
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        cursor.execute(
-            "SELECT user_id FROM answers WHERE id = %s",
-            (answer_id,),
-        )
-
-        existing = cursor.fetchone()
-
-        if not existing:
-            raise HTTPException(status_code=404, detail="Answer not found")
-
-        if existing["user_id"] != user["id"]:
-            raise HTTPException(status_code=403, detail="Not allowed")
-
-        cursor.execute(
-            """
-            UPDATE answers
-            SET content = %s
-            WHERE id = %s
-            """,
-            (answer.content, answer_id),
-        )
-
-        db.commit()
-
-        return {"message": "Answer updated"}
-
-    finally:
-        db.close()
+    db.table("answers").update({"content": answer.content}).eq("id", answer_id).execute()
+    return {"message": "Answer updated"}
 
 
 @router.delete("/answers/{answer_id}")
@@ -497,40 +301,16 @@ def delete_answer(
 ):
     db = get_db()
 
-    try:
-        cursor = db.cursor()
+    user_result = db.table("users").select("id").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user_id = user_result.data[0]["id"]
 
-        cursor.execute(
-            "SELECT id FROM users WHERE email = %s",
-            (current_user["email"],),
-        )
+    answer_result = db.table("answers").select("user_id").eq("id", answer_id).execute()
+    if not answer_result.data:
+        raise HTTPException(status_code=404, detail="Answer not found")
+    if answer_result.data[0]["user_id"] != user_id:
+        raise HTTPException(status_code=403, detail="Not allowed")
 
-        user = cursor.fetchone()
-
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-
-        cursor.execute(
-            "SELECT user_id FROM answers WHERE id = %s",
-            (answer_id,),
-        )
-
-        answer = cursor.fetchone()
-
-        if not answer:
-            raise HTTPException(status_code=404, detail="Answer not found")
-
-        if answer["user_id"] != user["id"]:
-            raise HTTPException(status_code=403, detail="Not allowed")
-
-        cursor.execute(
-            "DELETE FROM answers WHERE id = %s",
-            (answer_id,),
-        )
-
-        db.commit()
-
-        return {"message": "Answer deleted"}
-
-    finally:
-        db.close()
+    db.table("answers").delete().eq("id", answer_id).execute()
+    return {"message": "Answer deleted"}
