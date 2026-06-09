@@ -205,7 +205,7 @@ def add_answer(
         db.table("notifications").insert({
             "user_id": question["user_id"],
             "message": f"{user['username']} answered your question.",
-            "is_read": False,
+            "is_read": 0,
             "question_id": question_id,
         }).execute()
 
@@ -245,7 +245,7 @@ def toggle_question_like(
         db.table("notifications").insert({
             "user_id": question["user_id"],
             "message": f"{user['username']} liked your question.",
-            "is_read": False,
+            "is_read": 0,
             "question_id": question_id,
         }).execute()
 
