@@ -9,3 +9,5 @@ passlib==1.7.4
 supabase
 implicit
 scipy
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0

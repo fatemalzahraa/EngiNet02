@@ -51,3 +51,9 @@ def add_points(cursor, user_id: int, points: int) -> None:
         "UPDATE users SET points = points + %s WHERE id = %s",
         (points, user_id)
     )
+# في dependencies.py — أضيفي هذه الدالة
+def add_points_supabase(db, user_id: int, points: int) -> None:
+    """نسخة Supabase من add_points"""
+    user = db.table("users").select("points").eq("id", user_id).single().execute().data
+    if user:
+        db.table("users").update({"points": user["points"] + points}).eq("id", user_id).execute()
