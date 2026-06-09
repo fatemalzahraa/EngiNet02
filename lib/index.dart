@@ -351,9 +351,9 @@ class _IndexPageState extends State<IndexPage> {
       body: IndexedStack(index: _currentIndex, children: _pages),
 
       drawer: Drawer(
-        child: Container(
-          color: AppColors.accent,
-          child: ListView(
+  child: Material(
+    color: AppColors.accent,
+    child: ListView(
             padding: EdgeInsets.zero,
             children: [
               DrawerHeader(

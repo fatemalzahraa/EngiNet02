@@ -511,7 +511,7 @@ Always be friendly, professional, and accurate.
   Widget _buildMessageBubble(Map<String, dynamic> msg) {
     final isUser = msg["role"] == "user";
     final isError = msg["role"] == "error";
-    final cards = (msg["cards"] as List<Map<String, dynamic>>?) ?? [];
+    final cards = ((msg["cards"] as List?)?.cast<Map<String, dynamic>>()) ?? <Map<String, dynamic>>[];
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
