@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from dependencies import get_current_user, add_points
+from dependencies import get_current_user, add_points_supabase
 from database import get_db
 
 router = APIRouter(prefix="/posts", tags=["Posts"])
@@ -19,254 +19,202 @@ class PostCreate(BaseModel):
 @router.get("/feed")
 def get_smart_feed(current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
 
-        cursor.execute(
-            """
-            SELECT i.name FROM interests i
-            JOIN user_interests ui ON ui.interest_id = i.id
-            WHERE ui.user_id = %s
-            """,
-            (user["id"],),
-        )
-        interests = [row["name"] for row in cursor.fetchall()]
+    user = db.table("users").select("id").eq("email", current_user["email"]).single().execute().data
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        if interests:
-            placeholders = ",".join(["%s"] * len(interests))
-            cursor.execute(
-                f"""
-                SELECT p.*, u.username, u.profile_image, u.role,
-                    CASE WHEN p.category = ANY(ARRAY[{placeholders}]::text[]) THEN 1 ELSE 0 END AS relevance
-                FROM posts p
-                JOIN users u ON p.user_id = u.id
-                ORDER BY relevance DESC, p.created_at DESC
-                """,
-                interests,
-            )
+    interests_data = db.table("user_interests")\
+        .select("interests(name)")\
+        .eq("user_id", user["id"])\
+        .execute().data
+
+    interests = [row["interests"]["name"] for row in interests_data if row.get("interests")]
+
+    posts = db.table("posts")\
+        .select("*, users(username, profile_image, role)")\
+        .order("created_at", desc=True)\
+        .execute().data
+
+    # ترتيب حسب الاهتمامات
+    if interests:
+        posts.sort(key=lambda p: 0 if p.get("category") in interests else 1)
+
+    # إضافة linked_course لكل post
+    result = []
+    for post in posts:
+        if post.get("linked_course_id"):
+            course = db.table("courses")\
+                .select("*")\
+                .eq("id", post["linked_course_id"])\
+                .single().execute().data
+            post["linked_course"] = course
         else:
-            cursor.execute(
-                """
-                SELECT p.*, u.username, u.profile_image, u.role
-                FROM posts p
-                JOIN users u ON p.user_id = u.id
-                ORDER BY p.created_at DESC
-                """
-            )
+            post["linked_course"] = None
+        result.append(post)
 
-        posts = cursor.fetchall()
-        result = []
-        for p in posts:
-            post = dict(p)
-            post.pop("relevance", None)
-            if post.get("linked_course_id"):
-                cursor.execute("SELECT * FROM courses WHERE id = %s", (post["linked_course_id"],))
-                course = cursor.fetchone()
-                post["linked_course"] = dict(course) if course else None
-            else:
-                post["linked_course"] = None
-            result.append(post)
-        return result
-    finally:
-        db.close()
+    return result
 
 
 # ── Get all posts ─────────────────────────────────────────
 @router.get("/")
 def get_all_posts():
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute(
-            """
-            SELECT p.*, u.username, u.profile_image, u.role
-            FROM posts p
-            JOIN users u ON p.user_id = u.id
-            ORDER BY p.created_at DESC
-            """
-        )
-        posts = cursor.fetchall()
-        result = []
-        for p in posts:
-            post = dict(p)
-            if post.get("linked_course_id"):
-                cursor.execute("SELECT * FROM courses WHERE id = %s", (post["linked_course_id"],))
-                course = cursor.fetchone()
-                post["linked_course"] = dict(course) if course else None
-            else:
-                post["linked_course"] = None
-            result.append(post)
-        return result
-    finally:
-        db.close()
+
+    posts = db.table("posts")\
+        .select("*, users(username, profile_image, role)")\
+        .order("created_at", desc=True)\
+        .execute().data
+
+    result = []
+    for post in posts:
+        if post.get("linked_course_id"):
+            course = db.table("courses")\
+                .select("*")\
+                .eq("id", post["linked_course_id"])\
+                .single().execute().data
+            post["linked_course"] = course
+        else:
+            post["linked_course"] = None
+        result.append(post)
+
+    return result
 
 
 # ── Create post (+1 point) ────────────────────────────────
 @router.post("/")
 def create_post(post: PostCreate, current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT id, role FROM users WHERE email = %s", (current_user["email"],))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
 
-        if user["role"] not in ("engineer", "admin"):
-            raise HTTPException(status_code=403, detail="Only engineers and admins can create posts")
+    user = db.table("users").select("id, role").eq("email", current_user["email"]).single().execute().data
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user["role"] not in ("engineer", "admin"):
+        raise HTTPException(status_code=403, detail="Only engineers and admins can create posts")
 
-        cursor.execute(
-            """
-            INSERT INTO posts (user_id, content, image_url, linked_course_id, category)
-            VALUES (%s,%s,%s,%s,%s)
-            RETURNING id
-            """,
-            (user["id"], post.content, post.image_url, post.linked_course_id, post.category),
-        )
-        new_id = cursor.fetchone()["id"]
-        add_points(cursor, user["id"], 1)
-        db.commit()
-        return {"message": "Post created successfully", "post_id": new_id}
-    finally:
-        db.close()
+    new_post = db.table("posts").insert({
+        "user_id": user["id"],
+        "content": post.content,
+        "image_url": post.image_url,
+        "linked_course_id": post.linked_course_id,
+        "category": post.category,
+    }).execute().data[0]
+
+    add_points_supabase(db, user["id"], 1)
+
+    return {"message": "Post created successfully", "post_id": new_post["id"]}
 
 
-# ── Like post — prevents duplicate likes and self-likes ───
+# ── Like post ─────────────────────────────────────────────
 @router.post("/{post_id}/like")
 def like_post(post_id: int, current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-        liker = cursor.fetchone()
-        if not liker:
-            raise HTTPException(status_code=404, detail="User not found")
 
-        cursor.execute("SELECT user_id FROM posts WHERE id = %s", (post_id,))
-        post = cursor.fetchone()
-        if not post:
-            raise HTTPException(status_code=404, detail="Post not found")
+    liker = db.table("users").select("id").eq("email", current_user["email"]).single().execute().data
+    if not liker:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        if post["user_id"] == liker["id"]:
-            raise HTTPException(status_code=400, detail="You cannot like your own post")
+    post = db.table("posts").select("user_id").eq("id", post_id).single().execute().data
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post["user_id"] == liker["id"]:
+        raise HTTPException(status_code=400, detail="You cannot like your own post")
 
-        # Prevent duplicate likes
-        cursor.execute(
-            "SELECT 1 FROM post_likes WHERE post_id = %s AND user_id = %s",
-            (post_id, liker["id"]),
-        )
-        if cursor.fetchone():
-            raise HTTPException(status_code=400, detail="You already liked this post")
+    existing = db.table("post_likes")\
+        .select("id")\
+        .eq("post_id", post_id)\
+        .eq("user_id", liker["id"])\
+        .execute().data
+    if existing:
+        raise HTTPException(status_code=400, detail="You already liked this post")
 
-        cursor.execute(
-            "INSERT INTO post_likes (post_id, user_id) VALUES (%s, %s)",
-            (post_id, liker["id"]),
-        )
-        cursor.execute("UPDATE posts SET likes = likes + 1 WHERE id = %s", (post_id,))
-        add_points(cursor, post["user_id"], 2)
-        db.commit()
-        return {"message": "Post liked!"}
-    finally:
-        db.close()
+    db.table("post_likes").insert({"post_id": post_id, "user_id": liker["id"]}).execute()
+
+    current_post = db.table("posts").select("likes").eq("id", post_id).single().execute().data
+    db.table("posts").update({"likes": (current_post["likes"] or 0) + 1}).eq("id", post_id).execute()
+
+    add_points_supabase(db, post["user_id"], 2)
+
+    return {"message": "Post liked!"}
 
 
 # ── Unlike post ───────────────────────────────────────────
 @router.delete("/{post_id}/like")
 def unlike_post(post_id: int, current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-        liker = cursor.fetchone()
-        if not liker:
-            raise HTTPException(status_code=404, detail="User not found")
 
-        cursor.execute(
-            "DELETE FROM post_likes WHERE post_id = %s AND user_id = %s RETURNING 1",
-            (post_id, liker["id"]),
-        )
-        if not cursor.fetchone():
-            raise HTTPException(status_code=400, detail="You haven't liked this post")
+    liker = db.table("users").select("id").eq("email", current_user["email"]).single().execute().data
+    if not liker:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        cursor.execute(
-            "UPDATE posts SET likes = GREATEST(likes - 1, 0) WHERE id = %s",
-            (post_id,),
-        )
+    existing = db.table("post_likes")\
+        .select("id")\
+        .eq("post_id", post_id)\
+        .eq("user_id", liker["id"])\
+        .execute().data
+    if not existing:
+        raise HTTPException(status_code=400, detail="You haven't liked this post")
 
-        # Get post owner to deduct points
-        cursor.execute("SELECT user_id FROM posts WHERE id = %s", (post_id,))
-        post = cursor.fetchone()
-        if post:
-            cursor.execute(
-                "UPDATE users SET points = GREATEST(points - 2, 0) WHERE id = %s",
-                (post["user_id"],),
-            )
+    db.table("post_likes")\
+        .delete()\
+        .eq("post_id", post_id)\
+        .eq("user_id", liker["id"])\
+        .execute()
 
-        db.commit()
-        return {"message": "Post unliked!"}
-    finally:
-        db.close()
+    current_post = db.table("posts").select("likes, user_id").eq("id", post_id).single().execute().data
+    new_likes = max((current_post["likes"] or 1) - 1, 0)
+    db.table("posts").update({"likes": new_likes}).eq("id", post_id).execute()
+
+    # خصم النقاط من صاحب المنشور
+    owner = db.table("users").select("points").eq("id", current_post["user_id"]).single().execute().data
+    if owner:
+        new_points = max((owner["points"] or 2) - 2, 0)
+        db.table("users").update({"points": new_points}).eq("id", current_post["user_id"]).execute()
+
+    return {"message": "Post unliked!"}
 
 
 # ── Delete post ───────────────────────────────────────────
 @router.delete("/{post_id}")
 def delete_post(post_id: int, current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT id, role FROM users WHERE email = %s", (current_user["email"],))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
 
-        cursor.execute("SELECT user_id FROM posts WHERE id = %s", (post_id,))
-        post = cursor.fetchone()
-        if not post:
-            raise HTTPException(status_code=404, detail="Post not found")
-        if post["user_id"] != user["id"] and user["role"] != "admin":
-            raise HTTPException(status_code=403, detail="Not authorized to delete this post")
+    user = db.table("users").select("id, role").eq("email", current_user["email"]).single().execute().data
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
-        cursor.execute("DELETE FROM post_likes WHERE post_id = %s", (post_id,))
-        cursor.execute("DELETE FROM posts WHERE id = %s", (post_id,))
-        db.commit()
-        return {"message": "Post deleted successfully"}
-    finally:
-        db.close()
+    post = db.table("posts").select("user_id").eq("id", post_id).single().execute().data
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post["user_id"] != user["id"] and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to delete this post")
+
+    db.table("post_likes").delete().eq("post_id", post_id).execute()
+    db.table("posts").delete().eq("id", post_id).execute()
+
+    return {"message": "Post deleted successfully"}
 
 
 # ── Interests ─────────────────────────────────────────────
 @router.get("/interests")
 def get_interests():
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT * FROM interests ORDER BY name")
-        return cursor.fetchall()
-    finally:
-        db.close()
+    return db.table("interests").select("*").order("name").execute().data
 
 
 @router.post("/interests/set")
 def set_user_interests(interest_ids: list[int], current_user: dict = Depends(get_current_user)):
     db = get_db()
-    try:
-        cursor = db.cursor()
-        cursor.execute("SELECT id FROM users WHERE email = %s", (current_user["email"],))
-        user = cursor.fetchone()
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
 
-        cursor.execute("DELETE FROM user_interests WHERE user_id = %s", (user["id"],))
-        for interest_id in interest_ids:
-            cursor.execute(
-                "INSERT INTO user_interests (user_id, interest_id) VALUES (%s,%s)",
-                (user["id"], interest_id),
-            )
-        db.commit()
-        return {"message": "Interests updated successfully"}
-    finally:
-        db.close()
+    user = db.table("users").select("id").eq("email", current_user["email"]).single().execute().data
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    db.table("user_interests").delete().eq("user_id", user["id"]).execute()
+
+    if interest_ids:
+        db.table("user_interests").insert([
+            {"user_id": user["id"], "interest_id": iid} for iid in interest_ids
+        ]).execute()
+
+    return {"message": "Interests updated successfully"}

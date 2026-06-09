@@ -1,11 +1,7 @@
-import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:enginet/engineer_profile.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -23,9 +19,6 @@ class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> engineers = [];
   List<dynamic> posts = [];
   bool isLoading = true;
-  List<dynamic> recommendedCourses = [];
-  List<dynamic> recommendedArticles = [];
-  List<dynamic> recommendedBooks = [];
   int _page = 0;
   final int _limit = 10;
   bool _hasMore = true;
@@ -42,7 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     loadData();
-
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >=
               _scrollController.position.maxScrollExtent - 200 &&
@@ -59,8 +51,10 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  // ── Load current user ──────────────────────────────────
   Future<void> _loadCurrentUser() async {
     final email = await SessionManager.getEmail();
+    debugPrint("=== email from SessionManager: $email ===");
     if (email == null || email.isEmpty) return;
 
     final userRes = await _supabase
@@ -74,51 +68,57 @@ class _HomeScreenState extends State<HomeScreen> {
         userRes?['username']?.toString() ?? await SessionManager.getUsername();
   }
 
+  // ── Enrich posts (batch queries) ───────────────────────
   Future<List<dynamic>> _enrichPosts(List<dynamic> rawPosts) async {
-    final enrichedPosts = <dynamic>[];
+    if (rawPosts.isEmpty) return [];
 
-    for (final post in rawPosts) {
-      final postId = post['id'];
+    final postIds = rawPosts.map((p) => p['id']).toList();
 
-      final commentsRes = await _supabase
-          .from('comments')
-          .select('id')
-          .eq('post_id', postId);
+    final comments = await _supabase
+        .from('comments')
+        .select('post_id')
+        .inFilter('post_id', postIds);
 
-      bool isLiked = false;
-      bool isSaved = false;
-
-      if (currentUserId != null) {
-        final likeRes = await _supabase
-            .from('likes')
-            .select('id')
-            .eq('user_id', currentUserId!)
-            .eq('post_id', postId)
-            .maybeSingle();
-
-        final saveRes = await _supabase
-            .from('saved_posts')
-            .select('id')
-            .eq('user_id', currentUserId!)
-            .eq('post_id', postId)
-            .maybeSingle();
-
-        isLiked = likeRes != null;
-        isSaved = saveRes != null;
-      }
-
-      enrichedPosts.add({
-        ...post,
-        'comments_count': (commentsRes as List).length,
-        'is_liked': isLiked,
-        'is_saved': isSaved,
-      });
+    final commentsCount = <dynamic, int>{};
+    for (var c in comments) {
+      final pid = c['post_id'];
+      commentsCount[pid] = (commentsCount[pid] ?? 0) + 1;
     }
 
-    return enrichedPosts;
+    Set<dynamic> likedIds = {};
+    Set<dynamic> savedIds = {};
+
+    if (currentUserId != null) {
+      final likes = await _supabase
+          .from('likes')
+          .select('post_id')
+          .eq('user_id', currentUserId!)
+          .inFilter('post_id', postIds);
+
+      final saves = await _supabase
+          .from('saved_posts')
+          .select('post_id')
+          .eq('user_id', currentUserId!)
+          .inFilter('post_id', postIds);
+
+      likedIds = likes.map((l) => l['post_id']).toSet();
+      savedIds = saves.map((s) => s['post_id']).toSet();
+    }
+
+    return rawPosts.map((post) {
+      final pid = post['id'];
+      return {
+        ...post,
+        'comments_count': commentsCount[pid] ?? 0,
+        'is_liked': likedIds.contains(pid),
+        'is_saved': savedIds.contains(pid),
+      };
+    }).toList();
   }
 
+  // ── Load all data ──────────────────────────────────────
   Future<void> loadData() async {
+    if (mounted) setState(() => isLoading = true);
     try {
       await _loadCurrentUser();
 
@@ -128,14 +128,13 @@ class _HomeScreenState extends State<HomeScreen> {
             .select('following_id')
             .eq('follower_id', currentUserId!);
 
-        followedEngineerIds = (followsRes as List)
-            .map((e) => e['following_id'] as int)
-            .toSet();
+        followedEngineerIds =
+            (followsRes as List).map((e) => e['following_id'] as int).toSet();
       }
 
       _page = 0;
 
-      // ── Öğrencinin ilgi alanlarını al ──
+      // ── Student interests ──
       List<String> studentInterests = [];
       String studentSpecialty = '';
 
@@ -161,7 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
-      // ── Tüm mühendisleri al ──
+      // ── Engineers ──
       final allEngineersRes = await _supabase
           .from('users')
           .select('id, username, profile_image, points, university')
@@ -169,12 +168,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
       List<dynamic> allEngineers = allEngineersRes as List;
 
-      // ── İlgi alanına göre filtrele ──
       List<dynamic> matchedEngineers = [];
       List<dynamic> otherEngineers = [];
 
       if (studentInterests.isNotEmpty || studentSpecialty.isNotEmpty) {
-        // Mühendis profillerini al
         final engineerIds = allEngineers.map((e) => e['id'] as int).toList();
 
         final engProfiles = engineerIds.isNotEmpty
@@ -184,7 +181,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   .inFilter('user_id', engineerIds)
             : [];
 
-        final profileMap = {for (var p in engProfiles) p['user_id'] as int: p};
+        final profileMap = {
+          for (var p in engProfiles) p['user_id'] as int: p
+        };
 
         for (final eng in allEngineers) {
           final engId = eng['id'] as int;
@@ -198,17 +197,15 @@ class _HomeScreenState extends State<HomeScreen> {
             continue;
           }
 
-          final engSpecialty = (profile['specialty'] ?? '')
-              .toString()
-              .toLowerCase();
-          final engSkills = (profile['skills'] ?? '').toString().toLowerCase();
+          final engSpecialty =
+              (profile['specialty'] ?? '').toString().toLowerCase();
+          final engSkills =
+              (profile['skills'] ?? '').toString().toLowerCase();
 
           final isMatch =
-              studentInterests.any(
-                (interest) =>
-                    engSpecialty.contains(interest) ||
-                    engSkills.contains(interest),
-              ) ||
+              studentInterests.any((interest) =>
+                  engSpecialty.contains(interest) ||
+                  engSkills.contains(interest)) ||
               (studentSpecialty.isNotEmpty &&
                   engSpecialty.contains(studentSpecialty.toLowerCase()));
 
@@ -220,38 +217,28 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       } else {
         otherEngineers = allEngineers
-            .where(
-              (e) =>
-                  !followedEngineerIds.contains(e['id'] as int) &&
-                  e['id'] != currentUserId,
-            )
+            .where((e) =>
+                !followedEngineerIds.contains(e['id'] as int) &&
+                e['id'] != currentUserId)
             .toList();
       }
 
-      // Matched önce, sonra diğerleri
       final engineersData = [...matchedEngineers, ...otherEngineers];
 
       // ── Posts ──
-      final supabaseUrl = dotenv.env['SUPABASE_URL']!;
-      final supabaseKey = dotenv.env['SUPABASE_ANON_KEY']!;
+      List<dynamic> postsData = [];
 
-      final postsRes = await http.get(
-        Uri.parse(
-          '$supabaseUrl/rest/v1/posts'
-          '?select=*'
-          '&order=created_at.desc'
-          '&limit=$_limit'
-          '&offset=0',
-        ),
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': 'Bearer $supabaseKey',
-        },
-      );
-
-      final postsData = postsRes.statusCode == 200
-          ? jsonDecode(postsRes.body) as List<dynamic>
-          : <dynamic>[];
+      if (followedEngineerIds.isNotEmpty) {
+        final res = await _supabase
+            .from('posts')
+            .select('*')
+            .inFilter('user_id', followedEngineerIds.toList())
+            .order('created_at', ascending: false)
+            .limit(_limit);
+        postsData = res as List<dynamic>;
+      } else {
+        
+      }
 
       final enrichedPosts = await _enrichPosts(postsData);
 
@@ -261,26 +248,25 @@ class _HomeScreenState extends State<HomeScreen> {
         posts = enrichedPosts;
         _hasMore = postsData.length == _limit;
         isLoading = false;
-        recommendedCourses = [];
-        recommendedArticles = [];
-        recommendedBooks = [];
       });
     } catch (e) {
       debugPrint('Error loading data: $e');
       if (!mounted) return;
       setState(() => isLoading = false);
     }
+
+    debugPrint("=== currentUserId: $currentUserId ===");
+debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
   }
 
+  // ── Follow / Unfollow ──────────────────────────────────
   Future<void> toggleFollowEngineer(int engineerId) async {
     if (currentUserId == null) return;
 
     final isFollowing = followedEngineerIds.contains(engineerId);
 
     if (!isFollowing) {
-      setState(() {
-        followedEngineerIds.add(engineerId);
-      });
+      setState(() => followedEngineerIds.add(engineerId));
 
       Future.delayed(const Duration(seconds: 1), () {
         if (mounted) {
@@ -297,17 +283,10 @@ class _HomeScreenState extends State<HomeScreen> {
         });
       } catch (e) {
         debugPrint('Follow error: $e');
-
-        if (mounted) {
-          setState(() {
-            followedEngineerIds.remove(engineerId);
-          });
-        }
+        if (mounted) setState(() => followedEngineerIds.remove(engineerId));
       }
     } else {
-      setState(() {
-        followedEngineerIds.remove(engineerId);
-      });
+      setState(() => followedEngineerIds.remove(engineerId));
 
       try {
         await _supabase
@@ -317,49 +296,37 @@ class _HomeScreenState extends State<HomeScreen> {
             .eq('following_id', engineerId);
       } catch (e) {
         debugPrint('Unfollow error: $e');
-        if (mounted) {
-          setState(() {
-            followedEngineerIds.add(engineerId);
-          });
-        }
+        if (mounted) setState(() => followedEngineerIds.add(engineerId));
       }
     }
   }
 
+  // ── Load more posts ────────────────────────────────────
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore) return;
     setState(() => _loadingMore = true);
 
     try {
-      final supabaseUrl = dotenv.env['SUPABASE_URL']!;
-      final supabaseKey = dotenv.env['SUPABASE_ANON_KEY']!;
-
       _page++;
+      List<dynamic> newPosts = [];
 
-      final res = await http.get(
-        Uri.parse(
-          '$supabaseUrl/rest/v1/posts'
-          '?select=*'
-          '&order=created_at.desc'
-          '&limit=$_limit'
-          '&offset=${_page * _limit}',
-        ),
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': 'Bearer $supabaseKey',
-        },
-      );
+      if (followedEngineerIds.isNotEmpty) {
+        final res = await _supabase
+            .from('posts')
+            .select('*')
+            .inFilter('user_id', followedEngineerIds.toList())
+            .order('created_at', ascending: false)
+            .range(_page * _limit, (_page + 1) * _limit - 1);
+        newPosts = res as List<dynamic>;
+      } 
 
-      if (res.statusCode == 200) {
-        final newPosts = jsonDecode(res.body) as List<dynamic>;
-        final enrichedNewPosts = await _enrichPosts(newPosts);
+      final enrichedNewPosts = await _enrichPosts(newPosts);
 
-        if (!mounted) return;
-        setState(() {
-          posts.addAll(enrichedNewPosts);
-          _hasMore = newPosts.length == _limit;
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        posts.addAll(enrichedNewPosts);
+        _hasMore = newPosts.length == _limit;
+      });
     } catch (e) {
       debugPrint('Error loading more: $e');
     } finally {
@@ -367,6 +334,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // ── Edit post ──────────────────────────────────────────
   void _editPost(dynamic post, int index) {
     final controller = TextEditingController(text: post['content']);
 
@@ -386,11 +354,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   .from('posts')
                   .update({'content': controller.text})
                   .eq('id', post['id']);
-
-              setState(() {
-                posts[index]['content'] = controller.text;
-              });
-
+              setState(() => posts[index]['content'] = controller.text);
               Navigator.pop(context);
             },
             child: const Text('Save'),
@@ -400,6 +364,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ── Delete post ────────────────────────────────────────
   Future<void> _deletePost(int postId, int index) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -423,32 +388,24 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       await _supabase.from('posts').delete().eq('id', postId);
-
       if (!mounted) return;
-
-      setState(() {
-        posts.removeAt(index);
-      });
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Post deleted')));
+      setState(() => posts.removeAt(index));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Post deleted')));
     } catch (e) {
       debugPrint('Delete error: $e');
-
       if (!mounted) return;
-
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Failed to delete post')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Failed to delete post')));
     }
   }
 
-  Future<void> _sendPostLikeNotification(dynamic post, dynamic postId) async {
+  // ── Like notification ──────────────────────────────────
+  Future<void> _sendPostLikeNotification(
+      dynamic post, dynamic postId) async {
     if (currentUserId == null) return;
 
     int? postOwnerId;
-
     final rawOwnerId = post['user_id'];
     if (rawOwnerId is int) {
       postOwnerId = rawOwnerId;
@@ -456,20 +413,15 @@ class _HomeScreenState extends State<HomeScreen> {
       postOwnerId = int.tryParse(rawOwnerId.toString());
     }
 
-    // Fallback for older posts that do not have user_id yet.
     if (postOwnerId == null) {
       final ownerUsername = post['username']?.toString() ?? '';
-
       if (ownerUsername.isNotEmpty && ownerUsername != currentUsername) {
         final owner = await _supabase
             .from('users')
             .select('id')
             .eq('username', ownerUsername)
             .maybeSingle();
-
-        if (owner != null) {
-          postOwnerId = owner['id'] as int?;
-        }
+        if (owner != null) postOwnerId = owner['id'] as int?;
       }
     }
 
@@ -484,6 +436,7 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
+  // ── Like post ──────────────────────────────────────────
   Future<void> likePost(int index) async {
     if (currentUserId == null) return;
 
@@ -494,9 +447,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
     setState(() {
       posts[index]['is_liked'] = !wasLiked;
-      posts[index]['likes'] = wasLiked
-          ? (oldLikes > 0 ? oldLikes - 1 : 0)
-          : oldLikes + 1;
+      posts[index]['likes'] =
+          wasLiked ? (oldLikes > 0 ? oldLikes - 1 : 0) : oldLikes + 1;
     });
 
     try {
@@ -511,7 +463,6 @@ class _HomeScreenState extends State<HomeScreen> {
           'user_id': currentUserId!,
           'post_id': postId,
         });
-
         await _sendPostLikeNotification(post, postId);
       }
 
@@ -529,6 +480,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  // ── Save post ──────────────────────────────────────────
   Future<void> toggleSavePost(int index) async {
     if (currentUserId == null) return;
 
@@ -536,9 +488,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final postId = post['id'];
     final wasSaved = post['is_saved'] == true;
 
-    setState(() {
-      posts[index]['is_saved'] = !wasSaved;
-    });
+    setState(() => posts[index]['is_saved'] = !wasSaved);
 
     try {
       if (wasSaved) {
@@ -556,12 +506,11 @@ class _HomeScreenState extends State<HomeScreen> {
     } catch (e) {
       debugPrint('Save post error: $e');
       if (!mounted) return;
-      setState(() {
-        posts[index]['is_saved'] = wasSaved;
-      });
+      setState(() => posts[index]['is_saved'] = wasSaved);
     }
   }
 
+  // ── Build ──────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -570,13 +519,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ? ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text(
-                  'Engineers',
-                  style: GoogleFonts.agbalumo(
-                    color: const Color(0xFF6C94C6),
-                    fontSize: 24,
-                  ),
-                ),
+                Text('Engineers',
+                    style: GoogleFonts.agbalumo(
+                        color: const Color(0xFF6C94C6), fontSize: 24)),
                 const SizedBox(height: 12),
                 SizedBox(
                   height: 165,
@@ -587,13 +532,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
-                Text(
-                  'posts',
-                  style: GoogleFonts.agbalumo(
-                    color: const Color(0xFF6C94C6),
-                    fontSize: 24,
-                  ),
-                ),
+                Text('Posts',
+                    style: GoogleFonts.agbalumo(
+                        color: const Color(0xFF6C94C6), fontSize: 24)),
                 const SizedBox(height: 12),
                 ...List.generate(3, (_) => _buildPostSkeleton()),
               ],
@@ -604,23 +545,16 @@ class _HomeScreenState extends State<HomeScreen> {
                 controller: _scrollController,
                 padding: const EdgeInsets.all(16),
                 children: [
-                  Text(
-                    'Engineer',
-                    style: GoogleFonts.agbalumo(
-                      color: const Color(0xFF6C94C6),
-                      fontSize: 24,
-                    ),
-                  ),
+                  Text('Engineers',
+                      style: GoogleFonts.agbalumo(
+                          color: const Color(0xFF6C94C6), fontSize: 24)),
                   const SizedBox(height: 12),
                   SizedBox(
                     height: 165,
                     child: engineers.isEmpty
                         ? const Center(
-                            child: Text(
-                              'No engineers',
-                              style: TextStyle(color: Colors.white54),
-                            ),
-                          )
+                            child: Text('No engineers',
+                                style: TextStyle(color: Colors.white54)))
                         : ListView.builder(
                             scrollDirection: Axis.horizontal,
                             itemCount: engineers.length,
@@ -629,46 +563,46 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                   ),
                   const SizedBox(height: 24),
-                  Text(
-                    'posts',
-                    style: GoogleFonts.agbalumo(
-                      color: const Color(0xFF6C94C6),
-                      fontSize: 24,
-                    ),
-                  ),
+                  Text('Posts',
+                      style: GoogleFonts.agbalumo(
+                          color: const Color(0xFF6C94C6), fontSize: 24)),
                   const SizedBox(height: 12),
                   if (posts.isEmpty)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: Text(
-                          'No posts yet',
-                          style: TextStyle(color: Colors.white54),
-                        ),
-                      ),
-                    )
+  Center(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
+      child: Column(
+        children: [
+          const Icon(Icons.people_outline, size: 64, color: Colors.white24),
+          const SizedBox(height: 16),
+          Text(
+            followedEngineerIds.isEmpty
+                ? 'Gönderi görmek için mühendisleri takip et'
+                : 'Henüz gönderi yok',
+            style: const TextStyle(color: Colors.white54, fontSize: 15),
+            textAlign: TextAlign.center,
+          ),
+        ],
+      ),
+    ),
+  )
                   else
                     ...List.generate(
-                      posts.length,
-                      (i) => _buildPostCard(i, posts[i]),
-                    ),
+                        posts.length, (i) => _buildPostCard(i, posts[i])),
                   if (_loadingMore)
                     const Center(
                       child: Padding(
                         padding: EdgeInsets.all(16),
                         child: CircularProgressIndicator(
-                          color: Color(0xFF6C94C6),
-                        ),
+                            color: Color(0xFF6C94C6)),
                       ),
                     ),
                   if (!_hasMore && posts.isNotEmpty)
                     const Center(
                       child: Padding(
                         padding: EdgeInsets.all(16),
-                        child: Text(
-                          'No more posts',
-                          style: TextStyle(color: Colors.white38),
-                        ),
+                        child: Text('No more posts',
+                            style: TextStyle(color: Colors.white38)),
                       ),
                     ),
                 ],
@@ -677,6 +611,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ── Skeletons ──────────────────────────────────────────
   Widget _buildEngineerSkeleton() {
     return Shimmer.fromColors(
       baseColor: const Color(0xFF1A2F55),
@@ -707,56 +642,47 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
+            Row(children: [
+              Container(
                   width: 42,
                   height: 42,
                   decoration: const BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Container(
+                      color: Colors.white, shape: BoxShape.circle)),
+              const SizedBox(width: 10),
+              Container(
                   width: 100,
                   height: 14,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                ),
-              ],
-            ),
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8))),
+            ]),
             const SizedBox(height: 12),
             Container(
-              width: double.infinity,
-              height: 12,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
+                width: double.infinity,
+                height: 12,
+                decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8))),
             const SizedBox(height: 8),
             Container(
-              width: 200,
-              height: 12,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
+                width: 200,
+                height: 12,
+                decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8))),
           ],
         ),
       ),
     );
   }
 
+  // ── Engineer card ──────────────────────────────────────
   Widget _buildEngineerCard(dynamic eng) {
     final name = eng['username']?.toString() ?? '';
     final image = eng['profile_image']?.toString() ?? '';
     final userId = eng['id'] as int?;
-    final isFollowing = userId != null && followedEngineerIds.contains(userId);
+    final isFollowing =
+        userId != null && followedEngineerIds.contains(userId);
 
     return GestureDetector(
       onTap: () {
@@ -789,9 +715,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     width: 85,
                     height: 85,
                     decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: Colors.white24,
-                    ),
+                        shape: BoxShape.circle, color: Colors.white24),
                     child: ClipOval(
                       child: image.isNotEmpty
                           ? CachedNetworkImage(
@@ -800,21 +724,17 @@ class _HomeScreenState extends State<HomeScreen> {
                               height: 85,
                               fit: BoxFit.cover,
                               errorWidget: (c, u, e) => const Icon(
-                                Icons.person,
-                                size: 40,
-                                color: Colors.white54,
-                              ),
+                                  Icons.person,
+                                  size: 40,
+                                  color: Colors.white54),
                               placeholder: (c, u) => Shimmer.fromColors(
                                 baseColor: const Color(0xFF1A2F55),
                                 highlightColor: const Color(0xFF2A4A7F),
                                 child: Container(color: Colors.white),
                               ),
                             )
-                          : const Icon(
-                              Icons.person,
-                              size: 40,
-                              color: Colors.white54,
-                            ),
+                          : const Icon(Icons.person,
+                              size: 40, color: Colors.white54),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -823,9 +743,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text(
                       name,
                       style: GoogleFonts.agbalumo(
-                        color: Colors.black87,
-                        fontSize: 12,
-                      ),
+                          color: Colors.black87, fontSize: 12),
                       overflow: TextOverflow.ellipsis,
                       textAlign: TextAlign.center,
                     ),
@@ -849,15 +767,10 @@ class _HomeScreenState extends State<HomeScreen> {
                         : const Color.fromARGB(255, 88, 16, 15),
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: const Color(0xFFD8C09A),
-                      width: 2,
-                    ),
+                        color: const Color(0xFFD8C09A), width: 2),
                   ),
-                  child: Icon(
-                    isFollowing ? Icons.check : Icons.add,
-                    size: 16,
-                    color: Colors.white,
-                  ),
+                  child: Icon(isFollowing ? Icons.check : Icons.add,
+                      size: 16, color: Colors.white),
                 ),
               ),
             ),
@@ -867,6 +780,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ── Post card ──────────────────────────────────────────
   Widget _buildPostCard(int index, dynamic post) {
     final content = post['content']?.toString() ?? '';
     final username = post['username']?.toString() ?? '';
@@ -897,22 +811,15 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildProfileAvatar(profileImage, size: 42),
               const SizedBox(width: 10),
-              Text(
-                username,
-                style: GoogleFonts.agbalumo(
-                  fontSize: 14,
-                  color: Colors.black87,
-                ),
-              ),
+              Text(username,
+                  style: GoogleFonts.agbalumo(
+                      fontSize: 14, color: Colors.black87)),
               const Spacer(),
               if (username == currentUsername)
                 PopupMenuButton<String>(
                   onSelected: (value) {
-                    if (value == 'delete') {
-                      _deletePost(post['id'], index);
-                    } else if (value == 'edit') {
-                      _editPost(post, index);
-                    }
+                    if (value == 'delete') _deletePost(post['id'], index);
+                    if (value == 'edit') _editPost(post, index);
                   },
                   itemBuilder: (context) => const [
                     PopupMenuItem(value: 'edit', child: Text('Edit')),
@@ -922,14 +829,9 @@ class _HomeScreenState extends State<HomeScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          Text(
-            content,
-            style: const TextStyle(
-              fontSize: 14,
-              color: Colors.black87,
-              height: 1.45,
-            ),
-          ),
+          Text(content,
+              style: const TextStyle(
+                  fontSize: 14, color: Colors.black87, height: 1.45)),
           if (postImageUrl.isNotEmpty) ...[
             const SizedBox(height: 10),
             Container(
@@ -937,9 +839,7 @@ class _HomeScreenState extends State<HomeScreen> {
               height: 220,
               color: const Color(0xFFF5ECD7),
               child: CachedNetworkImage(
-                imageUrl: postImageUrl,
-                fit: BoxFit.contain,
-              ),
+                  imageUrl: postImageUrl, fit: BoxFit.contain),
             ),
           ],
           if (linkedCourse != null) ...[
@@ -954,8 +854,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child:
-                        linkedCourse['image_url'] != null &&
+                    child: linkedCourse['image_url'] != null &&
                             linkedCourse['image_url'].toString().isNotEmpty
                         ? CachedNetworkImage(
                             imageUrl: linkedCourse['image_url'].toString(),
@@ -963,35 +862,27 @@ class _HomeScreenState extends State<HomeScreen> {
                             height: 52,
                             fit: BoxFit.cover,
                             errorWidget: (c, u, e) => const Icon(
-                              Icons.play_circle,
-                              size: 40,
-                              color: Colors.grey,
-                            ),
+                                Icons.play_circle,
+                                size: 40,
+                                color: Colors.grey),
                             placeholder: (c, u) => Shimmer.fromColors(
                               baseColor: const Color(0xFF1A2F55),
                               highlightColor: const Color(0xFF2A4A7F),
                               child: Container(
-                                width: 52,
-                                height: 52,
-                                color: Colors.white,
-                              ),
+                                  width: 52, height: 52, color: Colors.white),
                             ),
                           )
-                        : const Icon(
-                            Icons.play_circle,
-                            size: 40,
-                            color: Colors.grey,
-                          ),
+                        : const Icon(Icons.play_circle,
+                            size: 40, color: Colors.grey),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
                       linkedCourse['title']?.toString() ?? '',
                       style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: Colors.black87,
-                      ),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.black87),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -1015,13 +906,9 @@ class _HomeScreenState extends State<HomeScreen> {
                       color: Colors.red,
                     ),
                     const SizedBox(width: 5),
-                    Text(
-                      '$likes',
-                      style: const TextStyle(
-                        color: Colors.black54,
-                        fontSize: 13,
-                      ),
-                    ),
+                    Text('$likes',
+                        style: const TextStyle(
+                            color: Colors.black54, fontSize: 13)),
                   ],
                 ),
               ),
@@ -1037,19 +924,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.chat_bubble,
-                      size: 18,
-                      color: Color(0xFF5B7FA6),
-                    ),
+                    const Icon(Icons.chat_bubble,
+                        size: 18, color: Color(0xFF5B7FA6)),
                     const SizedBox(width: 5),
-                    Text(
-                      '$comments',
-                      style: const TextStyle(
-                        color: Color(0xFF5B7FA6),
-                        fontSize: 13,
-                      ),
-                    ),
+                    Text('$comments',
+                        style: const TextStyle(
+                            color: Color(0xFF5B7FA6), fontSize: 13)),
                   ],
                 ),
               ),
@@ -1071,6 +951,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // ── Profile avatar ─────────────────────────────────────
   Widget _buildProfileAvatar(String imageUrl, {double size = 42}) {
     return Container(
       width: size,
@@ -1091,16 +972,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 placeholder: (c, u) => Shimmer.fromColors(
                   baseColor: const Color(0xFF1A2F55),
                   highlightColor: const Color(0xFF2A4A7F),
-                  child: Container(
-                    width: size,
-                    height: size,
-                    color: Colors.white,
-                  ),
+                  child: Container(width: size, height: size, color: Colors.white),
                 ),
               )
             : Container(
                 color: const Color(0xFF4A6FA5),
-                child: const Icon(Icons.person, color: Colors.white, size: 22),
+                child:
+                    const Icon(Icons.person, color: Colors.white, size: 22),
               ),
       ),
     );

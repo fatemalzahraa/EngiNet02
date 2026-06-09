@@ -5,10 +5,8 @@ import 'package:shimmer/shimmer.dart' show Shimmer;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'book_detail.dart';
 import 'package:enginet/core/session_manager.dart';
-import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/app_colors.dart';
+import 'dart:async';
 
 class BookScreen extends StatefulWidget {
   const BookScreen({super.key});
@@ -20,10 +18,11 @@ class BookScreen extends StatefulWidget {
 class _BookScreenState extends State<BookScreen> {
   final supabase = Supabase.instance.client;
   String? currentUsername;
+  Timer? _debounce;
 
-  List<dynamic> allBooks = [];
-  List<dynamic> filteredBooks = [];
-  List<dynamic> recommendedBooks = [];
+  List<Map<String, dynamic>> allBooks = [];
+  List<Map<String, dynamic>> filteredBooks = [];
+  List<Map<String, dynamic>> recommendedBooks = [];
   bool isLoading = true;
   bool isLoadingRecommended = true;
   final TextEditingController _searchController = TextEditingController();
@@ -37,19 +36,56 @@ class _BookScreenState extends State<BookScreen> {
   }
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
+void dispose() {
+  _debounce?.cancel();
+  _searchController.dispose();
+  super.dispose();
+}
 
   Future<void> _loadUser() async {
     currentUsername = await SessionManager.getUsername();
     if (mounted) setState(() {});
   }
+  Future<void> _showDeleteDialog(String id) async {
+  final confirm = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text("Delete Book"),
+      content: const Text(
+        "Are you sure you want to delete this book?",
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text("Cancel"),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          child: const Text("Delete"),
+        ),
+      ],
+    ),
+  );
+
+  if (confirm == true) {
+    _deleteBook(id);
+  }
+}
 
   Future<void> _deleteBook(String id) async {
-    await supabase.from('books').delete().eq('id', id);
-    loadBooks();
+    try {
+      await supabase.from('books').delete().eq('id', id);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Book deleted successfully')),
+      );
+
+      loadBooks();
+    } catch (e) {
+      debugPrint("Delete error: $e");
+    }
   }
 
   void _editBook(dynamic book) {
@@ -96,97 +132,56 @@ class _BookScreenState extends State<BookScreen> {
   }
 
   Future<void> loadBooks() async {
-    try {
-      final data = await supabase
-          .from('books')
-          .select()
-          .order('created_at', ascending: false);
+  try {
+    final response = await supabase
+        .from('books')
+        .select()
+        .order('created_at', ascending: false);
 
-      if (!mounted) return;
-      setState(() {
-        allBooks = data;
-        filteredBooks = data;
-        isLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => isLoading = false);
-      debugPrint("Error loading books: $e");
-    }
+    debugPrint("Books response: $response");
+    debugPrint("Books count: ${response.length}");
+    
+    // ← هذا الجزء ناقص عندك!
+    final data = List<Map<String, dynamic>>.from(response);
+    if (!mounted) return;
+    setState(() {
+      allBooks = data;
+      filteredBooks = data;
+      isLoading = false;
+    });
+  } catch (e) {
+    debugPrint("Error loading books: $e");
+    if (!mounted) return;
+    setState(() => isLoading = false);
   }
+}
 
-  Future<void> loadRecommendedBooks() async {
-    try {
-      List<dynamic> result = [];
+ Future<void> loadRecommendedBooks() async {
+  debugPrint("=== loadRecommendedBooks started ==="); 
+  if (mounted) setState(() => isLoadingRecommended = true);
+  
+  try {
+    final response = await supabase
+        .from('books')
+        .select()
+        .order('likes', ascending: false)
+        .limit(10);
+        debugPrint("=== recommended count: ${response.length} ==="); 
 
-      // Önce email'den user id'yi al
-      final email = await SessionManager.getEmail();
-      if (email != null) {
-        final userRow = await supabase
-            .from('users')
-            .select('id')
-            .eq('email', email)
-            .single();
+    final result = List<Map<String, dynamic>>.from(response);
 
-        final userId = userRow['id'] as int;
-
-        // Bu kullanıcının kitap etkileşimlerini al
-        final userInteractions = await supabase
-            .from('user_interactions')
-            .select('content_id')
-            .eq('content_type', 'book')
-            .eq('user_id', userId)
-            .limit(5);
-
-        if (userInteractions.isNotEmpty) {
-          final interactedIds = userInteractions
-              .map((e) => e['content_id'])
-              .toList();
-
-          final categories = await supabase
-              .from('books')
-              .select('category')
-              .inFilter('id', interactedIds);
-
-          final catList = categories
-              .map((e) => e['category']?.toString())
-              .where((c) => c != null)
-              .toSet()
-              .toList();
-
-          if (catList.isNotEmpty) {
-            result = await supabase
-                .from('books')
-                .select()
-                .inFilter('category', catList)
-                .not('id', 'in', '(${interactedIds.join(',')})')
-                .order('likes', ascending: false)
-                .limit(10);
-          }
-        }
-      }
-
-      // Fallback → popular
-      if (result.isEmpty) {
-        result = await supabase
-            .from('books')
-            .select()
-            .order('likes', ascending: false)
-            .limit(10);
-      }
-
-      if (!mounted) return;
-      setState(() {
-        recommendedBooks = result;
-        isLoadingRecommended = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => isLoadingRecommended = false);
-      debugPrint("Error loading recommended books: $e");
-    }
+    if (!mounted) return;
+    setState(() {
+      recommendedBooks = result;
+      isLoadingRecommended = false;
+    });
+  } catch (e) {
+    debugPrint("=== recommended ERROR: $e ==="); 
+    debugPrint("Error loading recommended books: $e");
+    if (!mounted) return;
+    setState(() => isLoadingRecommended = false);
   }
-
+}
   Future<void> saveSearch(String query) async {
     if (query.trim().length < 2) return;
 
@@ -210,19 +205,27 @@ class _BookScreenState extends State<BookScreen> {
   }
 
   void filterBooks(String value) {
-    saveSearch(value);
+    if (_debounce?.isActive ?? false) {
+      _debounce!.cancel();
+    }
 
-    setState(() {
-      filteredBooks = allBooks.where((book) {
-        final title = (book['title'] ?? '').toString().toLowerCase();
-        final author = (book['author'] ?? '').toString().toLowerCase();
-        final category = (book['category'] ?? '').toString().toLowerCase();
-        final search = value.toLowerCase();
+    _debounce = Timer(const Duration(milliseconds: 500), () {
+      saveSearch(value);
 
-        return title.contains(search) ||
-            author.contains(search) ||
-            category.contains(search);
-      }).toList();
+      if (!mounted) return;
+
+      setState(() {
+        filteredBooks = allBooks.where((book) {
+          final title = (book['title'] ?? '').toString().toLowerCase();
+          final author = (book['author'] ?? '').toString().toLowerCase();
+          final category = (book['category'] ?? '').toString().toLowerCase();
+          final search = value.toLowerCase();
+
+          return title.contains(search) ||
+              author.contains(search) ||
+              category.contains(search);
+        }).toList();
+      });
     });
   }
 
@@ -292,35 +295,102 @@ class _BookScreenState extends State<BookScreen> {
                 ),
               ),
 
-              SliverToBoxAdapter(
-                child: SizedBox(
-                  height: 220,
-                  child: isLoadingRecommended
-                      ? const Center(
-                          child: CircularProgressIndicator(
-                            color: Color(0xFF6C94C6),
-                          ),
-                        )
-                      : recommendedBooks.isEmpty
-                      ? const Center(
-                          child: Text(
-                            "No recommendations yet",
-                            style: TextStyle(color: Colors.white),
-                          ),
-                        )
-                      : ListView.separated(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          scrollDirection: Axis.horizontal,
-                          itemCount: recommendedBooks.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(width: 12),
-                          itemBuilder: (context, index) {
-                            final book = recommendedBooks[index];
-                            return _buildRecommendedBookCard(book);
-                          },
+              // ✅ بعد
+SliverToBoxAdapter(
+  child: SizedBox(
+    height: 220,
+    child: isLoadingRecommended
+        ? const Center(
+            child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
+          )
+        : recommendedBooks.isEmpty
+        ? const Center(
+            child: Text("No recommendations yet",
+                style: TextStyle(color: Colors.white)),
+          )
+        : ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            scrollDirection: Axis.horizontal,
+            itemCount: recommendedBooks.length,
+            itemBuilder: (context, index) {
+              final book = recommendedBooks[index];
+              final imageUrl = book['image_url']?.toString() ?? '';
+              final title = book['title']?.toString() ?? '';
+              final bookId = book['id']?.toString() ?? '';
+
+              return GestureDetector(
+                onTap: () {
+                  if (bookId.isEmpty) return;
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => BookDetailScreen(bookId: bookId),
+                    ),
+                  );
+                },
+                child: Container(
+                  width: 130,
+                  margin: const EdgeInsets.only(right: 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFD8C6AF),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    children: [
+                      // ← ارتفاع صريح بدل Expanded
+                      ClipRRect(
+                        borderRadius: const BorderRadius.only(
+                          topLeft: Radius.circular(16),
+                          topRight: Radius.circular(16),
                         ),
+                        child: imageUrl.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: imageUrl,
+                                fit: BoxFit.cover,
+                                width: 130,
+                                height: 160, // ← صريح
+                                errorWidget: (c, u, e) =>
+                                    const SizedBox(
+                                      height: 160,
+                                      child: Icon(Icons.book, size: 40),
+                                    ),
+                                placeholder: (c, u) => Shimmer.fromColors(
+                                  baseColor: const Color(0xFFCCB89A),
+                                  highlightColor: const Color(0xFFE8D8C0),
+                                  child: Container(
+                                    width: 130,
+                                    height: 160,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                              )
+                            : const SizedBox(
+                                height: 160,
+                                child: Icon(Icons.book, size: 40),
+                              ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 6),
+                        child: Text(
+                          title,
+                          textAlign: TextAlign.center,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+              );
+            },
+          ),
+  ),
+),
               // ─── All Books Grid ───
               if (isLoading)
                 const SliverToBoxAdapter(
@@ -335,16 +405,36 @@ class _BookScreenState extends State<BookScreen> {
                 )
               else if (filteredBooks.isEmpty)
                 const SliverToBoxAdapter(
-                  child: Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Text(
-                        "No books found",
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                )
+  child: Padding(
+    padding: EdgeInsets.all(40),
+    child: Column(
+      children: [
+        Icon(
+          Icons.menu_book_rounded,
+          size: 80,
+          color: Colors.white54,
+        ),
+        SizedBox(height: 16),
+        Text(
+          "No books found",
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        SizedBox(height: 8),
+        Text(
+          "Try searching with another keyword",
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white70,
+          ),
+        ),
+      ],
+    ),
+  ),
+)
               else
                 SliverPadding(
                   padding: const EdgeInsets.all(16),
@@ -394,6 +484,12 @@ class _BookScreenState extends State<BookScreen> {
                                       ),
                                       child: imageUrl.isNotEmpty
                                           ? CachedNetworkImage(
+                                            placeholder: (context, url) => Container(
+  color: Colors.grey.shade300,
+  child: const Center(
+    child: CircularProgressIndicator(),
+  ),
+),
                                               imageUrl: imageUrl,
                                               fit: BoxFit.cover,
                                               width: double.infinity,
@@ -411,7 +507,7 @@ class _BookScreenState extends State<BookScreen> {
                                           ),
                                           onSelected: (value) {
                                             if (value == 'delete') {
-                                              _deleteBook(bookId);
+                                              _showDeleteDialog(bookId);
                                             } else if (value == 'edit') {
                                               _editBook(book);
                                             }
