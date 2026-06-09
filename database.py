@@ -1,12 +1,11 @@
 import os
-import psycopg2
-from psycopg2.extras import RealDictCursor
+from supabase import create_client, Client
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_KEY = os.getenv("SUPABASE_KEY", "").strip()
 
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL environment variable is not set.")
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError("SUPABASE_URL ve SUPABASE_KEY environment variable'ları set edilmeli.")
 
-def get_db():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-    return conn
+def get_db() -> Client:
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
