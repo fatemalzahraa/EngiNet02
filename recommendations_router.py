@@ -69,6 +69,25 @@ def get_recommendations(
     print("GET_RECOMMENDATIONS CALLED")
     db = get_db()
 
+    
+        # ── DEBUG SUPABASE CONNECTION ───────────────────────────────
+    print("=" * 60)
+    print("SUPABASE_URL =", os.getenv("SUPABASE_URL"))
+    print("SUPABASE_KEY prefix =", os.getenv("SUPABASE_KEY", "")[:20])
+
+    try:
+        test = (
+            db.table("user_interactions")
+            .select("*")
+            .limit(3)
+            .execute()
+        )
+        print("TOTAL SAMPLE ROWS =", len(test.data))
+        print("SAMPLE =", test.data)
+    except Exception as e:
+        print("SUPABASE ERROR =", e)
+
+    print("=" * 60)
     # ── Kullanıcı kimliği ────────────────────────────────────────
     user_row = (
         db.table("users")
