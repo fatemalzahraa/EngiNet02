@@ -83,15 +83,20 @@ def get_recommendations(
     user_id = user_row["id"]
 
     # ── Etkileşim sayısı (Cold-start kontrolü) ───────────────────
-    interaction_count = (
+    result = (
         db.table("user_interactions")
-        .select("id", count="exact")
+        .select("*")
         .eq("user_id", user_id)
         .execute()
-        .count
     )
-    if interaction_count is None:
-        interaction_count = 0
+
+    print("=" * 50)
+    print("USER_ID =", user_id)
+    print("ROWS FOUND =", len(result.data))
+    print("DATA =", result.data[:5] if result.data else [])
+    print("=" * 50)
+
+    interaction_count = len(result.data)
 
     print("=" * 50)
     print(f"USER_ID = {user_id}")
