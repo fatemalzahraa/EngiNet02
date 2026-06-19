@@ -19,22 +19,67 @@ class QuestionsScreen extends StatefulWidget {
   @override
   State<QuestionsScreen> createState() => _QuestionsScreenState();
 }
-
+StreamSubscription<List<Map<String, dynamic>>>? _questionsSub;
 class _QuestionsScreenState extends State<QuestionsScreen> {
   List _questions = [];
   bool _isLoading = true;
-
+  int? _currentUserId;
   File? selectedMedia;
   String? selectedMediaName;
   String? selectedMediaType;
-
+  Timer? _timer;
   String _searchQuery = '';
 
-  @override
-  void initState() {
-    super.initState();
-    _fetchQuestions();
-  }
+ @override
+void initState() {
+  super.initState();
+
+  _startQuestionsRealtime();
+  _loadCurrentUser();
+
+  _timer = Timer.periodic(const Duration(minutes: 1), (_) {
+    if (mounted) {
+      setState(() {});
+    }
+  });
+}
+@override
+void dispose() {
+  _questionsSub?.cancel();
+  _timer?.cancel();
+  super.dispose();
+}
+
+void _startQuestionsRealtime() {
+  _questionsSub?.cancel();
+
+  _questionsSub = Supabase.instance.client
+      .from('questions')
+      .stream(primaryKey: ['id'])
+      .order('created_at', ascending: false)
+      .listen((data) {
+        if (!mounted) return;
+
+        setState(() {
+          _questions = data;
+          _isLoading = false;
+        });
+      });
+}
+
+  Future<void> _loadCurrentUser() async {
+  final email = await SessionManager.getEmail();
+  if (email == null) return;
+  final user = await Supabase.instance.client
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .maybeSingle();
+  if (!mounted) return;
+  setState(() {
+    _currentUserId = user?['id'];
+  });
+}
 
   Future<void> _openUserProfile(String username) async {
     if (username.isEmpty) return;
@@ -114,29 +159,53 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
   }
 
   Future<void> _likeQuestion(Map q) async {
-    final token = await SessionManager.getToken();
-    if (token == null || token.isEmpty) return;
+  final token = await SessionManager.getToken();
+  if (token == null || token.isEmpty) return;
 
-    final index = _questions.indexWhere((item) => item['id'] == q['id']);
-    if (index == -1) return;
+  final index = _questions.indexWhere((item) => item['id'] == q['id']);
+  if (index == -1) return;
 
+  final currentLiked =
+      _questions[index]['is_liked'] == true ||
+      _questions[index]['is_liked'] == 1;
+
+  final currentLikes = _questions[index]['likes'] ?? 0;
+
+  // تحديث فوري بالواجهة
+  setState(() {
+    final updated = Map<String, dynamic>.from(_questions[index]);
+
+    updated['is_liked'] = !currentLiked;
+    updated['likes'] =
+        currentLiked ? currentLikes - 1 : currentLikes + 1;
+
+    _questions[index] = updated;
+    _questions = List.from(_questions);
+  });
+
+  try {
     final res = await http.post(
       Uri.parse('${AppConstants.baseUrl}/questions/${q['id']}/like'),
       headers: {'Authorization': 'Bearer $token'},
     );
 
-    debugPrint('LIKE STATUS: ${res.statusCode}');
-    debugPrint('LIKE BODY: ${res.body}');
-
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
 
       setState(() {
-        _questions[index]['is_liked'] = data['liked'];
-        _questions[index]['likes'] = data['likes'];
+        final updated = Map<String, dynamic>.from(_questions[index]);
+
+        updated['is_liked'] = data['liked'];
+        updated['likes'] = data['likes'];
+
+        _questions[index] = updated;
+        _questions = List.from(_questions);
       });
     }
+  } catch (e) {
+    debugPrint("LIKE ERROR: $e");
   }
+}
 
   Future<void> _saveQuestion(Map q) async {
     final token = await SessionManager.getToken();
@@ -450,16 +519,21 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
     );
   }
 
-  String _timeAgo(String? dateStr) {
-    if (dateStr == null) return '';
-    final date = DateTime.tryParse(dateStr);
-    if (date == null) return '';
+String _timeAgo(String? dateStr) {
+  if (dateStr == null) return '';
+  
+  // Sonunda Z yoksa ekle — Supabase UTC döndürür ama Z koymaz
+  final normalized = dateStr.endsWith('Z') ? dateStr : '${dateStr}Z';
+  final date = DateTime.tryParse(normalized);
+  if (date == null) return '';
 
-    final diff = DateTime.now().difference(date);
-    if (diff.inMinutes < 60) return "${diff.inMinutes}m ago";
-    if (diff.inHours < 24) return "${diff.inHours}h ago";
-    return "${diff.inDays}d ago";
-  }
+  final diff = DateTime.now().toUtc().difference(date.toUtc());
+
+  if (diff.inSeconds < 60) return "${diff.inSeconds}s ago";
+  if (diff.inMinutes < 60) return "${diff.inMinutes}m ago";
+  if (diff.inHours < 24) return "${diff.inHours}h ago";
+  return "${diff.inDays}d ago";
+}
 
   Widget _questionMedia(Map q) {
     final mediaUrl = q['media_url']?.toString() ?? '';
@@ -675,8 +749,7 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
                                                 ),
                                               ),
                                               const SizedBox(width: 8),
-                                              if (q['user_id'] ==
-                                                  q['current_user_id'])
+                                              if (_currentUserId != null && q['user_id'] == _currentUserId)
                                                 GestureDetector(
                                                   onTap: () =>
                                                       _deleteQuestion(q),
