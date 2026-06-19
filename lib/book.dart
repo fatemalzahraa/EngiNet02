@@ -32,7 +32,7 @@ class _BookScreenState extends State<BookScreen> {
   // ── API base URL — .env veya const ile yönet ──────────────────
   static const String _apiBase = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'https://your-api.com',
+    defaultValue: 'https://enginet02.onrender.com',
   );
 
   @override
@@ -165,6 +165,9 @@ class _BookScreenState extends State<BookScreen> {
       }
 
       final uri = Uri.parse('$_apiBase/recommendations?limit=10');
+      debugPrint('API_BASE_URL = $_apiBase');
+      debugPrint('REQUEST_URL = $uri');
+
       final response = await http
           .get(uri, headers: {
             'Authorization': 'Bearer $token',

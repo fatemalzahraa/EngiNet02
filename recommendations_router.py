@@ -88,11 +88,18 @@ def get_recommendations(
         .eq("user_id", user_id)
         .execute()
         .count
-        or 0
     )
+    if interaction_count is None:
+        interaction_count = 0
+
+    print("=" * 50)
+    print(f"USER_ID = {user_id}")
+    print(f"INTERACTION_COUNT = {interaction_count}")
+    print("=" * 50)
 
     # ── Cold Start ───────────────────────────────────────────────
     if interaction_count < 3:
+        print("COLD START - returning popular")
         courses, books, articles = get_popular(db, limit)
         return {
             "strategy": "popular",
@@ -103,7 +110,9 @@ def get_recommendations(
         }
 
     # ── Hybrid Engine ────────────────────────────────────────────
-    als_bundle = _load_model()  # None → ALS sinyali es geçilir, diğerleri çalışır
+    print("HYBRID ENGINE STARTED")
+
+    als_bundle = _load_model()
 
     courses, books, articles, debug = get_hybrid_recommendations(
         db=db,
@@ -111,6 +120,11 @@ def get_recommendations(
         limit=limit,
         als_bundle=als_bundle,
     )
+
+    print("SIGNALS =", debug.get("signals_used"))
+    print("COURSES =", len(courses))
+    print("BOOKS =", len(books))
+    print("ARTICLES =", len(articles))
 
     # ── Fallback: hybrid tamamen boş döndüyse popular ────────────
     if not courses and not books and not articles:
@@ -147,7 +161,15 @@ def train_recommendations(current_user: dict = Depends(get_current_user)):
 
     db = get_db()
     result = train_model(db)
-    model, users_rev, items_rev, user_idx, item_idx, matrix = result
+    
+    # train_model'den dönen değerleri doğru şekilde al
+    if len(result) == 5:
+        model, users_rev, items_rev, user_idx, item_idx = result
+        matrix = None
+    elif len(result) == 6:
+        model, users_rev, items_rev, user_idx, item_idx, matrix = result
+    else:
+        return {"message": "Training failed: unexpected return format", "total_interactions": total}
 
     if model is None:
         return {"message": "Training failed or skipped (sparse data)", "total_interactions": total}
