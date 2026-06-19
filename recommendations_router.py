@@ -66,6 +66,7 @@ def get_recommendations(
     limit: int = 5,
     current_user: dict = Depends(get_current_user),
 ):
+    print("GET_RECOMMENDATIONS CALLED")
     db = get_db()
 
     # ── Kullanıcı kimliği ────────────────────────────────────────
