@@ -72,28 +72,37 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   }
 
   void _startRealtime(int userId) {
-    _articleBookmarksSub?.cancel();
-    _savedPostsSub?.cancel();
-    _savedBooksSub?.cancel();
+  _articleBookmarksSub?.cancel();
+  _savedPostsSub?.cancel();
+  _savedBooksSub?.cancel();
 
-    _articleBookmarksSub = _supabase
-        .from('article_bookmarks')
-        .stream(primaryKey: ['user_id', 'article_id'])
-        .eq('user_id', userId)
-        .listen((_) => loadProfile());
+  _articleBookmarksSub = _supabase
+      .from('article_bookmarks')
+      .stream(primaryKey: ['user_id', 'article_id'])
+      .eq('user_id', userId)
+      .listen((_) {
+        _isRefreshingProfile = false; // ← flag'i sıfırla
+        loadProfile();
+      });
 
-    _savedPostsSub = _supabase
-        .from('saved_posts')
-        .stream(primaryKey: ['user_id', 'post_id'])
-        .eq('user_id', userId)
-        .listen((_) => loadProfile());
+  _savedPostsSub = _supabase
+      .from('saved_posts')
+      .stream(primaryKey: ['user_id', 'post_id'])
+      .eq('user_id', userId)
+      .listen((_) {
+        _isRefreshingProfile = false; // ← flag'i sıfırla
+        loadProfile();
+      });
 
-    _savedBooksSub = _supabase
-        .from('bookmarks')
-        .stream(primaryKey: ['user_id', 'book_id'])
-        .eq('user_id', userId)
-        .listen((_) => loadProfile());
-  }
+  _savedBooksSub = _supabase
+      .from('bookmarks')
+      .stream(primaryKey: ['user_id', 'book_id'])
+      .eq('user_id', userId)
+      .listen((_) {
+        _isRefreshingProfile = false; // ← flag'i sıfırla
+        loadProfile();
+      });
+}
 
   // ─── Pick & upload profile image ─────────────────────────────────────────
   Future<String?> _pickAndUploadProfileImage() async {
@@ -421,11 +430,11 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           final book = books[index];
           return GestureDetector(
             onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => BookDetailScreen(bookId: book['id'].toString()),
-              ),
-            ),
+  context,
+  MaterialPageRoute(
+    builder: (_) => BookDetailScreen(bookId: book['id'].toString()),
+  ),
+).then((_) => loadProfile()),
             child: Container(
               width: 125,
               margin: const EdgeInsets.only(right: 14),
@@ -479,12 +488,20 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           final article = articles[index];
           return GestureDetector(
             onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) =>
-                    ArticleDetailScreen(articleId: article['id'].toString()),
-              ),
-            ).then((_) => loadProfile()),
+  context,
+  MaterialPageRoute(
+    builder: (_) =>
+        ArticleDetailScreen(articleId: article['id'].toString()),
+  ),
+).then((saved) {
+  if (saved == false) {
+    setState(() {
+      savedArticles.removeWhere((a) => a['id'] == article['id']);
+    });
+  } else {
+    loadProfile();
+  }
+}),
             child: Container(
               width: 125,
               margin: const EdgeInsets.only(right: 14),

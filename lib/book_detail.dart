@@ -560,84 +560,123 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
 
   // ─── Comment widgets ──────────────────────────────────────────────────────
   Widget _buildComment(Map<String, dynamic> c, bool isReply) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: 6, left: isReply ? 40 : 0),
-      child: Container(
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: isReply ? const Color(0xFFDDD4C4) : const Color(0xFFE8DED0),
-          borderRadius: BorderRadius.circular(10),
-          border: isReply
-              ? const Border(
-                  left: BorderSide(color: Color(0xFF6C94C6), width: 3),
-                )
-              : null,
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            CircleAvatar(
-              radius: isReply ? 13 : 16,
-              backgroundImage: (c['profile_image'] ?? '').toString().isNotEmpty
-                  ? NetworkImage(c['profile_image'])
-                  : null,
-              backgroundColor: const Color(0xFF6C94C6),
-              child: (c['profile_image'] ?? '').toString().isEmpty
-                  ? Icon(
-                      Icons.person,
-                      size: isReply ? 13 : 16,
-                      color: Colors.white,
-                    )
-                  : null,
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    c['username'] ?? 'User',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                      color: Colors.black87,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  if (isReply) _buildParentPreview(c),
-                  Text(
-                    c['content'] ?? '',
-                    style: const TextStyle(color: Colors.black87, fontSize: 14),
-                  ),
-                  const SizedBox(height: 4),
-                  if (!isReply)
-                    GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          replyingToCommentId = c['id'].toString();
-                          replyingToUsername = c['username'];
-                        });
-                        // Auto-focus the comment field
-                        FocusScope.of(context).requestFocus(_commentFocusNode);
-                      },
-                      child: const Text(
-                        'Reply',
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Color(0xFF5B7FA6),
-                          fontWeight: FontWeight.w600,
+  final isOwner = _currentUser != null &&
+      _currentUser!['id'] == c['comment_user_id'];
+
+  return Padding(
+    padding: EdgeInsets.only(bottom: 6, left: isReply ? 40 : 0),
+    child: Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isReply ? const Color(0xFFDDD4C4) : const Color(0xFFE8DED0),
+        borderRadius: BorderRadius.circular(10),
+        border: isReply
+            ? const Border(
+                left: BorderSide(color: Color(0xFF6C94C6), width: 3),
+              )
+            : null,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          CircleAvatar(
+            radius: isReply ? 13 : 16,
+            backgroundImage: (c['profile_image'] ?? '').toString().isNotEmpty
+                ? NetworkImage(c['profile_image'])
+                : null,
+            backgroundColor: const Color(0xFF6C94C6),
+            child: (c['profile_image'] ?? '').toString().isEmpty
+                ? Icon(Icons.person, size: isReply ? 13 : 16, color: Colors.white)
+                : null,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        c['username'] ?? 'User',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.black87,
                         ),
                       ),
                     ),
-                ],
-              ),
+                    if (isOwner)
+                      GestureDetector(
+                        onTap: () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (ctx) => AlertDialog(
+                              title: const Text('Delete Comment'),
+                              content: const Text('Delete this comment?'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                TextButton(
+                                  onPressed: () => Navigator.pop(ctx, true),
+                                  child: const Text(
+                                    'Delete',
+                                    style: TextStyle(color: Colors.red),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed != true) return;
+                          await supabase
+                              .from('comments')
+                              .delete()
+                              .eq('id', c['id']);
+                          await loadComments();
+                        },
+                        child: const Icon(
+                          Icons.delete,
+                          color: Colors.red,
+                          size: 16,
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                if (isReply) _buildParentPreview(c),
+                Text(
+                  c['content'] ?? '',
+                  style: const TextStyle(color: Colors.black87, fontSize: 14),
+                ),
+                const SizedBox(height: 4),
+                if (!isReply)
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        replyingToCommentId = c['id'].toString();
+                        replyingToUsername = c['username'];
+                      });
+                      FocusScope.of(context).requestFocus(_commentFocusNode);
+                    },
+                    child: const Text(
+                      'Reply',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF5B7FA6),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
-
+    ),
+  );
+}
   /// Shows a preview of the parent comment inside a reply — uses Map for O(1) lookup.
   Widget _buildParentPreview(Map<String, dynamic> c) {
     final parentId = c['parent_comment_id']?.toString();
@@ -762,14 +801,14 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               child: Row(
                 children: [
-                  GestureDetector(
-                    onTap: () {
-                      if (Navigator.canPop(context)) {
-                        Navigator.pop(context);
-                      } else {
-                        Navigator.pushReplacementNamed(context, '/home');
-                      }
-                    },
+                 GestureDetector(
+  onTap: () {
+    if (Navigator.canPop(context)) {
+  Navigator.pop(context, isBookmarked);
+} else {
+  Navigator.pushReplacementNamed(context, '/home');
+}
+  },
                     child: Container(
                       width: 40,
                       height: 40,

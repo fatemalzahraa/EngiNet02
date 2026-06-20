@@ -146,7 +146,7 @@ async def create_course_with_videos(
             total_duration_seconds += int(d)
         except Exception:
             pass
-    duration_hours = round(total_duration_seconds / 3600, 2) if total_duration_seconds > 0 else len(videos)
+    duration_hours = int(total_duration_seconds / 3600) if total_duration_seconds > 0 else 0
 
     course_result = db.table("courses").insert({
         "title": title,
@@ -171,8 +171,8 @@ async def create_course_with_videos(
         video_url = supabase_admin.storage.from_("course-videos").get_public_url(video_path)
 
         duration_seconds = (
-            int(video_durations[i])
-            if i < len(video_durations) and str(video_durations[i]).isdigit()
+            int(float(str(video_durations[i])))
+            if i < len(video_durations)
             else 0
         )
 

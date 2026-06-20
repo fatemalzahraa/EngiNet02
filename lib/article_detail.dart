@@ -496,9 +496,14 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
         .trim()
         .toLowerCase();
 
-    return Scaffold(
-      backgroundColor: AppColors.primary,
-      body: SafeArea(
+   return PopScope(
+  canPop: false,
+  onPopInvoked: (didPop) {
+    if (!didPop) Navigator.pop(context, isSaved);
+  },
+  child: Scaffold(
+    backgroundColor: AppColors.primary,
+    body: SafeArea(
         child: Column(
           children: [
             // ── App bar ──────────────────────────────────────────────
@@ -506,14 +511,14 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               child: Row(
                 children: [
-                  GestureDetector(
-                    onTap: () {
-                      if (Navigator.canPop(context)) {
-                        Navigator.pop(context);
-                      } else {
-                        Navigator.pushReplacementNamed(context, '/home');
-                      }
-                    },
+                 GestureDetector(
+  onTap: () {
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context, isSaved);
+    } else {
+      Navigator.pushReplacementNamed(context, '/home');
+    }
+  },
                     child: Container(
                       width: 38,
                       height: 38,
@@ -807,8 +812,9 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
               ),
             ),
           ],
-        ),
+       ),
       ),
-    );
+    ),
+  );
   }
 }

@@ -32,15 +32,12 @@ class _QuestionsScreenState extends State<QuestionsScreen> {
 
  @override
 void initState() {
-  super.initState();
-
-  _startQuestionsRealtime();
+   super.initState();
+  _fetchQuestions();
   _loadCurrentUser();
 
   _timer = Timer.periodic(const Duration(minutes: 1), (_) {
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   });
 }
 @override
@@ -52,19 +49,7 @@ void dispose() {
 
 void _startQuestionsRealtime() {
   _questionsSub?.cancel();
-
-  _questionsSub = Supabase.instance.client
-      .from('questions')
-      .stream(primaryKey: ['id'])
-      .order('created_at', ascending: false)
-      .listen((data) {
-        if (!mounted) return;
-
-        setState(() {
-          _questions = data;
-          _isLoading = false;
-        });
-      });
+  _questionsSub = null;
 }
 
   Future<void> _loadCurrentUser() async {
@@ -107,6 +92,7 @@ void _startQuestionsRealtime() {
   }
 
   Future<void> _fetchQuestions() async {
+    
     try {
       final token = await SessionManager.getToken();
 
@@ -158,29 +144,22 @@ void _startQuestionsRealtime() {
     }
   }
 
-  Future<void> _likeQuestion(Map q) async {
+Future<void> _likeQuestion(Map q) async {
   final token = await SessionManager.getToken();
   if (token == null || token.isEmpty) return;
 
   final index = _questions.indexWhere((item) => item['id'] == q['id']);
   if (index == -1) return;
 
-  final currentLiked =
-      _questions[index]['is_liked'] == true ||
-      _questions[index]['is_liked'] == 1;
+  final currentLiked = q['is_liked'] == true;
+  final currentLikes = (q['likes'] ?? 0) as int;
 
-  final currentLikes = _questions[index]['likes'] ?? 0;
-
-  // تحديث فوري بالواجهة
+  // Anında güncelle
   setState(() {
     final updated = Map<String, dynamic>.from(_questions[index]);
-
     updated['is_liked'] = !currentLiked;
-    updated['likes'] =
-        currentLiked ? currentLikes - 1 : currentLikes + 1;
-
+    updated['likes'] = currentLiked ? currentLikes - 1 : currentLikes + 1;
     _questions[index] = updated;
-    _questions = List.from(_questions);
   });
 
   try {
@@ -191,22 +170,43 @@ void _startQuestionsRealtime() {
 
     if (res.statusCode == 200) {
       final data = jsonDecode(res.body);
-
+      if (!mounted) return;
       setState(() {
-        final updated = Map<String, dynamic>.from(_questions[index]);
-
-        updated['is_liked'] = data['liked'];
-        updated['likes'] = data['likes'];
-
-        _questions[index] = updated;
-        _questions = List.from(_questions);
+        final i = _questions.indexWhere((item) => item['id'] == q['id']);
+        if (i != -1) {
+          final updated = Map<String, dynamic>.from(_questions[i]);
+          updated['is_liked'] = data['liked'];
+          updated['likes'] = data['likes'];
+          _questions[i] = updated;
+        }
+      });
+    } else {
+      // Hata → geri al
+      if (!mounted) return;
+      setState(() {
+        final i = _questions.indexWhere((item) => item['id'] == q['id']);
+        if (i != -1) {
+          final updated = Map<String, dynamic>.from(_questions[i]);
+          updated['is_liked'] = currentLiked;
+          updated['likes'] = currentLikes;
+          _questions[i] = updated;
+        }
       });
     }
   } catch (e) {
     debugPrint("LIKE ERROR: $e");
+    if (!mounted) return;
+    setState(() {
+      final i = _questions.indexWhere((item) => item['id'] == q['id']);
+      if (i != -1) {
+        final updated = Map<String, dynamic>.from(_questions[i]);
+        updated['is_liked'] = currentLiked;
+        updated['likes'] = currentLikes;
+        _questions[i] = updated;
+      }
+    });
   }
 }
-
   Future<void> _saveQuestion(Map q) async {
     final token = await SessionManager.getToken();
     if (token == null || token.isEmpty) return;
@@ -281,12 +281,28 @@ void _startQuestionsRealtime() {
     }
   }
 
-  void _openQuestion(Map q) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => AnswerScreen(question: q)),
-    ).then((_) => _fetchQuestions());
-  }
+void _openQuestion(Map q) {
+  final questionId = q['id'];
+  
+  Navigator.push(
+    context,
+    MaterialPageRoute(builder: (_) => AnswerScreen(question: q)),
+  ).then((newAnswerCount) async {
+    // AnswerScreen'den dönen cevap sayısını hemen güncelle
+    if (newAnswerCount != null) {
+      setState(() {
+        final i = _questions.indexWhere((item) => item['id'] == questionId);
+        if (i != -1) {
+          final updated = Map<String, dynamic>.from(_questions[i]);
+          updated['answers_count'] = newAnswerCount;
+          _questions[i] = updated;
+        }
+      });
+    }
+    // Sonra backend'den de yenile
+    await _fetchQuestions();
+  });
+}
 
   void _openAskDialog() {
     final titleCtrl = TextEditingController();
@@ -435,13 +451,14 @@ void _startQuestionsRealtime() {
                         );
                         debugPrint('POST QUESTION BODY: $body');
 
-                        if (response.statusCode >= 400) {
-                          throw Exception(body);
-                        }
+                       if (response.statusCode >= 400) {
+  throw Exception(body);
+}
 
-                        if (!mounted) return;
-                        Navigator.pop(ctx);
-                        await _fetchQuestions();
+if (!mounted) return;
+Navigator.pop(ctx);
+await _fetchQuestions();  // bunu koru
+if (mounted) setState(() {}); // bunu ekle
 
                         if (!mounted) return;
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -882,7 +899,6 @@ class _AnswerScreenState extends State<AnswerScreen> {
   void initState() {
     super.initState();
     _fetchAnswers();
-    _startAnswersRealtime();
     _loadCurrentUser();
   }
 
@@ -1028,13 +1044,15 @@ class _AnswerScreenState extends State<AnswerScreen> {
         throw Exception(response.body);
       }
 
-      _ctrl.clear();
+     _ctrl.clear();
 
-      if (!mounted) return;
-      setState(() {
-        replyingToAnswerId = null;
-        replyingToUsername = null;
-      });
+if (!mounted) return;
+setState(() {
+  replyingToAnswerId = null;
+  replyingToUsername = null;
+});
+
+await _fetchAnswers(); // ← bunu ekle
     } catch (e) {
       debugPrint("Error posting answer: $e");
       if (!mounted) return;
@@ -1365,9 +1383,9 @@ class _AnswerScreenState extends State<AnswerScreen> {
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back, color: AppColors.accent),
-          onPressed: () => Navigator.pop(context),
-        ),
+  icon: const Icon(Icons.arrow_back, color: AppColors.accent),
+  onPressed: () => Navigator.pop(context, _answers.length), // ← sayıyı gönder
+),
         title: Text(
           "Answers",
           style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 24),
