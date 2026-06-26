@@ -38,7 +38,6 @@ dependencies:
   path: ^1.9.0
   url_launcher: ^6.2.5 
   supabase_flutter: ^2.0.0
-  flutter_dotenv: ^5.1.0
   shimmer: ^3.0.0
   cached_network_image: ^3.3.1
   image_picker: ^1.1.2

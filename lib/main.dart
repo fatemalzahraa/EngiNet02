@@ -10,27 +10,28 @@ import 'reset_password_screen.dart';
 import 'student_profile.dart';
 import 'engineer_profile.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:enginet/add_article.dart';
 import 'package:enginet/add_book.dart';
 import 'student_questions_screen.dart';
 import 'engineer_questions_screen.dart';
 import 'package:enginet/core/app_colors.dart';
 
-const _supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: '.env');
+  
 
-  await Supabase.initialize(
-    url: dotenv.env['SUPABASE_URL']!,
-    anonKey: dotenv.env['SUPABASE_ANON_KEY']!,
-  );
+ const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+await Supabase.initialize(
+  url: supabaseUrl,
+  anonKey: supabaseAnonKey,
+);
 
   runApp(
-    _supabaseAnonKey.isEmpty ? const MissingSupabaseConfigApp() : const MyApp(),
-  );
+  supabaseAnonKey.isEmpty ? const MissingSupabaseConfigApp() : const MyApp(),
+);
 }
 
 class MyApp extends StatelessWidget {
