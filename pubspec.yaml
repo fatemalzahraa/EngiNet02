@@ -80,7 +80,6 @@ flutter:
     - images/
     # - images/a_dot_ham.jpeg
     - assets/database/enginet.db
-    - .env
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
