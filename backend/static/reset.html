@@ -95,67 +95,81 @@
   </div>
 </div>
 
-<script>
-  const SUPABASE_URL = 'https://ksfrsnbfdzgtkxhswobs.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZnJzbmJmZHpndGt4aHN3b2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Nzk3ODgsImV4cCI6MjA5MDU1NTc4OH0.igEzAcb8dF1G25IpzCrMNg8q_K6hdoj9mHPZMVeA7Bs';
+const SUPABASE_URL = 'https://ksfrsnbfdzgtkxhswobs.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZnJzbmJmZHpndGt4aHN3b2JzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ5Nzk3ODgsImV4cCI6MjA5MDU1NTc4OH0.igEzAcb8dF1G25IpzCrMNg8q_K6hdoj9mHPZMVeA7Bs';
 
-  const { createClient } = supabase;
-  const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const { createClient } = supabase;
+const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  // Hash fragment'tan session token'ı al
-  async function init() {
-    const hash = window.location.hash;
-    if (hash) {
-      const params = new URLSearchParams(hash.substring(1));
-      const accessToken = params.get('access_token');
-      const refreshToken = params.get('refresh_token');
-      if (accessToken) {
-        await client.auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+let sessionReady = false;
+
+async function init() {
+  const hash = window.location.hash;
+  if (hash) {
+    const params = new URLSearchParams(hash.substring(1));
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token') || '';
+    if (accessToken) {
+      const { error } = await client.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (!error) {
+        sessionReady = true;
+      } else {
+        showMsg('Session error: ' + error.message, 'error');
       }
     }
+  } else {
+    showMsg('Invalid reset link. Please request a new one.', 'error');
+  }
+}
+
+init();
+
+function showMsg(text, type) {
+  const el = document.getElementById('msg');
+  el.textContent = text;
+  el.className = 'msg ' + type;
+  el.classList.remove('hidden');
+}
+
+async function resetPassword() {
+  if (!sessionReady) {
+    showMsg('Session not ready. Please use the link from your email.', 'error');
+    return;
   }
 
-  init();
+  const newPass = document.getElementById('newPass').value;
+  const confirmPass = document.getElementById('confirmPass').value;
+  const btn = document.getElementById('btn');
 
-  function showMsg(text, type) {
-    const el = document.getElementById('msg');
-    el.textContent = text;
-    el.className = 'msg ' + type;
-    el.classList.remove('hidden');
+  if (!newPass || !confirmPass) {
+    showMsg('Please fill all fields', 'error');
+    return;
+  }
+  if (newPass !== confirmPass) {
+    showMsg('Passwords do not match', 'error');
+    return;
+  }
+  if (newPass.length < 6) {
+    showMsg('Password must be at least 6 characters', 'error');
+    return;
   }
 
-  async function resetPassword() {
-    const newPass = document.getElementById('newPass').value;
-    const confirmPass = document.getElementById('confirmPass').value;
-    const btn = document.getElementById('btn');
+  btn.disabled = true;
+  btn.textContent = 'Updating...';
 
-    if (!newPass || !confirmPass) {
-      showMsg('Please fill all fields', 'error');
-      return;
-    }
-    if (newPass !== confirmPass) {
-      showMsg('Passwords do not match', 'error');
-      return;
-    }
-    if (newPass.length < 6) {
-      showMsg('Password must be at least 6 characters', 'error');
-      return;
-    }
+  const { error } = await client.auth.updateUser({ password: newPass });
 
-    btn.disabled = true;
-    btn.textContent = 'Updating...';
-
-    const { error } = await client.auth.updateUser({ password: newPass });
-
-    if (error) {
-      showMsg(error.message, 'error');
-      btn.disabled = false;
-      btn.textContent = 'Update Password';
-    } else {
-      document.getElementById('formSection').classList.add('hidden');
-      document.getElementById('successSection').classList.remove('hidden');
-    }
+  if (error) {
+    showMsg(error.message, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Update Password';
+  } else {
+    document.getElementById('formSection').classList.add('hidden');
+    document.getElementById('successSection').classList.remove('hidden');
   }
-</script>
+}
 </body>
 </html>
