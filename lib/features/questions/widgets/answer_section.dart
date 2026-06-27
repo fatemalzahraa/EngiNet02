@@ -1,0 +1,741 @@
+import 'dart:async';
+import 'dart:convert';
+import 'package:enginet/core/app_colors.dart';
+import 'package:enginet/core/constants.dart';
+import 'package:enginet/core/session_manager.dart';
+import 'package:enginet/engineer_profile.dart';
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+
+
+
+// ===================== ANSWER SCREEN =====================
+
+class AnswerScreen extends StatefulWidget {
+  final Map question;
+
+  const AnswerScreen({super.key, required this.question});
+
+  @override
+  State<AnswerScreen> createState() => _AnswerScreenState();
+}
+
+class _AnswerScreenState extends State<AnswerScreen> {
+  List _answers = [];
+  final _ctrl = TextEditingController();
+  final FocusNode _answerFocusNode = FocusNode();
+  Map<String, dynamic>? _currentUser;
+
+  bool _isPosting = false;
+  StreamSubscription<List<Map<String, dynamic>>>? _answersSub;
+
+  String? replyingToAnswerId;
+  String? replyingToUsername;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchAnswers();
+    _loadCurrentUser();
+  }
+
+  @override
+  void dispose() {
+    _answersSub?.cancel();
+    _ctrl.dispose();
+    _answerFocusNode.dispose();
+    super.dispose();
+  }
+
+  String? _parentIdOf(Map a) {
+    final value =
+        a['parent_answer_id'] ??
+        a['parent_comment_id'] ??
+        a['parent_id'] ??
+        a['reply_to_answer_id'] ??
+        a['reply_id'];
+
+    if (value == null) return null;
+
+    final text = value.toString();
+    if (text.isEmpty || text == 'null') return null;
+
+    return text;
+  }
+
+  void _startAnswersRealtime() {
+    _answersSub?.cancel();
+
+    final questionId = int.tryParse(widget.question['id'].toString()) ?? 0;
+
+    _answersSub = Supabase.instance.client
+        .from('answers')
+        .stream(primaryKey: ['id'])
+        .eq('question_id', questionId)
+        .order('created_at', ascending: true)
+        .listen((data) {
+          if (!mounted) return;
+
+          setState(() {
+            _answers = data;
+          });
+        });
+  }
+
+  Future<void> _openUserProfile(String username) async {
+    if (username.isEmpty) return;
+
+    try {
+      final owner = await Supabase.instance.client
+          .from('users')
+          .select('id')
+          .eq('username', username)
+          .maybeSingle();
+
+      if (owner == null || owner['id'] == null) return;
+
+      if (!mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => EngineerProfileScreen(targetUserId: owner['id']),
+        ),
+      );
+    } catch (e) {
+      debugPrint('❌ open profile error: $e');
+    }
+  }
+
+  Future<void> _loadCurrentUser() async {
+    final email = await SessionManager.getEmail();
+
+    if (email == null) return;
+
+    final user = await Supabase.instance.client
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle();
+
+    if (!mounted) return;
+
+    setState(() {
+      _currentUser = user;
+    });
+  }
+
+  Future<void> _fetchAnswers() async {
+    try {
+      final response = await http.get(
+        Uri.parse(
+          '${AppConstants.baseUrl}/questions/${widget.question['id']}/answers',
+        ),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception('Failed to fetch answers');
+      }
+
+      final data = jsonDecode(response.body) as List<dynamic>;
+      debugPrint("ANSWERS DATA: $data");
+
+      if (!mounted) return;
+      setState(() => _answers = data);
+    } catch (e) {
+      debugPrint("Error fetching answers: $e");
+    }
+  }
+
+  Future<void> _postAnswer() async {
+    if (_ctrl.text.trim().isEmpty || _isPosting) return;
+
+    final token = await SessionManager.getToken();
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text("Please login first")));
+      return;
+    }
+
+    setState(() => _isPosting = true);
+
+    try {
+      final bodyData = {
+        "content": _ctrl.text.trim(),
+        "parent_answer_id": replyingToAnswerId,
+      };
+
+      final response = await http.post(
+        Uri.parse(
+          '${AppConstants.baseUrl}/questions/${widget.question['id']}/answers',
+        ),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode(bodyData),
+      );
+
+      if (response.statusCode >= 400) {
+        throw Exception(response.body);
+      }
+
+     _ctrl.clear();
+
+if (!mounted) return;
+setState(() {
+  replyingToAnswerId = null;
+  replyingToUsername = null;
+});
+
+await _fetchAnswers(); // ← bunu ekle
+    } catch (e) {
+      debugPrint("Error posting answer: $e");
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text("❌ Error: $e")));
+    } finally {
+      if (mounted) setState(() => _isPosting = false);
+    }
+  }
+
+  Map<String, Map<String, dynamic>> get _answersMap {
+    return {
+      for (final a in _answers)
+        a['id'].toString(): Map<String, dynamic>.from(a),
+    };
+  }
+
+  Widget _buildParentAnswerPreview(Map<String, dynamic> a) {
+    final parentId = _parentIdOf(a);
+    if (parentId == null) return const SizedBox.shrink();
+
+    final parent = _answersMap[parentId];
+    final parentProfile = parent?['profiles'];
+
+    final parentUsername =
+        parent?['username']?.toString() ??
+        parentProfile?['username']?.toString() ??
+        '';
+
+    final parentContent = parent?['content']?.toString() ?? '';
+
+    if (parentUsername.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF6C94C6).withOpacity(0.4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            parentUsername,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              fontSize: 12,
+              color: Color(0xFF5B7FA6),
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            parentContent.length > 60
+                ? '${parentContent.substring(0, 60)}...'
+                : parentContent,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Colors.black54,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _editAnswer(Map<String, dynamic> answer) async {
+    final token = await SessionManager.getToken();
+    if (token == null || token.isEmpty) return;
+
+    final editCtrl = TextEditingController(
+      text: answer['content']?.toString() ?? '',
+    );
+
+    final newText = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Edit Answer'),
+        content: TextField(controller: editCtrl, maxLines: 4),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, editCtrl.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (newText == null || newText.isEmpty) return;
+
+    final res = await http.put(
+      Uri.parse('${AppConstants.baseUrl}/questions/answers/${answer['id']}'),
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'content': newText,
+        'parent_answer_id': answer['parent_answer_id'],
+      }),
+    );
+
+    if (res.statusCode >= 400) {
+      throw Exception(res.body);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      answer['content'] = newText;
+    });
+  }
+
+  Future<void> _deleteAnswer(Map<String, dynamic> answer) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Answer'),
+        content: const Text('Are you sure you want to delete this answer?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Yes, delete',
+              style: TextStyle(color: Colors.red),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    final token = await SessionManager.getToken();
+    if (token == null || token.isEmpty) return;
+
+    final res = await http.delete(
+      Uri.parse('${AppConstants.baseUrl}/questions/answers/${answer['id']}'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (res.statusCode >= 400) {
+      throw Exception(res.body);
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _answers.removeWhere((a) => a['id'] == answer['id']);
+    });
+  }
+
+  Widget _buildAnswer(Map<String, dynamic> a, bool isReply) {
+    final aProfile = a['profiles'];
+
+    final aUsername =
+        a['username']?.toString() ??
+        aProfile?['username']?.toString() ??
+        'User';
+
+    final aProfileImage =
+        a['profile_image']?.toString() ??
+        aProfile?['profile_image']?.toString() ??
+        '';
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: 6,
+        left: isReply ? 60 : 0,
+        top: isReply ? 0 : 4,
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isReply ? const Color(0xFFCFA882) : const Color(0xFFA17E5A),
+          borderRadius: BorderRadius.circular(12),
+          border: isReply
+              ? const Border(
+                  left: BorderSide(color: Color(0xFF6C94C6), width: 5),
+                )
+              : null,
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            CircleAvatar(
+              radius: isReply ? 13 : 16,
+              backgroundImage: aProfileImage.isNotEmpty
+                  ? NetworkImage(aProfileImage)
+                  : null,
+              backgroundColor: const Color(0xFF6C94C6),
+              child: aProfileImage.isEmpty
+                  ? Icon(
+                      Icons.person,
+                      size: isReply ? 13 : 16,
+                      color: Colors.white,
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  GestureDetector(
+                    onTap: () => _openUserProfile(aUsername),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            aUsername,
+                            style: GoogleFonts.robotoCondensed(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+
+                        if (_currentUser != null &&
+                            a['user_id'] == _currentUser!['id'])
+                          PopupMenuButton<String>(
+                            icon: const Icon(
+                              Icons.more_vert,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                _editAnswer(a);
+                              } else if (value == 'delete') {
+                                _deleteAnswer(a);
+                              }
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(value: 'edit', child: Text('Edit')),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Text('Delete'),
+                              ),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  if (isReply) _buildParentAnswerPreview(a),
+                  Text(
+                    a['content']?.toString() ?? '',
+                    style: const TextStyle(color: Colors.white, fontSize: 14),
+                  ),
+                  const SizedBox(height: 4),
+                  if (!isReply)
+                    GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          replyingToAnswerId = a['id'].toString();
+                          replyingToUsername = aUsername;
+                        });
+                        FocusScope.of(context).requestFocus(_answerFocusNode);
+                      },
+                      child: const Text(
+                        'Reply',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppColors.accent,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildAnswersTree() {
+    final parentAnswers = _answers
+        .where((a) => _parentIdOf(a) == null)
+        .toList();
+
+    final widgets = <Widget>[];
+
+    for (final parent in parentAnswers) {
+      final parentMap = Map<String, dynamic>.from(parent);
+      widgets.add(_buildAnswer(parentMap, false));
+
+      final replies = _answers.where((a) {
+        return _parentIdOf(a) == parentMap['id'].toString();
+      }).toList();
+
+      for (final reply in replies) {
+        widgets.add(_buildAnswer(Map<String, dynamic>.from(reply), true));
+      }
+    }
+
+    return widgets;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final profile = widget.question['profiles'];
+
+    final questionUsername =
+        widget.question['username']?.toString() ??
+        profile?['username']?.toString() ??
+        '';
+
+    final questionProfileImage =
+        widget.question['profile_image']?.toString() ??
+        profile?['profile_image']?.toString() ??
+        '';
+
+    return Scaffold(
+      backgroundColor: AppColors.primary,
+      appBar: AppBar(
+        backgroundColor: AppColors.primary,
+        leading: IconButton(
+  icon: const Icon(Icons.arrow_back, color: AppColors.accent),
+  onPressed: () => Navigator.pop(context, _answers.length), // ← sayıyı gönder
+),
+        title: Text(
+          "Answers",
+          style: GoogleFonts.agbalumo(color: AppColors.accent, fontSize: 24),
+        ),
+      ),
+      body: Column(
+        children: [
+          Container(
+            margin: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.accent,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                GestureDetector(
+                  onTap: () => _openUserProfile(questionUsername),
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundImage: questionProfileImage.isNotEmpty
+                            ? NetworkImage(questionProfileImage)
+                            : null,
+                        backgroundColor: AppColors.cardBg,
+                        child: questionProfileImage.isEmpty
+                            ? const Icon(
+                                Icons.person,
+                                color: Colors.white,
+                                size: 18,
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        questionUsername,
+                        style: GoogleFonts.robotoCondensed(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  widget.question["title"]?.toString() ?? "",
+                  style: GoogleFonts.robotoCondensed(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: AppColors.primary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  widget.question["content"]?.toString() ?? "",
+                  style: const TextStyle(color: AppColors.primary),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.favorite_border,
+                      color: AppColors.primary,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      "${widget.question["likes"] ?? 0}",
+                      style: const TextStyle(color: AppColors.primary),
+                    ),
+                    const SizedBox(width: 16),
+                    const Icon(
+                      Icons.chat_bubble_outline,
+                      color: AppColors.primary,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      "${_answers.length}",
+                      style: const TextStyle(color: AppColors.primary),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                "Answers (${_answers.length})",
+                style: GoogleFonts.agbalumo(color: Colors.white, fontSize: 20),
+              ),
+            ),
+          ),
+
+          Expanded(
+            child: _answers.isEmpty
+                ? const Center(
+                    child: Text(
+                      "No answers yet",
+                      style: TextStyle(color: Colors.white54),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: _buildAnswersTree(),
+                  ),
+          ),
+
+          if (replyingToUsername != null)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppColors.accent,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      "Replying to $replyingToUsername",
+                      style: const TextStyle(
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      setState(() {
+                        replyingToAnswerId = null;
+                        replyingToUsername = null;
+                      });
+                    },
+                    child: const Icon(
+                      Icons.close,
+                      color: AppColors.primary,
+                      size: 18,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+          Container(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+            color: const Color(0xFF0D2240),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.cardBg,
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                    child: TextField(
+                      controller: _ctrl,
+                      focusNode: _answerFocusNode,
+                      style: const TextStyle(color: Colors.white),
+                      maxLines: 3,
+                      minLines: 1,
+                      decoration: InputDecoration(
+                        hintText: replyingToUsername == null
+                            ? "Write your answer..."
+                            : "Write your reply...",
+                        hintStyle: const TextStyle(color: Colors.white38),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 10,
+                        ),
+                        border: InputBorder.none,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: _postAnswer,
+                  child: Container(
+                    width: 46,
+                    height: 46,
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color(0xFF6C94C6), Color(0xFF4A6FA5)],
+                      ),
+                      shape: BoxShape.circle,
+                    ),
+                    child: _isPosting
+                        ? const Padding(
+                            padding: EdgeInsets.all(12),
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.send, color: Colors.white, size: 20),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
