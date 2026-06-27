@@ -1,7 +1,7 @@
 import os
+import jwt as pyjwt
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
-from jose import jwt, JWTError
 
 SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
 SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
@@ -9,32 +9,41 @@ SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY environment variable is not set.")
 
+ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-ALGORITHM = "HS256"
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    for secret, algorithms in [
-        (SUPABASE_JWT_SECRET, ["HS256", "ES256"]),
-        (SECRET_KEY, ["HS256"]),
-    ]:
-        if not secret:
-            continue
+    # Supabase JWT (ES256 veya HS256)
+    if SUPABASE_JWT_SECRET:
         try:
-            payload = jwt.decode(
+            payload = pyjwt.decode(
                 token,
-                secret,
-                algorithms=algorithms,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256", "ES256"],
                 options={"verify_aud": False},
             )
             email = payload.get("email")
             role = payload.get("user_metadata", {}).get("role", "student")
             if email:
                 return {"email": email, "role": role}
-        except JWTError:
-            continue
+        except pyjwt.PyJWTError:
+            pass
 
-    raise HTTPException(status_code=401, detail="Invalid token")
+    # Kendi SECRET_KEY ile (eski kullanıcılar)
+    try:
+        payload = pyjwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=["HS256"],
+        )
+        email = payload.get("sub")
+        role = payload.get("role", "student")
+        if email is None:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return {"email": email, "role": role}
+    except pyjwt.PyJWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 def require_role(*allowed_roles: str):
     def _check(current_user: dict = Depends(get_current_user)):
