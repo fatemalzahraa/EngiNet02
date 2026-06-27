@@ -486,16 +486,16 @@ Future<void> _showEditDialog() async {
   Future<void> loadCourse() async {
     try {
       final courseRes = await supabase
-          .from('courses')
-          .select()
-          .eq('id', widget.courseId)
-          .single();
+    .from('courses')
+    .select()
+    .eq('id', int.parse(widget.courseId))  // ← int
+    .single();
 
-      final lessonsRes = await supabase
-          .from('lessons')
-          .select()
-          .eq('course_id', widget.courseId)
-          .order('order_index', ascending: true);
+final lessonsRes = await supabase
+    .from('lessons')
+    .select()
+    .eq('course_id', int.parse(widget.courseId))  // ← int
+    .order('order_index', ascending: true);
 
       if (!mounted) return;
       setState(() {
