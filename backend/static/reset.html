@@ -105,27 +105,36 @@
   let sessionReady = false;
 
   async function init() {
-    const hash = window.location.hash;
-    if (hash) {
-      const params = new URLSearchParams(hash.substring(1));
-      const accessToken = params.get('access_token');
-      const refreshToken = params.get('refresh_token') || '';
-      if (accessToken) {
-        const { error } = await client.auth.setSession({
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        });
-        if (!error) {
-          sessionReady = true;
-        } else {
-          showMsg('Session error: ' + error.message, 'error');
-        }
-      }
-    } else {
-      showMsg('Invalid reset link. Please request a new one.', 'error');
+  // Önce onAuthStateChange dinle
+  client.auth.onAuthStateChange((event, session) => {
+    if (event === 'PASSWORD_RECOVERY') {
+      sessionReady = true;
+      showMsg('Ready! Enter your new password.', 'success');
     }
-  }
+  });
 
+  // Sonra hash'ten session set et
+  const hash = window.location.hash;
+  if (hash) {
+    const params = new URLSearchParams(hash.substring(1));
+    const accessToken = params.get('access_token');
+    const refreshToken = params.get('refresh_token') || '';
+    const type = params.get('type');
+    if (accessToken && type === 'recovery') {
+      const { error } = await client.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (error) {
+        showMsg('Link expired. Please request a new reset email.', 'error');
+      }
+    } else if (!accessToken) {
+      showMsg('Invalid reset link.', 'error');
+    }
+  } else {
+    showMsg('Invalid reset link. Please request a new one.', 'error');
+  }
+}
   init();
 
   function showMsg(text, type) {
