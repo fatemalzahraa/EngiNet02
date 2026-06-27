@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import 'package:enginet/core/app_colors.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class StudentQuestionsScreen extends StatefulWidget {
   const StudentQuestionsScreen({super.key});
@@ -46,50 +47,50 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
   }
 
   Future<void> _saveProfile() async {
-    final university = _universityController.text.trim();
-    final specialty = _specialtyController.text.trim();
+  final university = _universityController.text.trim();
+  final specialty = _specialtyController.text.trim();
 
-    if (university.isEmpty || specialty.isEmpty || _selectedInterests.isEmpty) {
-      _showSnackBar('Please fill all required fields', isError: true);
+  if (university.isEmpty || specialty.isEmpty || _selectedInterests.isEmpty) {
+    _showSnackBar('Please fill all required fields', isError: true);
+    return;
+  }
+
+  setState(() => _isLoading = true);
+
+  try {
+    final supabase = Supabase.instance.client;
+    final email = await SessionManager.getEmail();
+
+    final user = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', email ?? '')
+        .maybeSingle();
+
+    if (user == null) {
+      _showSnackBar('User not found', isError: true);
       return;
     }
 
-    setState(() => _isLoading = true);
+    await supabase.from('student_profiles').upsert({
+      'user_id': user['id'],
+      'university': university,
+      'specialty': specialty,
+      'study_year': _studyYear,
+      'level': _level,
+      'interests': _selectedInterests.join(','),
+      'preferred_language': _preferredLanguage,
+    }, onConflict: 'user_id');
 
-    try {
-      final token = await SessionManager.getToken();
-
-      final res = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/student-profile'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-        body: jsonEncode({
-          'university': university,
-          'specialty': specialty,
-          'study_year': _studyYear,
-          'level': _level,
-          'interests': _selectedInterests.join(','),
-          'preferred_language': _preferredLanguage,
-        }),
-      );
-
-      if (res.statusCode >= 400) {
-        debugPrint(res.body);
-        _showSnackBar('Failed to save profile', isError: true);
-        return;
-      }
-
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/home');
-    } catch (e) {
-      debugPrint('Student profile error: $e');
-      _showSnackBar('Unable to connect to server', isError: true);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, '/home');
+  } catch (e) {
+    debugPrint('Student profile error: $e');
+    _showSnackBar('Error: $e', isError: true);
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
+}
 
   void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(

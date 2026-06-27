@@ -1,14 +1,8 @@
-import 'package:enginet/core/constants.dart';
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/app_colors.dart';
 
-/// Three-step reset flow:
-///  Step 1 — enter email → POST /forgot-password → OTP sent
-///  Step 2 — enter OTP code → POST /verify-otp
-///  Step 3 — enter new password → POST /reset-password
 class ResetPasswordScreen extends StatefulWidget {
   const ResetPasswordScreen({super.key});
 
@@ -18,19 +12,14 @@ class ResetPasswordScreen extends StatefulWidget {
 
 class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
   final _emailCtrl = TextEditingController();
-  final _codeCtrl = TextEditingController();
-  final _newPassCtrl = TextEditingController();
-  final _confirmPassCtrl = TextEditingController();
-
-  int _step = 1; // 1 = email, 2 = OTP, 3 = new password
   bool _isLoading = false;
+  bool _emailSent = false;
+
+  final _supabase = Supabase.instance.client;
 
   @override
   void dispose() {
     _emailCtrl.dispose();
-    _codeCtrl.dispose();
-    _newPassCtrl.dispose();
-    _confirmPassCtrl.dispose();
     super.dispose();
   }
 
@@ -44,8 +33,7 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     );
   }
 
-  // ── Step 1: Send Link ────────────────────────────────────
-  Future<void> _sendResetLink() async {
+  Future<void> _sendResetEmail() async {
     final email = _emailCtrl.text.trim();
 
     if (email.isEmpty) {
@@ -56,108 +44,12 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final res = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/forgot-password'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': email}),
-      );
-
-      if (res.statusCode == 200) {
-        setState(() => _step = 2);
-        _showSnack('A reset code has been sent to your email');
-      } else {
-        debugPrint('Reset error status: ${res.statusCode}');
-        debugPrint('Reset error body: ${res.body}');
-
-        final body = jsonDecode(res.body);
-        _showSnack(
-          body['detail'] ?? body['message'] ?? 'Something went wrong',
-          error: true,
-        );
-      }
+      await _supabase.auth.resetPasswordForEmail(email);
+      setState(() => _emailSent = true);
+    } on AuthException catch (e) {
+      _showSnack(e.message, error: true);
     } catch (e) {
-      _showSnack('Connection error', error: true);
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
-  // ── Step 2: Verify OTP ─────────────────────────
-  Future<void> _verifyOTP() async {
-    final code = _codeCtrl.text.trim();
-
-    if (code.length != 6) {
-      _showSnack('Enter the 6-digit code', error: true);
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final res = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/verify-otp'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'email': _emailCtrl.text.trim(), 'code': code}),
-      );
-
-      if (res.statusCode == 200) {
-        setState(() => _step = 3);
-      } else {
-        final body = jsonDecode(res.body);
-        _showSnack(body['detail'] ?? 'Invalid code', error: true);
-      }
-    } catch (e) {
-      _showSnack('Connection error', error: true);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  // ── Step 3: Reset Password ─────────────────────
-  Future<void> _resetPassword() async {
-    final newPass = _newPassCtrl.text.trim();
-    final confirm = _confirmPassCtrl.text.trim();
-
-    if (newPass.isEmpty || confirm.isEmpty) {
-      _showSnack('Fill all fields', error: true);
-      return;
-    }
-
-    if (newPass != confirm) {
-      _showSnack('Passwords do not match', error: true);
-      return;
-    }
-
-    if (newPass.length < 6) {
-      _showSnack('Minimum 6 characters', error: true);
-      return;
-    }
-
-    setState(() => _isLoading = true);
-
-    try {
-      final res = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/reset-password-link'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'email': _emailCtrl.text.trim(),
-          'code': _codeCtrl.text.trim(),
-          'new_password': newPass,
-        }),
-      );
-
-      if (res.statusCode == 200) {
-        _showSnack('Password updated successfully!');
-        await Future.delayed(const Duration(seconds: 1));
-
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/login');
-      } else {
-        final body = jsonDecode(res.body);
-        _showSnack(body['detail'] ?? 'Something went wrong', error: true);
-      }
-    } catch (e) {
-      _showSnack('Connection error', error: true);
+      _showSnack('Connection error. Try again.', error: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -184,32 +76,91 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                     color: AppColors.textAccent,
                   ),
                 ),
-                const SizedBox(height: 8),
-                // Step indicator
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: List.generate(
-                    3,
-                    (i) => Container(
-                      margin: const EdgeInsets.symmetric(horizontal: 4),
-                      width: _step == i + 1 ? 24 : 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: _step >= i + 1
-                            ? AppColors.accent
-                            : AppColors.cardBg,
-                        borderRadius: BorderRadius.circular(4),
+                const SizedBox(height: 32),
+
+                if (!_emailSent) ...[
+                  Text(
+                    'Enter your email and we\'ll send you a reset link.',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.robotoCondensed(
+                      fontSize: 15,
+                      color: AppColors.textAccent,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppColors.accent,
+                      borderRadius: BorderRadius.circular(34),
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: TextField(
+                      controller: _emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        border: InputBorder.none,
+                        hintText: 'Email',
+                        hintStyle: TextStyle(color: Colors.black45),
+                        prefixIcon: Icon(Icons.email_outlined, color: Colors.black45),
                       ),
                     ),
                   ),
-                ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: double.infinity,
+                    child: GestureDetector(
+                      onTap: _isLoading ? null : _sendResetEmail,
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: AppColors.cardBg,
+                          borderRadius: BorderRadius.circular(34),
+                        ),
+                        child: Center(
+                          child: _isLoading
+                              ? const CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2,
+                                )
+                              : Text(
+                                  'Send Reset Link',
+                                  style: GoogleFonts.robotoCondensed(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 20,
+                                  ),
+                                ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ] else ...[
+                  const Icon(
+                    Icons.mark_email_read_outlined,
+                    size: 80,
+                    color: Colors.white70,
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Check your email!',
+                    style: GoogleFonts.robotoCondensed(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.accent,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'We sent a password reset link to\n${_emailCtrl.text.trim()}',
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.robotoCondensed(
+                      fontSize: 15,
+                      color: AppColors.textAccent,
+                    ),
+                  ),
+                ],
+
                 const SizedBox(height: 32),
-
-                if (_step == 1) ..._buildStep1(),
-                if (_step == 2) ..._buildStep2(),
-                if (_step == 3) ..._buildStep3(),
-
-                const SizedBox(height: 24),
                 GestureDetector(
                   onTap: () =>
                       Navigator.of(context).pushReplacementNamed('/login'),
@@ -225,93 +176,6 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
               ],
             ),
           ),
-        ),
-      ),
-    );
-  }
-
-  List<Widget> _buildStep1() => [
-    Text(
-      'Enter your email to receive a reset code',
-      textAlign: TextAlign.center,
-      style: GoogleFonts.robotoCondensed(
-        fontSize: 16,
-        color: AppColors.textAccent,
-      ),
-    ),
-    const SizedBox(height: 24),
-    _field(_emailCtrl, 'Email', keyboardType: TextInputType.emailAddress),
-    const SizedBox(height: 20),
-    _actionButton('Send Reset Code', _sendResetLink),
-  ];
-
-  List<Widget> _buildStep2() => [
-    Text(
-      'Enter the 6-digit code sent to\n${_emailCtrl.text.trim()}',
-      textAlign: TextAlign.center,
-      style: GoogleFonts.robotoCondensed(
-        fontSize: 16,
-        color: AppColors.textAccent,
-      ),
-    ),
-    const SizedBox(height: 24),
-    _field(_codeCtrl, '6-Digit Code', keyboardType: TextInputType.number),
-    const SizedBox(height: 20),
-    _actionButton('Verify Code', _verifyOTP),
-  ];
-  List<Widget> _buildStep3() => [
-    _field(_newPassCtrl, 'New Password', obscureText: true),
-    const SizedBox(height: 12),
-    _field(_confirmPassCtrl, 'Confirm Password', obscureText: true),
-    const SizedBox(height: 20),
-    _actionButton('Update Password', _resetPassword),
-  ];
-
-  Widget _field(
-    TextEditingController ctrl,
-    String hint, {
-    bool obscureText = false,
-    TextInputType keyboardType = TextInputType.text,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.accent,
-        borderRadius: BorderRadius.circular(34),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: TextField(
-          controller: ctrl,
-          obscureText: obscureText,
-          keyboardType: keyboardType,
-          decoration: InputDecoration(border: InputBorder.none, hintText: hint),
-        ),
-      ),
-    );
-  }
-
-  Widget _actionButton(String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: _isLoading ? null : onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        margin: const EdgeInsets.only(top: 8),
-        decoration: BoxDecoration(
-          color: AppColors.cardBg,
-          borderRadius: BorderRadius.circular(34),
-        ),
-        child: Center(
-          child: _isLoading
-              ? const CircularProgressIndicator(color: Colors.white)
-              : Text(
-                  label,
-                  style: GoogleFonts.robotoCondensed(
-                    color: AppColors.textLight,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 22,
-                  ),
-                ),
         ),
       ),
     );

@@ -17,6 +17,7 @@ import 'add_course_screen.dart';
 import 'search_engineers_screen.dart';
 import 'package:enginet/leaderboard_screen.dart';
 import 'package:enginet/core/app_colors.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class IndexPage extends StatefulWidget {
   final String title;
@@ -118,7 +119,9 @@ class _IndexPageState extends State<IndexPage> {
 
   Future<void> _loadRole() async {
     try {
-      final token = await SessionManager.getToken();
+      final session = Supabase.instance.client.auth.currentSession;
+      debugPrint('TOKEN_FIRST50 = ${session?.accessToken?.substring(0, 50)}');
+      final token = session?.accessToken ?? await SessionManager.getToken();
       final role = await SessionManager.getRole();
       final username = await SessionManager.getUsername();
       String profileImage = '';

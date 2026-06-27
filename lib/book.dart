@@ -39,6 +39,7 @@ class _BookScreenState extends State<BookScreen> {
   void initState() {
     super.initState();
     _loadUser();
+    _wakeUpBackend();
     loadBooks();
     loadRecommendedBooks();
   }
@@ -49,6 +50,13 @@ class _BookScreenState extends State<BookScreen> {
     _searchController.dispose();
     super.dispose();
   }
+  Future<void> _wakeUpBackend() async {
+  try {
+    await http.get(Uri.parse('$_apiBase/health')).timeout(
+      const Duration(seconds: 60),
+    );
+  } catch (_) {}
+}
 
   Future<void> _loadUser() async {
     currentUsername = await SessionManager.getUsername();
@@ -156,7 +164,9 @@ class _BookScreenState extends State<BookScreen> {
     if (mounted) setState(() => isLoadingRecommended = true);
 
     try {
-      final token = await SessionManager.getToken();
+      final session = Supabase.instance.client.auth.currentSession;
+      debugPrint('TOKEN_FIRST50 = ${session?.accessToken?.substring(0, 50)}');
+final token = session?.accessToken;
 
       // Token yoksa → Supabase'den popüler kitapları çek (cold-start fallback)
       if (token == null || token.isEmpty) {
@@ -173,7 +183,7 @@ class _BookScreenState extends State<BookScreen> {
             'Authorization': 'Bearer $token',
             'Content-Type': 'application/json',
           })
-          .timeout(const Duration(seconds: 10));
+          .timeout(const Duration(seconds: 30));
 
       if (!mounted) return;
 

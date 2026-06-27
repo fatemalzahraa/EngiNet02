@@ -427,3 +427,6 @@ def record_interaction(
     }, on_conflict="user_id,content_type,content_id").execute()
 
     return {"status": "recorded"}
+@app.get("/health")
+def health():
+    return {"status": "ok"}

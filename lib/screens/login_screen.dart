@@ -1,9 +1,7 @@
-import 'dart:convert';
-import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/app_colors.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -19,6 +17,8 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _isLoading = false;
   bool _obscurePassword = true;
 
+  final _supabase = Supabase.instance.client;
+
   @override
   void dispose() {
     _emailController.dispose();
@@ -26,53 +26,66 @@ class _LoginScreenState extends State<LoginScreen> {
     super.dispose();
   }
 
-  Future<void> _login() async {
-    final email = _emailController.text.trim();
-    final password = _passwordController.text.trim();
+ Future<void> _login() async {
+  final email = _emailController.text.trim();
+  final password = _passwordController.text.trim();
 
-    if (email.isEmpty || password.isEmpty) {
-      _showSnackBar('Please fill all fields', isError: true);
+  debugPrint('Attempting login with: $email');
+
+  if (email.isEmpty || password.isEmpty) {
+    _showSnackBar('Please fill all fields', isError: true);
+    return;
+  }
+
+  setState(() => _isLoading = true);
+
+  try {
+    debugPrint('Calling signInWithPassword...');
+    final response = await _supabase.auth.signInWithPassword(
+      email: email,
+      password: password,
+    );
+    debugPrint('Response received: user=${response.user?.id}');
+
+    final user = response.user;
+    final session = response.session;
+
+    if (user == null || session == null) {
+      debugPrint('User or session is null');
+      _showSnackBar('Login failed. Check your credentials.', isError: true);
       return;
     }
 
-    setState(() => _isLoading = true);
+    final userData = await _supabase
+        .from('users')
+        .select('role, username')
+        .eq('email', email)
+        .maybeSingle();
 
-    try {
-      // Use FastAPI /token endpoint (OAuth2 form)
-      final response = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/token'),
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: {'username': email, 'password': password},
-      );
+    debugPrint('userData: $userData');
 
-      if (response.statusCode != 200) {
-        final body = jsonDecode(response.body);
-        _showSnackBar(
-          body['detail'] ?? 'Login failed. Check your credentials.',
-          isError: true,
-        );
-        return;
-      }
+    final role = userData?['role']?.toString() ?? 'student';
+    final username = userData?['username']?.toString() ?? '';
 
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
+    await SessionManager.saveSession(
+      token: session.accessToken,
+      role: role,
+      username: username,
+      email: email,
+    );
 
-      await SessionManager.saveSession(
-        token: data['access_token']?.toString() ?? '',
-        role: data['role']?.toString() ?? 'student',
-        username: data['username']?.toString() ?? '',
-        email: email,
-      );
-
-      if (!mounted) return;
-      Navigator.pushReplacementNamed(context, '/home');
-    } catch (e) {
-      debugPrint('Login error: $e');
-      _showSnackBar('Unable to connect to server. Try again.', isError: true);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, '/home');
+  } on AuthException catch (e) {
+    debugPrint('AuthException: ${e.message} / ${e.statusCode}');
+    _showSnackBar(e.message, isError: true);
+  } catch (e) {
+    debugPrint('Login error: $e');
+    _showSnackBar('Unable to connect. Try again.', isError: true);
+  } finally {
+    if (mounted) setState(() => _isLoading = false);
   }
-
+}
   void _showSnackBar(String message, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(

@@ -1,9 +1,6 @@
-import 'dart:convert';
-import 'package:enginet/core/constants.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/app_colors.dart';
 
@@ -58,37 +55,31 @@ class _SignupScreenState extends State<SignupScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // 1. Register via FastAPI backend (creates user with hashed password)
-      final backendRes = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/register'),
-        headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({
-          'username': username,
-          'email': email,
-          'password': password,
-          'role': _selectedRole,
-        }),
+      // 1. Register in Supabase Auth
+      final response = await _supabase.auth.signUp(
+        email: email,
+        password: password,
       );
 
-      if (backendRes.statusCode >= 400) {
-        final body = jsonDecode(backendRes.body);
-        _showSnackBar(body['detail'] ?? 'Registration failed', isError: true);
+      final user = response.user;
+      final session = response.session;
+
+      if (user == null) {
+        _showSnackBar('Registration failed. Try again.', isError: true);
         return;
       }
 
-      final backendData = jsonDecode(backendRes.body) as Map<String, dynamic>;
-      final backendToken = backendData['access_token']?.toString() ?? '';
+      // 2. Insert into users table (keeps existing backend tables working)
+      await _supabase.from('users').insert({
+        'auth_id': user.id,
+        'username': username,
+        'email': email,
+        'role': _selectedRole,
+      });
 
-      // 2. Also register in Supabase Auth so Supabase-based screens work
-      try {
-        await _supabase.auth.signUp(email: email, password: password);
-      } catch (_) {
-        // Non-fatal: Supabase auth is secondary; backend token is the source of truth
-      }
-
-      // 3. Save session using the backend JWT
+      // 3. Save session
       await SessionManager.saveSession(
-        token: backendToken,
+        token: session?.accessToken ?? '',
         role: _selectedRole,
         username: username,
         email: email,
@@ -96,6 +87,7 @@ class _SignupScreenState extends State<SignupScreen> {
 
       if (!mounted) return;
       _showSnackBar('Account created successfully!');
+
       if (_selectedRole == 'student') {
         Navigator.pushReplacementNamed(context, '/student-questions');
       } else {
@@ -105,7 +97,7 @@ class _SignupScreenState extends State<SignupScreen> {
       _showSnackBar(e.message, isError: true);
     } catch (e) {
       debugPrint('Signup error: $e');
-      _showSnackBar('Unable to connect to server. Try again.', isError: true);
+      _showSnackBar('Unable to connect. Try again.', isError: true);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -234,8 +226,9 @@ class _SignupScreenState extends State<SignupScreen> {
                               ),
                             ],
                             onChanged: (value) {
-                              if (value != null)
+                              if (value != null) {
                                 setState(() => _selectedRole = value);
+                              }
                             },
                           ),
                         ),
