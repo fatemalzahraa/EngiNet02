@@ -17,3 +17,9 @@ samples, guidance on mobile development, and a full API reference.
 
 ## ML Model
 Model dosyası repoda yok. Üretmek için:
+
+## ML Model
+Model dosyası repoda yok. Üretmek için:
+\`\`\`
+cd backend && python train_and_save.py
+\`\`\`
