@@ -9,32 +9,31 @@ SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY environment variable is not set.")
 
-ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    # Önce Supabase JWT'yi dene
-    if SUPABASE_JWT_SECRET:
+    for secret, algorithms in [
+        (SUPABASE_JWT_SECRET, ["HS256", "ES256"]),
+        (SECRET_KEY, ["HS256"]),
+    ]:
+        if not secret:
+            continue
         try:
-            payload = jwt.decode(token, SUPABASE_JWT_SECRET, algorithms=[ALGORITHM], options={"verify_aud": False})
-            email: str = payload.get("email")
-            role: str = payload.get("user_metadata", {}).get("role", "student")
+            payload = jwt.decode(
+                token,
+                secret,
+                algorithms=algorithms,
+                options={"verify_aud": False},
+            )
+            email = payload.get("email")
+            role = payload.get("user_metadata", {}).get("role", "student")
             if email:
                 return {"email": email, "role": role}
         except JWTError:
-            pass
+            continue
 
-    # Sonra kendi SECRET_KEY ile dene (eski kullanıcılar için)
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        email: str = payload.get("sub")
-        role: str = payload.get("role", "student")
-        if email is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return {"email": email, "role": role}
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+    raise HTTPException(status_code=401, detail="Invalid token")
 
 def require_role(*allowed_roles: str):
     def _check(current_user: dict = Depends(get_current_user)):
