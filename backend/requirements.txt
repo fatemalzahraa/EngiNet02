@@ -5,7 +5,7 @@ requests==2.32.3
 bcrypt==4.2.1
 python-jose==3.3.0
 passlib==1.7.4
-supabase
-implicit
-scipy
+supabase==2.30.0
+implicit==0.7.3
+scipy==1.17.1
 python-dotenv==1.0.0
