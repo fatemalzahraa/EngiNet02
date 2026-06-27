@@ -29,6 +29,9 @@ from ai_router import router as ai_router
 from supabase import create_client
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+import pathlib
 
 from dependencies import (
     SECRET_KEY,
@@ -45,6 +48,17 @@ _origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
 ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()] if _origins_env else ["*"]
 
 app = FastAPI(title="EngiNet API", version="2.0")
+# Static files
+static_dir = pathlib.Path(__file__).parent / "static"
+static_dir.mkdir(exist_ok=True)
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+@app.get("/reset", response_class=HTMLResponse)
+def reset_page():
+    html_file = static_dir / "reset.html"
+    if html_file.exists():
+        return html_file.read_text()
+    return "<h1>Reset page not found</h1>"
 
 app.include_router(books_router)
 app.include_router(articles_router)
