@@ -24,7 +24,9 @@ def _get_jwks_client():
     return _jwks_client
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    # Supabase JWT (ES256) — JWKS ile doğrula
+    email = None
+
+    # Supabase JWT (ES256)
     client = _get_jwks_client()
     if client:
         try:
@@ -36,27 +38,28 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
                 options={"verify_aud": False},
             )
             email = payload.get("email")
-            role = (
-    payload.get("user_metadata", {}).get("role")
-    or payload.get("app_metadata", {}).get("role")
-    or "student"
-)
-            if email:
-                return {"email": email, "role": role}
         except Exception:
             pass
 
-    # Eski kullanıcılar için kendi SECRET_KEY (HS256)
-    try:
-        payload = pyjwt.decode(token, SECRET_KEY, algorithms=["HS256"])
-        email = payload.get("sub")
-        role = payload.get("role", "student")
-        if email is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-        return {"email": email, "role": role}
-    except pyjwt.PyJWTError:
+    # Eski HS256
+    if not email:
+        try:
+            payload = pyjwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            email = payload.get("sub")
+        except pyjwt.PyJWTError:
+            pass
+
+    if not email:
         raise HTTPException(status_code=401, detail="Invalid token")
 
+    # Role'ü public.users'dan oku
+    from database import get_db
+    db = get_db()
+    user = db.table("users").select("email, role").eq("email", email).single().execute().data
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return {"email": user["email"], "role": user["role"]}
 def require_role(*allowed_roles: str):
     def _check(current_user: dict = Depends(get_current_user)):
         if current_user["role"] not in allowed_roles:
