@@ -8,7 +8,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'dart:async';
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as path;
 import 'package:enginet/book_detail.dart';
 import 'package:enginet/saved_books_screen.dart';
 import 'package:enginet/article_detail.dart';

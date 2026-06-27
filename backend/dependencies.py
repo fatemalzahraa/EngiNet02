@@ -2,9 +2,10 @@ import os
 import jwt as pyjwt
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
+import requests
 
 SECRET_KEY = os.getenv("SECRET_KEY", "").strip()
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET", "").strip()
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
 
 if not SECRET_KEY:
     raise RuntimeError("SECRET_KEY environment variable is not set.")
@@ -13,30 +14,37 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
+# Supabase JWKS'den public key'leri çek (ES256 için)
+_jwks_client = None
+def _get_jwks_client():
+    global _jwks_client
+    if _jwks_client is None and SUPABASE_URL:
+        jwks_url = f"{SUPABASE_URL}/auth/v1/.well-known/jwks.json"
+        _jwks_client = pyjwt.PyJWKClient(jwks_url)
+    return _jwks_client
+
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
-    # Supabase JWT (ES256 veya HS256)
-    if SUPABASE_JWT_SECRET:
+    # Supabase JWT (ES256) — JWKS ile doğrula
+    client = _get_jwks_client()
+    if client:
         try:
+            signing_key = client.get_signing_key_from_jwt(token)
             payload = pyjwt.decode(
                 token,
-                SUPABASE_JWT_SECRET,
-                algorithms=["HS256", "ES256"],
+                signing_key.key,
+                algorithms=["ES256", "RS256"],
                 options={"verify_aud": False},
             )
             email = payload.get("email")
             role = payload.get("user_metadata", {}).get("role", "student")
             if email:
                 return {"email": email, "role": role}
-        except pyjwt.PyJWTError:
+        except Exception:
             pass
 
-    # Kendi SECRET_KEY ile (eski kullanıcılar)
+    # Eski kullanıcılar için kendi SECRET_KEY (HS256)
     try:
-        payload = pyjwt.decode(
-            token,
-            SECRET_KEY,
-            algorithms=["HS256"],
-        )
+        payload = pyjwt.decode(token, SECRET_KEY, algorithms=["HS256"])
         email = payload.get("sub")
         role = payload.get("role", "student")
         if email is None:

@@ -6,7 +6,6 @@ import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as path;
 import 'package:enginet/following_screen.dart';
 import 'package:enginet/settings_screen.dart';
 import 'package:url_launcher/url_launcher.dart';

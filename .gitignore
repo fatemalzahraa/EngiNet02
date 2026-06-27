@@ -49,3 +49,5 @@ app.*.map.json
 !env.example
 venv/
 __pycache__/
+*.db
+*.pkl

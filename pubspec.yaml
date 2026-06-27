@@ -34,8 +34,6 @@ dependencies:
   http: ^1.6.0
   flutter_secure_storage: ^8.0.0
   shared_preferences: ^2.1.1
-  sqflite: ^2.3.0
-  path: ^1.9.0
   url_launcher: ^6.2.5 
   supabase_flutter: ^2.0.0
   shimmer: ^3.0.0
@@ -78,7 +76,6 @@ flutter:
   assets:
     - images/
     # - images/a_dot_ham.jpeg
-    - assets/database/enginet.db
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

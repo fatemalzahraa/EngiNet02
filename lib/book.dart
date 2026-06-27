@@ -165,7 +165,6 @@ class _BookScreenState extends State<BookScreen> {
 
     try {
       final session = Supabase.instance.client.auth.currentSession;
-      debugPrint('TOKEN_FIRST50 = ${session?.accessToken?.substring(0, 50)}');
 final token = session?.accessToken;
 
       // Token yoksa → Supabase'den popüler kitapları çek (cold-start fallback)

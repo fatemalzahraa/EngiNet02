@@ -5,7 +5,6 @@ import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as path;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/constants.dart';
 import 'package:http/http.dart' as http;

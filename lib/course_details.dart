@@ -466,7 +466,6 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   Future<void> _startCourse() async {
     try {
       final token = await SessionManager.getToken();
-      debugPrint('TOKEN USED = $token');
 
       if (token == null || token.isEmpty) {
         ScaffoldMessenger.of(

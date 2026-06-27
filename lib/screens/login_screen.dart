@@ -30,7 +30,6 @@ class _LoginScreenState extends State<LoginScreen> {
   final email = _emailController.text.trim();
   final password = _passwordController.text.trim();
 
-  debugPrint('Attempting login with: $email');
 
   if (email.isEmpty || password.isEmpty) {
     _showSnackBar('Please fill all fields', isError: true);
@@ -62,7 +61,6 @@ class _LoginScreenState extends State<LoginScreen> {
         .eq('email', email)
         .maybeSingle();
 
-    debugPrint('userData: $userData');
 
     final role = userData?['role']?.toString() ?? 'student';
     final username = userData?['username']?.toString() ?? '';

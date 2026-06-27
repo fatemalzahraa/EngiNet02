@@ -120,7 +120,6 @@ class _IndexPageState extends State<IndexPage> {
   Future<void> _loadRole() async {
     try {
       final session = Supabase.instance.client.auth.currentSession;
-      debugPrint('TOKEN_FIRST50 = ${session?.accessToken?.substring(0, 50)}');
       final token = session?.accessToken ?? await SessionManager.getToken();
       final role = await SessionManager.getRole();
       final username = await SessionManager.getUsername();
