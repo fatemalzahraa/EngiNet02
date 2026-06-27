@@ -15,6 +15,13 @@ class PostCreate(BaseModel):
     category: Optional[str] = ""
 
 
+class PostUpdate(BaseModel):
+    content: Optional[str] = None
+    image_url: Optional[str] = None
+    linked_course_id: Optional[int] = None
+    category: Optional[str] = None
+
+
 # ── Smart feed ────────────────────────────────────────────
 @router.get("/feed")
 def get_smart_feed(current_user: dict = Depends(get_current_user)):
@@ -172,6 +179,28 @@ def unlike_post(post_id: int, current_user: dict = Depends(get_current_user)):
         db.table("users").update({"points": new_points}).eq("id", current_post["user_id"]).execute()
 
     return {"message": "Post unliked!"}
+
+
+@router.put("/{post_id}")
+def update_post(post_id: int, post: PostUpdate, current_user: dict = Depends(get_current_user)):
+    db = get_db()
+
+    user = db.table("users").select("id, role").eq("email", current_user["email"]).single().execute().data
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    existing = db.table("posts").select("user_id").eq("id", post_id).single().execute().data
+    if not existing:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if existing["user_id"] != user["id"] and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not authorized to edit this post")
+
+    update_data = {k: v for k, v in post.dict(exclude_unset=True).items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    db.table("posts").update(update_data).eq("id", post_id).execute()
+    return {"message": "Post updated successfully"}
 
 
 # ── Delete post ───────────────────────────────────────────

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form
 from database import get_db
 from pydantic import BaseModel
 from typing import Optional, List
-from dependencies import require_role, add_points_supabase
+from dependencies import require_role, get_current_user, add_points_supabase
 from supabase import create_client
 import os
 import time
@@ -212,10 +212,53 @@ def start_course(
 @router.delete("/{course_id}")
 def delete_course(
     course_id: int,
-    current_user: dict = Depends(require_role("admin")),
+    current_user: dict = Depends(get_current_user),
 ):
     db = get_db()
-    if not db.table("courses").select("id").eq("id", course_id).execute().data:
+
+    user_result = db.table("users").select("id, username, role").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = user_result.data[0]
+
+    course_result = db.table("courses").select("id, instructor_name").eq("id", course_id).execute()
+    if not course_result.data:
         raise HTTPException(status_code=404, detail="Course not found")
+    course = course_result.data[0]
+
+    if course.get("instructor_name") != user["username"] and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not allowed to delete this course")
+
+    db.table("student_courses").delete().eq("course_id", course_id).execute()
+    db.table("lessons").delete().eq("course_id", course_id).execute()
     db.table("courses").delete().eq("id", course_id).execute()
     return {"message": "Course deleted"}
+
+class CourseUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+
+@router.put("/{course_id}")
+def update_course(
+    course_id: int,
+    course: CourseUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_db()
+    user_result = db.table("users").select("id, username, role").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = user_result.data[0]
+
+    course_result = db.table("courses").select("id, instructor_name").eq("id", course_id).execute()
+    if not course_result.data:
+        raise HTTPException(status_code=404, detail="Course not found")
+    existing = course_result.data[0]
+
+    if existing.get("instructor_name") != user["username"] and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not allowed to update this course")
+
+    update_data = {k: v for k, v in course.dict().items() if v is not None}
+    db.table("courses").update(update_data).eq("id", course_id).execute()
+    return {"message": "Course updated"}

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/questions_screen.dart';
+import 'package:enginet/features/questions/widgets/answer_section.dart';
 import 'package:enginet/book_detail.dart';
 import 'package:enginet/article_detail.dart';
 import 'package:enginet/article_comments_screen.dart';

@@ -17,7 +17,8 @@ import 'add_course_screen.dart';
 import 'search_engineers_screen.dart';
 import 'package:enginet/leaderboard_screen.dart';
 import 'package:enginet/core/app_colors.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:enginet/push_service.dart';
+
 
 class IndexPage extends StatefulWidget {
   final String title;
@@ -54,40 +55,44 @@ class _IndexPageState extends State<IndexPage> {
   }
 
   Future<void> _initNotificationsRealtime() async {
-    try {
-      final email = await SessionManager.getEmail();
-      if (email == null || email.isEmpty) return;
+  try {
+    final email = await SessionManager.getEmail();
+    if (email == null || email.isEmpty) return;
 
-      final user = await _supabase
-          .from('users')
-          .select('id')
-          .eq('email', email)
-          .single();
+    final user = await _supabase
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .single();
 
-      _currentUserId = user['id'] as int;
+    _currentUserId = user['id'] as int;
 
-      await _loadUnreadCount();
+    await _loadUnreadCount();
 
-      _notificationsChannel = _supabase.channel('notifications-$_currentUserId')
-        ..onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'notifications',
-          callback: (payload) {
-            final newRow = payload.newRecord;
-            final oldRow = payload.oldRecord;
+_notificationsChannel = _supabase
+    .channel('notifications-$_currentUserId')
+  ..onPostgresChanges(
+    event: PostgresChangeEvent.insert,
+    schema: 'public',
+    table: 'notifications',
+    filter: PostgresChangeFilter(
+      type: PostgresChangeFilterType.eq,
+      column: 'user_id',
+      value: _currentUserId,
+    ),
+    callback: (payload) async {
+      final newRow = payload.newRecord;
 
-            if (newRow['user_id'] == _currentUserId ||
-                oldRow['user_id'] == _currentUserId) {
-              _loadUnreadCount();
-            }
-          },
-        )
-        ..subscribe();
-    } catch (e) {
-      debugPrint('Realtime notifications error: $e');
-    }
+      _loadUnreadCount();
+
+      await PushService.handleRealtimeNotification(newRow);
+    },
+  )
+      ..subscribe();
+  } catch (e) {
+    debugPrint('Realtime notifications error: $e');
   }
+}
 
   Future<void> _loadUnreadCount() async {
     try {

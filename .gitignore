@@ -52,3 +52,6 @@ __pycache__/
 *.db
 *.pkl
 env.example
+venv/
+.env
+backend/.env

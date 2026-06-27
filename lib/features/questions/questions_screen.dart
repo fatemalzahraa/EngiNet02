@@ -20,8 +20,8 @@ class QuestionsScreen extends StatefulWidget {
   @override
   State<QuestionsScreen> createState() => _QuestionsScreenState();
 }
-StreamSubscription<List<Map<String, dynamic>>>? _questionsSub;
 class _QuestionsScreenState extends State<QuestionsScreen> {
+  StreamSubscription<List<Map<String, dynamic>>>? _questionsSub;
   List _questions = [];
   bool _isLoading = true;
   int? _currentUserId;

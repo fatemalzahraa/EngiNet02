@@ -135,6 +135,123 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     ]);
   }
 
+  // _deleteCourse() metodunun üstüne ekle:
+Future<void> _showEditDialog() async {
+  if (course == null) return;
+  final titleCtrl = TextEditingController(text: course!['title'] ?? '');
+  final descCtrl = TextEditingController(text: course!['description'] ?? '');
+  String? selectedCat = course!['category'];
+
+  final categories = [
+    'Programming', 'Civil Engineering', 'Mechanical Engineering',
+    'Electrical Engineering', 'Mathematics', 'Physics', 'Other',
+  ];
+
+  await showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: const Color(0xFF1A2F55),
+      title: const Text('Edit Course', style: TextStyle(color: Colors.white)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: 'Title',
+                hintStyle: TextStyle(color: Colors.white54),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: descCtrl,
+              maxLines: 3,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: 'Description',
+                hintStyle: TextStyle(color: Colors.white54),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            StatefulBuilder(
+              builder: (context, setLocal) => DropdownButtonFormField<String>(
+                value: categories.contains(selectedCat) ? selectedCat : null,
+                dropdownColor: const Color(0xFF1A2F55),
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: 'Category',
+                  hintStyle: TextStyle(color: Colors.white54),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white24),
+                  ),
+                ),
+                items: categories.map((c) =>
+                  DropdownMenuItem(value: c, child: Text(c))).toList(),
+                onChanged: (val) => setLocal(() => selectedCat = val),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+        ),
+        TextButton(
+          onPressed: () async {
+            final token = await SessionManager.getToken();
+            if (token == null) return;
+            try {
+              final res = await http.put(
+                Uri.parse('${AppConstants.baseUrl}/courses/${widget.courseId}'),
+                headers: {
+                  'Authorization': 'Bearer $token',
+                  'Content-Type': 'application/json',
+                },
+                body: jsonEncode({
+                  'title': titleCtrl.text.trim(),
+                  'description': descCtrl.text.trim(),
+                  if (selectedCat != null) 'category': selectedCat,
+                }),
+              );
+              if (res.statusCode == 200) {
+                Navigator.pop(ctx);
+                await loadCourse();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Course updated')),
+                  );
+                }
+              } else {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Update failed: ${res.body}')),
+                  );
+                }
+              }
+            } catch (e) {
+              debugPrint('❌ update error: $e');
+            }
+          },
+          child: const Text('Save', style: TextStyle(color: Color(0xFFD4AF37))),
+        ),
+      ],
+    ),
+  );
+
+  titleCtrl.dispose();
+  descCtrl.dispose();
+}
+
   // ── Delete course ─────────────────────────────────────────────────────────
   Future<void> _confirmDeleteCourse() async {
     final confirmed = await showDialog<bool>(
@@ -656,24 +773,43 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
                 ),
               ),
               if (_currentUser != null &&
-                  (_currentUser!['username'] == course!['instructor_name'] ||
-                      _currentUser!['role'] == 'admin'))
-                Positioned(
-                  top: 40,
-                  right: 16,
-                  child: GestureDetector(
-                    onTap: _confirmDeleteCourse,
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.delete, color: Colors.white),
-                    ),
-                  ),
-                ),
+    (_currentUser!['username'] == course!['instructor_name'] ||
+        _currentUser!['role'] == 'admin'))
+  Positioned(
+    top: 40,
+    right: 64, // <-- edit butonu için yer aç
+    child: GestureDetector(
+      onTap: _showEditDialog,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: const BoxDecoration(
+          color: Color(0xFF4A6FA5),
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.edit, color: Colors.white),
+      ),
+    ),
+  ),
+if (_currentUser != null &&
+    (_currentUser!['username'] == course!['instructor_name'] ||
+        _currentUser!['role'] == 'admin'))
+  Positioned(
+    top: 40,
+    right: 16,
+    child: GestureDetector(
+      onTap: _confirmDeleteCourse,
+      child: Container(
+        width: 40,
+        height: 40,
+        decoration: const BoxDecoration(
+          color: Colors.red,
+          shape: BoxShape.circle,
+        ),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+    ),
+  ),
             ],
           ),
           Expanded(

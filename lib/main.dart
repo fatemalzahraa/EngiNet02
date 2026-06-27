@@ -15,23 +15,29 @@ import 'package:enginet/add_book.dart';
 import 'student_questions_screen.dart';
 import 'engineer_questions_screen.dart';
 import 'package:enginet/core/app_colors.dart';
+import 'package:enginet/push_service.dart';
 
 
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
 
- const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
-const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
-await Supabase.initialize(
-  url: supabaseUrl,
-  anonKey: supabaseAnonKey,
-);
+  const supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  const supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+
+  await Supabase.initialize(
+    url: supabaseUrl,
+    anonKey: supabaseAnonKey,
+  );
+
+  // Push service يبدأ بعد Supabase
+  await PushService.initialize();
 
   runApp(
-  supabaseAnonKey.isEmpty ? const MissingSupabaseConfigApp() : const MyApp(),
-);
+    supabaseAnonKey.isEmpty
+        ? const MissingSupabaseConfigApp()
+        : const MyApp(),
+  );
 }
 
 class MyApp extends StatelessWidget {

@@ -174,10 +174,10 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   Future<void> loadBook() async {
     try {
       final res = await supabase
-          .from('books')
-          .select()
-          .eq('id', _bookId)
-          .single();
+    .from('books')
+    .select('*, users!books_author_username_fkey(username, profile_image)')
+    .eq('id', _bookId)
+    .single();
 
       final engineer = await supabase
           .from('users')

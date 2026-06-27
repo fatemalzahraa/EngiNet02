@@ -430,3 +430,70 @@ def record_interaction(
 @app.get("/health")
 def health():
     return {"status": "ok"}
+@app.get("/reset", response_class=HTMLResponse)
+def reset_page():
+    supabase_url = os.getenv("SUPABASE_URL", "")
+    anon_key = os.getenv("SUPABASE_ANON_KEY", "")
+    
+    html_file = static_dir / "reset.html"
+    content = html_file.read_text()
+    content = content.replace("__SUPABASE_URL__", supabase_url)
+    content = content.replace("__SUPABASE_ANON_KEY__", anon_key)
+    return content
+from collections import defaultdict
+from time import time
+from fastapi import Request
+from fastapi.responses import JSONResponse
+
+# Basit in-memory rate limiter
+_request_counts: dict = defaultdict(list)
+RATE_LIMIT = 100  # dakikada max istek
+RATE_WINDOW = 60  # saniye
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    client_ip = request.client.host
+    now = time()
+    
+    # Eski kayıtları temizle
+    _request_counts[client_ip] = [
+        t for t in _request_counts[client_ip] 
+        if now - t < RATE_WINDOW
+    ]
+    
+    if len(_request_counts[client_ip]) >= RATE_LIMIT:
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Too many requests. Please wait."}
+        )
+    
+    _request_counts[client_ip].append(now)
+    return await call_next(request)
+
+import os
+from fastapi import Header, HTTPException
+from pydantic import BaseModel
+
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "")
+
+class PushPayload(BaseModel):
+    push_token: str
+    title: str
+    message: str
+    data: dict = {}
+
+@app.post("/internal/push")
+async def internal_push(
+    payload: PushPayload,
+    x_internal_key: str = Header(default=""),
+):
+    # Güvenlik kontrolü
+    if x_internal_key != INTERNAL_API_KEY:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    
+    # push_token'a göre hangi cihaza gönderileceğini belirle
+    # Şu an Supabase Realtime ile uygulama açıkken zaten çalışıyor
+    # Bu endpoint sadece loglama ve gelecek entegrasyon için
+    print(f"Push notification request: {payload.title} → {payload.push_token[:10]}...")
+    
+    return {"status": "queued"}

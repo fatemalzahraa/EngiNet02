@@ -36,7 +36,11 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
                 options={"verify_aud": False},
             )
             email = payload.get("email")
-            role = payload.get("user_metadata", {}).get("role", "student")
+            role = (
+    payload.get("user_metadata", {}).get("role")
+    or payload.get("app_metadata", {}).get("role")
+    or "student"
+)
             if email:
                 return {"email": email, "role": role}
         except Exception:

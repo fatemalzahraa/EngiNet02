@@ -1,3 +1,4 @@
+import 'package:path/path.dart' as path;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'package:flutter/material.dart';
@@ -10,6 +11,7 @@ import 'package:enginet/following_screen.dart';
 import 'package:enginet/settings_screen.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:enginet/core/app_colors.dart';
+import 'package:path/path.dart' as path;
 
 class EngineerProfileScreen extends StatefulWidget {
   final int? targetUserId;
@@ -36,6 +38,7 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
   int followersCount = 0;
   int followingCount = 0;
   final ImagePicker _picker = ImagePicker();
+  List<dynamic> courses = [];
 
   @override
   void initState() {
@@ -52,6 +55,168 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
       await launchUrl(uri);
     }
   }
+
+  Future<void> _confirmDeleteCourse(int courseId) async {
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.primary,
+      title: const Text('Delete Course', style: TextStyle(color: Colors.white)),
+      content: const Text(
+        'Are you sure?',
+        style: TextStyle(color: Colors.white70),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('Delete', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
+
+  if (confirmed != true) return;
+
+  try {
+    // lesson_progress sil
+    final lessonRows = await _supabase
+        .from('lessons')
+        .select('id')
+        .eq('course_id', courseId);
+    final lessonIds = (lessonRows as List).map((e) => e['id'] as int).toList();
+    if (lessonIds.isNotEmpty) {
+      await _supabase.from('lesson_progress').delete().inFilter('lesson_id', lessonIds);
+    }
+
+    await _supabase.from('lessons').delete().eq('course_id', courseId);
+    await _supabase.from('student_courses').delete().eq('course_id', courseId);
+    await _supabase.from('course_ratings').delete().eq('course_id', courseId);
+    await _supabase.from('course_comments').delete().eq('course_id', courseId);
+    await _supabase.from('courses').delete().eq('id', courseId);
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Course deleted')),
+    );
+    loadProfile(); // listeyi yenile
+  } catch (e) {
+    debugPrint('❌ delete course error: $e');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Delete failed: $e')),
+    );
+  }
+}
+
+Future<void> _showCourseEditDialog(Map<String, dynamic> course) async {
+  final titleCtrl = TextEditingController(text: course['title'] ?? '');
+  final descCtrl = TextEditingController(text: course['description'] ?? '');
+  String? selectedCat = course['category'];
+
+  final categories = [
+    'Programming', 'Civil Engineering', 'Mechanical Engineering',
+    'Electrical Engineering', 'Mathematics', 'Physics', 'Other',
+  ];
+
+  await showDialog(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.primary,
+      title: const Text('Edit Course', style: TextStyle(color: Colors.white)),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleCtrl,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: 'Title',
+                hintStyle: TextStyle(color: Colors.white54),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: descCtrl,
+              maxLines: 3,
+              style: const TextStyle(color: Colors.white),
+              decoration: const InputDecoration(
+                hintText: 'Description',
+                hintStyle: TextStyle(color: Colors.white54),
+                enabledBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: Colors.white24),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            StatefulBuilder(
+              builder: (context, setLocal) =>
+                  DropdownButtonFormField<String>(
+                value: categories.contains(selectedCat) ? selectedCat : null,
+                dropdownColor: AppColors.primary,
+                style: const TextStyle(color: Colors.white),
+                decoration: const InputDecoration(
+                  hintText: 'Category',
+                  hintStyle: TextStyle(color: Colors.white54),
+                  enabledBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: Colors.white24),
+                  ),
+                ),
+                items: categories
+                    .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+                    .toList(),
+                onChanged: (val) => setLocal(() => selectedCat = val),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+        ),
+        TextButton(
+          onPressed: () async {
+            try {
+              await _supabase.from('courses').update({
+                'title': titleCtrl.text.trim(),
+                'description': descCtrl.text.trim(),
+                if (selectedCat != null) 'category': selectedCat,
+              }).eq('id', course['id']);
+
+              if (!mounted) return;
+              Navigator.pop(ctx);
+              loadProfile();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Course updated')),
+              );
+            } catch (e) {
+              if (!mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text('Update failed: $e')),
+              );
+            }
+          },
+          child: Text(
+            'Save',
+            style: GoogleFonts.agbalumo(color: AppColors.accent),
+          ),
+        ),
+      ],
+    ),
+  );
+
+  titleCtrl.dispose();
+  descCtrl.dispose();
+}
 
   Future<String?> _pickAndUploadProfileImage() async {
     final pickedFile = await _picker.pickImage(
@@ -132,6 +297,11 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
           .select()
           .eq('author_name', targetUsername)
           .order('created_at', ascending: false);
+      final coursesRes = await _supabase
+    .from('courses')
+    .select()
+    .eq('instructor_name', targetUsername)
+    .order('created_at', ascending: false);
 
       final followersRes = await _supabase
           .from('follows')
@@ -160,7 +330,9 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
           ...userRes,
           if (engineerProfileRes != null) ...engineerProfileRes,
           'id': userRes['id'],
+
         };
+        courses = coursesRes as List;
         posts = postsRes as List;
         books = booksRes as List;
         articles = articlesRes as List;
@@ -568,16 +740,20 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
                 _tab('Posts', 0),
                 _tab('Books', 1),
                 _tab('Articles', 2),
+                _tab('Courses', 3),
               ],
             ),
             const Divider(color: Colors.white24, height: 1),
-            Expanded(
-              child: selectedTab == 0
-                  ? _buildPostsList()
-                  : selectedTab == 1
-                  ? _buildBooksList()
-                  : _buildArticlesList(),
-            ),
+            // DOĞRUSU:
+Expanded(
+  child: selectedTab == 0
+      ? _buildPostsList()
+      : selectedTab == 1
+      ? _buildBooksList()
+      : selectedTab == 2
+      ? _buildArticlesList()
+      : _buildCoursesList(),
+),
           ],
         ),
       ),
@@ -806,8 +982,75 @@ class _EngineerProfileScreenState extends State<EngineerProfileScreen> {
       },
     );
   }
-}
+  Widget _buildCoursesList() {
+  if (courses.isEmpty) {
+    return const Center(
+      child: Text('No courses', style: TextStyle(color: Colors.white54)),
+    );
+  }
+  return ListView.builder(
+    padding: const EdgeInsets.all(16),
+    itemCount: courses.length,
+    itemBuilder: (context, index) {
+      final course = courses[index];
+      final imageUrl = course['image_url']?.toString() ?? '';
+      final canEdit = isOwnProfile;
 
+      return Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFD8C09A),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: ListTile(
+          leading: imageUrl.isNotEmpty
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    width: 50,
+                    height: 60,
+                    fit: BoxFit.cover,
+                    errorWidget: (c, u, e) =>
+                        const Icon(Icons.play_circle, size: 40),
+                    placeholder: (c, u) => Shimmer.fromColors(
+                      baseColor: const Color(0xFF1A2F55),
+                      highlightColor: const Color(0xFF2A4A7F),
+                      child: Container(width: 50, height: 60, color: Colors.white),
+                    ),
+                  ),
+                )
+              : const Icon(Icons.play_circle, size: 40, color: Color(0xFF4A6FA5)),
+          title: Text(
+            course['title'] ?? '',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          subtitle: Text(
+            '${course['category'] ?? ''} • ⭐ ${course['rating'] ?? 0}',
+            style: const TextStyle(fontSize: 11),
+          ),
+          trailing: canEdit
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // DÜZENLE
+                    IconButton(
+                      icon: const Icon(Icons.edit, size: 18, color: Color(0xFF4A6FA5)),
+                      onPressed: () => _showCourseEditDialog(course),
+                    ),
+                    // SİL
+                    IconButton(
+                      icon: const Icon(Icons.delete, size: 18, color: Colors.red),
+                      onPressed: () => _confirmDeleteCourse(course['id']),
+                    ),
+                  ],
+                )
+              : null,
+        ),
+      );
+    },
+  );
+}
 Widget _buildInfoLine(String label, dynamic value) {
   final text = value?.toString() ?? '';
   if (text.isEmpty) return const SizedBox.shrink();
@@ -820,3 +1063,11 @@ Widget _buildInfoLine(String label, dynamic value) {
     ),
   );
 }
+
+}
+
+
+
+
+
+

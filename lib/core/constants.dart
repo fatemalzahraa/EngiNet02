@@ -1,4 +1,6 @@
 class AppConstants {
-  static const String baseUrl = "https://enginet02.onrender.com";
-  // Add other constants here later
+  static const baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://enginet02.onrender.com',
+  );
 }

@@ -18,6 +18,17 @@ class BookCreate(BaseModel):
     image_url: Optional[str] = ""
 
 
+class BookUpdate(BaseModel):
+    title: Optional[str] = None
+    author: Optional[str] = None
+    category: Optional[str] = None
+    description: Optional[str] = None
+    file_url: Optional[str] = None
+    language: Optional[str] = None
+    publish_year: Optional[int] = None
+    image_url: Optional[str] = None
+
+
 @router.get("/")
 def get_all_books(search: Optional[str] = None, category: Optional[str] = None):
     db = get_db()
@@ -101,6 +112,33 @@ def unlike_book(book_id: int, current_user: dict = Depends(get_current_user)):
     new_likes = max((book_result.data[0]["likes"] or 1) - 1, 0)
     db.table("books").update({"likes": new_likes}).eq("id", book_id).execute()
     return {"message": "Book unliked!"}
+
+
+@router.put("/{book_id}")
+def update_book(
+    book_id: int,
+    book: BookUpdate,
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_db()
+    user_result = db.table("users").select("id, username, role").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        raise HTTPException(status_code=404, detail="User not found")
+    user = user_result.data[0]
+
+    existing = db.table("books").select("id, author_username").eq("id", book_id).execute()
+    if not existing.data:
+        raise HTTPException(status_code=404, detail="Book not found")
+
+    if existing.data[0].get("author_username") != user["username"] and user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Not allowed to edit this book")
+
+    update_data = {k: v for k, v in book.dict(exclude_unset=True).items() if v is not None}
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No fields to update")
+
+    db.table("books").update(update_data).eq("id", book_id).execute()
+    return {"message": "Book updated successfully"}
 
 
 @router.delete("/{book_id}")
