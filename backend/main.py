@@ -26,6 +26,9 @@ from questions_router import router as question_router
 from recommendations_router import router as recommendations_router
 from search_router import router as search_router
 from ai_router import router as ai_router
+from supabase import create_client
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
 
 from dependencies import (
     SECRET_KEY,
@@ -337,6 +340,20 @@ def reset_password_link(data: ResetPasswordRequest):
         .execute()
 
     db.table("otp_codes").delete().eq("email", data.email).execute()
+
+    # Supabase Auth şifresini de güncelle
+    try:
+        if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+            admin_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+            users_list = admin_client.auth.admin.list_users()
+            auth_user = next((u for u in users_list if u.email == data.email), None)
+            if auth_user:
+                admin_client.auth.admin.update_user_by_id(
+                    auth_user.id,
+                    {"password": data.new_password}
+                )
+    except Exception as e:
+        print(f"Supabase Auth password update failed: {e}")
 
     return {"message": "Password updated successfully"}
 
