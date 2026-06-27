@@ -11,7 +11,7 @@ if not SECRET_KEY:
 
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-LGORITHM = "HS256"
+ALGORITHM = "HS256"
 
 def get_current_user(token: str = Depends(oauth2_scheme)) -> dict:
     for secret, algorithms in [
