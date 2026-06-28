@@ -16,7 +16,6 @@ class EngineerQuestionsScreen extends StatefulWidget {
 
 class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
   final _universityController = TextEditingController();
-  final _specialtyController = TextEditingController();
   final _experienceController = TextEditingController();
   final _bioController = TextEditingController();
   final _locationController = TextEditingController();
@@ -24,7 +23,84 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
   final _githubController = TextEditingController();
   final _websiteController = TextEditingController();
 
+  String? _selectedSpecialty;
   bool _isLoading = false;
+  bool _showUniversitySuggestions = false;
+  List<String> _filteredUniversities = [];
+
+  final List<String> _turkishUniversities = [
+    'Ankara Üniversitesi',
+    'Atatürk Üniversitesi',
+    'Balıkesir Üniversitesi',
+    'Bilkent Üniversitesi',
+    'Boğaziçi Üniversitesi',
+    'Bursa Teknik Üniversitesi',
+    'Bursa Uludağ Üniversitesi',
+    'Çukurova Üniversitesi',
+    'Dokuz Eylül Üniversitesi',
+    'Ege Üniversitesi',
+    'Erciyes Üniversitesi',
+    'Eskişehir Osmangazi Üniversitesi',
+    'Eskişehir Teknik Üniversitesi',
+    'Fırat Üniversitesi',
+    'Galatasaray Üniversitesi',
+    'Gaziantep Üniversitesi',
+    'Gebze Teknik Üniversitesi',
+    'Hacettepe Üniversitesi',
+    'Harran Üniversitesi',
+    'İhsan Doğramacı Bilkent Üniversitesi',
+    'İnönü Üniversitesi',
+    'İstanbul Teknik Üniversitesi',
+    'İstanbul Üniversitesi',
+    'İstanbul Üniversitesi-Cerrahpaşa',
+    'İzmir Ekonomi Üniversitesi',
+    'İzmir Katip Çelebi Üniversitesi',
+    'İzmir Yüksek Teknoloji Enstitüsü',
+    'Karadeniz Teknik Üniversitesi',
+    'Kırıkkale Üniversitesi',
+    'Koç Üniversitesi',
+    'Malatya Turgut Özal Üniversitesi',
+    'Manisa Celal Bayar Üniversitesi',
+    'Marmara Üniversitesi',
+    'Mersin Üniversitesi',
+    'Muğla Sıtkı Koçman Üniversitesi',
+    'Necmettin Erbakan Üniversitesi',
+    'Ondokuz Mayıs Üniversitesi',
+    'Orta Doğu Teknik Üniversitesi',
+    'Pamukkale Üniversitesi',
+    'Sabancı Üniversitesi',
+    'Sakarya Üniversitesi',
+    'Selçuk Üniversitesi',
+    'Sivas Cumhuriyet Üniversitesi',
+    'Süleyman Demirel Üniversitesi',
+    'TOBB Ekonomi ve Teknoloji Üniversitesi',
+    'Trakya Üniversitesi',
+    'Türk-Alman Üniversitesi',
+    'Yıldız Teknik Üniversitesi',
+    'Yozgat Bozok Üniversitesi',
+    'Zonguldak Bülent Ecevit Üniversitesi',
+  ];
+
+  final List<String> _specialties = [
+    'Computer Engineering',
+    'Software Engineering',
+    'Electrical Engineering',
+    'Electronics Engineering',
+    'Mechanical Engineering',
+    'Civil Engineering',
+    'Chemical Engineering',
+    'Biomedical Engineering',
+    'Environmental Engineering',
+    'Industrial Engineering',
+    'Aerospace Engineering',
+    'Materials Engineering',
+    'Mining Engineering',
+    'Petroleum Engineering',
+    'Food Engineering',
+    'Textile Engineering',
+    'Architecture',
+    'Other',
+  ];
 
   final List<String> _skills = [
     'Flutter',
@@ -36,6 +112,15 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
     'Civil Engineering',
     'Electrical Engineering',
     'Mechanical Engineering',
+    'Python',
+    'Java',
+    'C++',
+    'Embedded Systems',
+    'Cloud Computing',
+    'DevOps',
+    'Mobile Development',
+    'Database',
+    'Networking',
   ];
 
   final Set<String> _selectedSkills = {};
@@ -43,7 +128,6 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
   @override
   void dispose() {
     _universityController.dispose();
-    _specialtyController.dispose();
     _experienceController.dispose();
     _bioController.dispose();
     _locationController.dispose();
@@ -53,12 +137,29 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
     super.dispose();
   }
 
+  void _onUniversityChanged(String value) {
+    if (value.isEmpty) {
+      setState(() {
+        _filteredUniversities = [];
+        _showUniversitySuggestions = false;
+      });
+      return;
+    }
+    final filtered = _turkishUniversities
+        .where((u) => u.toLowerCase().contains(value.toLowerCase()))
+        .toList();
+    setState(() {
+      _filteredUniversities = filtered;
+      _showUniversitySuggestions = filtered.isNotEmpty;
+    });
+  }
+
   Future<void> _saveProfile() async {
     final university = _universityController.text.trim();
-    final specialty = _specialtyController.text.trim();
+    final specialty = _selectedSpecialty;
     final experience = int.tryParse(_experienceController.text.trim()) ?? 0;
 
-    if (university.isEmpty || specialty.isEmpty || _selectedSkills.isEmpty) {
+    if (university.isEmpty || specialty == null || _selectedSkills.isEmpty) {
       _showSnackBar('Please fill all required fields', isError: true);
       return;
     }
@@ -118,6 +219,7 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
     required IconData icon,
     int maxLines = 1,
     TextInputType keyboardType = TextInputType.text,
+    void Function(String)? onChanged,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 18),
@@ -129,6 +231,7 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
         controller: controller,
         maxLines: maxLines,
         keyboardType: keyboardType,
+        onChanged: onChanged,
         decoration: InputDecoration(
           icon: Icon(icon, color: Colors.black54),
           hintText: hint,
@@ -162,17 +265,79 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
               ),
               const SizedBox(height: 28),
 
+              // ── Üniversite autocomplete ──
               _field(
                 controller: _universityController,
                 hint: 'University',
                 icon: Icons.school,
+                onChanged: _onUniversityChanged,
               ),
+              if (_showUniversitySuggestions)
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1A2F55),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.white24),
+                  ),
+                  constraints: const BoxConstraints(maxHeight: 200),
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: _filteredUniversities.length,
+                    itemBuilder: (context, i) {
+                      return ListTile(
+                        dense: true,
+                        title: Text(
+                          _filteredUniversities[i],
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 13),
+                        ),
+                        onTap: () {
+                          _universityController.text =
+                              _filteredUniversities[i];
+                          setState(() {
+                            _showUniversitySuggestions = false;
+                            _filteredUniversities = [];
+                          });
+                        },
+                      );
+                    },
+                  ),
+                ),
               const SizedBox(height: 14),
 
-              _field(
-                controller: _specialtyController,
-                hint: 'Engineering Field / Specialty',
-                icon: Icons.engineering,
+              // ── Specialty dropdown ──
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                decoration: BoxDecoration(
+                  color: AppColors.accent,
+                  borderRadius: BorderRadius.circular(30),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _selectedSpecialty,
+                    hint: Row(
+                      children: const [
+                        Icon(Icons.engineering, color: Colors.black54),
+                        SizedBox(width: 16),
+                        Text('Engineering Field / Specialty',
+                            style: TextStyle(color: Colors.black54)),
+                      ],
+                    ),
+                    isExpanded: true,
+                    dropdownColor: const Color(0xFF1A2F55),
+                    style: const TextStyle(color: Colors.black87, fontSize: 15),
+                    items: _specialties
+                        .map((s) => DropdownMenuItem(
+                              value: s,
+                              child: Text(s,
+                                  style: const TextStyle(color: Colors.white)),
+                            ))
+                        .toList(),
+                    onChanged: (val) =>
+                        setState(() => _selectedSpecialty = val),
+                  ),
+                ),
               ),
               const SizedBox(height: 14),
 
@@ -220,6 +385,7 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
               ),
               const SizedBox(height: 24),
 
+              // ── Skills ──
               const Text(
                 'Choose your skills',
                 style: TextStyle(color: Colors.white, fontSize: 18),
@@ -231,12 +397,11 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
                 runSpacing: 10,
                 children: _skills.map((skill) {
                   final selected = _selectedSkills.contains(skill);
-
                   return ChoiceChip(
                     label: Text(skill),
                     selected: selected,
                     selectedColor: AppColors.accent,
-                    backgroundColor: Colors.white24,
+                    backgroundColor: const Color(0xFF1A2F55),
                     labelStyle: TextStyle(
                       color: selected ? Colors.black : Colors.white,
                     ),
@@ -267,7 +432,8 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
                     ),
                     child: Center(
                       child: _isLoading
-                          ? const CircularProgressIndicator(color: Colors.white)
+                          ? const CircularProgressIndicator(
+                              color: Colors.white)
                           : const Text(
                               'Continue',
                               style: TextStyle(

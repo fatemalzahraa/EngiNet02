@@ -30,6 +30,20 @@ class _HomeScreenState extends State<HomeScreen> {
   String? currentUsername;
   int? currentUserId;
   Set<int> followedEngineerIds = {};
+  String? _selectedSpecialty;
+
+  final List<String> _specialties = [
+    'All',
+    'Computer Engineering',
+    'Civil Engineering',
+    'Mechanical Engineering',
+    'Electrical Engineering',
+    'Software Engineering',
+    'Chemical Engineering',
+    'Biomedical Engineering',
+    'Environmental Engineering',
+    'Industrial Engineering',
+  ];
 
   @override
   void initState() {
@@ -51,7 +65,6 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  // ── Load current user ──────────────────────────────────
   Future<void> _loadCurrentUser() async {
     final email = await SessionManager.getEmail();
     debugPrint("=== email from SessionManager: $email ===");
@@ -68,7 +81,6 @@ class _HomeScreenState extends State<HomeScreen> {
         userRes?['username']?.toString() ?? await SessionManager.getUsername();
   }
 
-  // ── Enrich posts (batch queries) ───────────────────────
   Future<List<dynamic>> _enrichPosts(List<dynamic> rawPosts) async {
     if (rawPosts.isEmpty) return [];
 
@@ -116,7 +128,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }).toList();
   }
 
-  // ── Load all data ──────────────────────────────────────
   Future<void> loadData() async {
     if (mounted) setState(() => isLoading = true);
     try {
@@ -134,7 +145,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
       _page = 0;
 
-      // ── Student interests ──
       List<String> studentInterests = [];
       String studentSpecialty = '';
 
@@ -160,7 +170,6 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
-      // ── Engineers ──
       final allEngineersRes = await _supabase
           .from('users')
           .select('id, username, profile_image, points, university')
@@ -223,9 +232,23 @@ class _HomeScreenState extends State<HomeScreen> {
             .toList();
       }
 
-      final engineersData = [...matchedEngineers, ...otherEngineers];
+      final allFinal = [...matchedEngineers, ...otherEngineers];
+      final allFinalIds = allFinal.map((e) => e['id'] as int).toList();
+      final specialtyProfiles = allFinalIds.isNotEmpty
+          ? await _supabase
+                .from('engineer_profiles')
+                .select('user_id, specialty')
+                .inFilter('user_id', allFinalIds)
+          : [];
+      final specialtyMap = {
+        for (var p in specialtyProfiles)
+          p['user_id'] as int: p['specialty']?.toString() ?? ''
+      };
+      final engineersData = allFinal.map((e) => {
+        ...e,
+        'specialty': specialtyMap[e['id'] as int] ?? '',
+      }).toList();
 
-      // ── Posts ──
       List<dynamic> postsData = [];
 
       if (followedEngineerIds.isNotEmpty) {
@@ -236,8 +259,6 @@ class _HomeScreenState extends State<HomeScreen> {
             .order('created_at', ascending: false)
             .limit(_limit);
         postsData = res as List<dynamic>;
-      } else {
-        
       }
 
       final enrichedPosts = await _enrichPosts(postsData);
@@ -256,10 +277,9 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     debugPrint("=== currentUserId: $currentUserId ===");
-debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
+    debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
   }
 
-  // ── Follow / Unfollow ──────────────────────────────────
   Future<void> toggleFollowEngineer(int engineerId) async {
     if (currentUserId == null) return;
 
@@ -301,7 +321,6 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
     }
   }
 
-  // ── Load more posts ────────────────────────────────────
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore) return;
     setState(() => _loadingMore = true);
@@ -318,7 +337,7 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
             .order('created_at', ascending: false)
             .range(_page * _limit, (_page + 1) * _limit - 1);
         newPosts = res as List<dynamic>;
-      } 
+      }
 
       final enrichedNewPosts = await _enrichPosts(newPosts);
 
@@ -334,7 +353,6 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
     }
   }
 
-  // ── Edit post ──────────────────────────────────────────
   void _editPost(dynamic post, int index) {
     final controller = TextEditingController(text: post['content']);
 
@@ -364,7 +382,6 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
     );
   }
 
-  // ── Delete post ────────────────────────────────────────
   Future<void> _deletePost(int postId, int index) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -400,9 +417,7 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
     }
   }
 
-  // ── Like notification ──────────────────────────────────
-  Future<void> _sendPostLikeNotification(
-      dynamic post, dynamic postId) async {
+  Future<void> _sendPostLikeNotification(dynamic post, dynamic postId) async {
     if (currentUserId == null) return;
 
     int? postOwnerId;
@@ -436,7 +451,6 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
     });
   }
 
-  // ── Like post ──────────────────────────────────────────
   Future<void> likePost(int index) async {
     if (currentUserId == null) return;
 
@@ -480,7 +494,6 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
     }
   }
 
-  // ── Save post ──────────────────────────────────────────
   Future<void> toggleSavePost(int index) async {
     if (currentUserId == null) return;
 
@@ -510,7 +523,6 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
     }
   }
 
-  // ── Build ──────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -545,50 +557,138 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
                 controller: _scrollController,
                 padding: const EdgeInsets.all(16),
                 children: [
+                  // ── Filtre satırı ──
+                  SizedBox(
+                    height: 40,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: _specialties.length,
+                      itemBuilder: (context, i) {
+                        final spec = _specialties[i];
+                        final isSelected =
+                            (spec == 'All' && _selectedSpecialty == null) ||
+                                spec == _selectedSpecialty;
+                        return GestureDetector(
+                          onTap: () => setState(() {
+                            _selectedSpecialty =
+                                spec == 'All' ? null : spec;
+                          }),
+                          child: Container(
+                            margin: const EdgeInsets.only(right: 8),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: isSelected
+                                  ? AppColors.accent
+                                  : const Color(0xFF1A2F55),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isSelected
+                                    ? AppColors.accent
+                                    : Colors.white24,
+                              ),
+                            ),
+                            child: Text(
+                              spec,
+                              style: TextStyle(
+                                color: isSelected
+                                    ? Colors.black
+                                    : Colors.white70,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+
+                  // ── Engineers ──
                   Text('Engineers',
                       style: GoogleFonts.agbalumo(
                           color: const Color(0xFF6C94C6), fontSize: 24)),
                   const SizedBox(height: 12),
                   SizedBox(
                     height: 165,
-                    child: engineers.isEmpty
-                        ? const Center(
-                            child: Text('No engineers',
-                                style: TextStyle(color: Colors.white54)))
-                        : ListView.builder(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: engineers.length,
-                            itemBuilder: (context, i) =>
-                                _buildEngineerCard(engineers[i]),
-                          ),
+                    child: Builder(builder: (context) {
+                      final filtered = _selectedSpecialty == null
+                          ? engineers
+                          : engineers
+                              .where((e) => (e['specialty'] ?? '')
+                                  .toString()
+                                  .toLowerCase()
+                                  .contains(
+                                      _selectedSpecialty!.toLowerCase()))
+                              .toList();
+                      return filtered.isEmpty
+                          ? const Center(
+                              child: Text('No engineers found',
+                                  style:
+                                      TextStyle(color: Colors.white54)))
+                          : ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: filtered.length,
+                              itemBuilder: (context, i) =>
+                                  _buildEngineerCard(filtered[i]),
+                            );
+                    }),
                   ),
                   const SizedBox(height: 24),
+
+                  // ── Posts ──
                   Text('Posts',
                       style: GoogleFonts.agbalumo(
                           color: const Color(0xFF6C94C6), fontSize: 24)),
                   const SizedBox(height: 12),
-                  if (posts.isEmpty)
-  Center(
-    child: Padding(
-      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
-      child: Column(
-        children: [
-          const Icon(Icons.people_outline, size: 64, color: Colors.white24),
-          const SizedBox(height: 16),
-          Text(
-            followedEngineerIds.isEmpty
-                ? 'Gönderi görmek için mühendisleri takip et'
-                : 'Henüz gönderi yok',
-            style: const TextStyle(color: Colors.white54, fontSize: 15),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    ),
-  )
-                  else
-                    ...List.generate(
-                        posts.length, (i) => _buildPostCard(i, posts[i])),
+
+                  Builder(builder: (context) {
+                    final filteredPosts = _selectedSpecialty == null
+                        ? posts
+                        : posts.where((p) {
+                            final username =
+                                p['username']?.toString() ?? '';
+                            return engineers.any((e) =>
+                                e['username'] == username &&
+                                (e['specialty'] ?? '')
+                                    .toString()
+                                    .toLowerCase()
+                                    .contains(
+                                        _selectedSpecialty!.toLowerCase()));
+                          }).toList();
+
+                    if (filteredPosts.isEmpty) {
+                      return Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              vertical: 48, horizontal: 24),
+                          child: Column(
+                            children: [
+                              const Icon(Icons.people_outline,
+                                  size: 64, color: Colors.white24),
+                              const SizedBox(height: 16),
+                              Text(
+                                followedEngineerIds.isEmpty
+                                    ? 'Gönderi görmek için mühendisleri takip et'
+                                    : 'Henüz gönderi yok',
+                                style: const TextStyle(
+                                    color: Colors.white54, fontSize: 15),
+                                textAlign: TextAlign.center,
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
+                    return Column(
+                      children: List.generate(
+                          filteredPosts.length,
+                          (i) => _buildPostCard(i, filteredPosts[i])),
+                    );
+                  }),
+
                   if (_loadingMore)
                     const Center(
                       child: Padding(
@@ -611,7 +711,6 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
     );
   }
 
-  // ── Skeletons ──────────────────────────────────────────
   Widget _buildEngineerSkeleton() {
     return Shimmer.fromColors(
       baseColor: const Color(0xFF1A2F55),
@@ -676,7 +775,6 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
     );
   }
 
-  // ── Engineer card ──────────────────────────────────────
   Widget _buildEngineerCard(dynamic eng) {
     final name = eng['username']?.toString() ?? '';
     final image = eng['profile_image']?.toString() ?? '';
@@ -780,7 +878,6 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
     );
   }
 
-  // ── Post card ──────────────────────────────────────────
   Widget _buildPostCard(int index, dynamic post) {
     final content = post['content']?.toString() ?? '';
     final username = post['username']?.toString() ?? '';
@@ -951,7 +1048,6 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
     );
   }
 
-  // ── Profile avatar ─────────────────────────────────────
   Widget _buildProfileAvatar(String imageUrl, {double size = 42}) {
     return Container(
       width: size,
@@ -972,13 +1068,13 @@ debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
                 placeholder: (c, u) => Shimmer.fromColors(
                   baseColor: const Color(0xFF1A2F55),
                   highlightColor: const Color(0xFF2A4A7F),
-                  child: Container(width: size, height: size, color: Colors.white),
+                  child:
+                      Container(width: size, height: size, color: Colors.white),
                 ),
               )
             : Container(
                 color: const Color(0xFF4A6FA5),
-                child:
-                    const Icon(Icons.person, color: Colors.white, size: 22),
+                child: const Icon(Icons.person, color: Colors.white, size: 22),
               ),
       ),
     );

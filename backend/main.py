@@ -191,7 +191,8 @@ def create_student_profile(data: StudentProfileRequest, current_user: dict = Dep
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    db.table("student_profiles").upsert({
+    admin_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    admin_client.table("student_profiles").upsert({
         "user_id": user["id"],
         "university": data.university,
         "specialty": data.specialty,
@@ -224,7 +225,8 @@ def create_engineer_profile(data: EngineerProfileRequest, current_user: dict = D
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    db.table("engineer_profiles").upsert({
+    admin_client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+    admin_client.table("engineer_profiles").upsert({
         "user_id": user["id"],
         "university": data.university,
         "specialty": data.specialty,
