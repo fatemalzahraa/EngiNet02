@@ -483,34 +483,32 @@ Future<void> _showEditDialog() async {
   }
 
   // ── Load course ───────────────────────────────────────────────────────────
-  Future<void> loadCourse() async {
-    try {
-      final courseRes = await supabase
-    .from('courses')
-    .select()
-    .eq('id', int.parse(widget.courseId))  // ← int
-    .single();
+ Future<void> loadCourse() async {
+  try {
+    final token = await SessionManager.getToken();
+    final res = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/courses/${widget.courseId}'),
+      headers: {
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
 
-final lessonsRes = await supabase
-    .from('lessons')
-    .select()
-    .eq('course_id', int.parse(widget.courseId))  // ← int
-    .order('order_index', ascending: true);
-
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
       if (!mounted) return;
       setState(() {
-        course = courseRes;
-        lessons = List<dynamic>.from(lessonsRes);
-        _calculateVideosDuration(List<dynamic>.from(lessonsRes));
+        course = Map<String, dynamic>.from(data);
+        lessons = List<dynamic>.from(data['lessons'] ?? []);
+        _calculateVideosDuration(List<dynamic>.from(data['lessons'] ?? []));
         isLoading = false;
       });
-    } catch (e) {
-      debugPrint('❌ Error loading course: $e');
-      if (!mounted) return;
-      setState(() => isLoading = false);
     }
+  } catch (e) {
+    debugPrint('❌ Error loading course: $e');
+    if (!mounted) return;
+    setState(() => isLoading = false);
   }
-
+}
   Future<void> _calculateVideosDuration(List<dynamic> courseLessons) async {
     if (_isCalculatingDuration) return;
     _isCalculatingDuration = true;

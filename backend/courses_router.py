@@ -45,12 +45,11 @@ def get_all_courses(search: Optional[str] = None):
 
 @router.get("/{course_id}")
 def get_course(course_id: int):
-    db = get_db()
-    course_result = db.table("courses").select("*").eq("id", course_id).execute()
+    course_result = supabase_admin.table("courses").select("*").eq("id", course_id).execute()
     if not course_result.data:
         raise HTTPException(status_code=404, detail="Course not found")
     course = course_result.data[0]
-    lessons = db.table("lessons").select("*").eq("course_id", course_id).order("order_index").execute().data
+    lessons = supabase_admin.table("lessons").select("*").eq("course_id", course_id).order("order_index").execute().data
     course["lessons"] = lessons
     return course
 
