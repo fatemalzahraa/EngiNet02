@@ -28,7 +28,8 @@ class StudentProfileScreen extends StatefulWidget {
   State<StudentProfileScreen> createState() => _StudentProfileScreenState();
 }
 
-class _StudentProfileScreenState extends State<StudentProfileScreen> {
+class _StudentProfileScreenState extends State<StudentProfileScreen>
+    with WidgetsBindingObserver {
   final _supabase = Supabase.instance.client;
 
   Map<String, dynamic>? user;
@@ -45,67 +46,74 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
   bool _realtimeStarted = false;
   bool _isRefreshingProfile = false;
 
-  @override
-  void initState() {
-    super.initState();
-    loadProfile();
-  }
-
   StreamSubscription<List<Map<String, dynamic>>>? _articleBookmarksSub;
   StreamSubscription<List<Map<String, dynamic>>>? _savedPostsSub;
   StreamSubscription<List<Map<String, dynamic>>>? _savedBooksSub;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    loadProfile();
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _articleBookmarksSub?.cancel();
     _savedPostsSub?.cancel();
     _savedBooksSub?.cancel();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      loadProfile();
+    }
+  }
+
   Future<void> openLink(String url) async {
     if (url.isEmpty) return;
-
     final uri = Uri.parse(url);
-
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
     }
   }
 
   void _startRealtime(int userId) {
-  _articleBookmarksSub?.cancel();
-  _savedPostsSub?.cancel();
-  _savedBooksSub?.cancel();
+    _articleBookmarksSub?.cancel();
+    _savedPostsSub?.cancel();
+    _savedBooksSub?.cancel();
 
-  _articleBookmarksSub = _supabase
-      .from('article_bookmarks')
-      .stream(primaryKey: ['user_id', 'article_id'])
-      .eq('user_id', userId)
-      .listen((_) {
-        _isRefreshingProfile = false; // ← flag'i sıfırla
-        loadProfile();
-      });
+    _articleBookmarksSub = _supabase
+        .from('article_bookmarks')
+        .stream(primaryKey: ['user_id', 'article_id'])
+        .eq('user_id', userId)
+        .listen((_) {
+          _isRefreshingProfile = false;
+          loadProfile();
+        });
 
-  _savedPostsSub = _supabase
-      .from('saved_posts')
-      .stream(primaryKey: ['user_id', 'post_id'])
-      .eq('user_id', userId)
-      .listen((_) {
-        _isRefreshingProfile = false; // ← flag'i sıfırla
-        loadProfile();
-      });
+    _savedPostsSub = _supabase
+        .from('saved_posts')
+        .stream(primaryKey: ['user_id', 'post_id'])
+        .eq('user_id', userId)
+        .listen((_) {
+          _isRefreshingProfile = false;
+          loadProfile();
+        });
 
-  _savedBooksSub = _supabase
-      .from('bookmarks')
-      .stream(primaryKey: ['user_id', 'book_id'])
-      .eq('user_id', userId)
-      .listen((_) {
-        _isRefreshingProfile = false; // ← flag'i sıfırla
-        loadProfile();
-      });
-}
+    _savedBooksSub = _supabase
+        .from('bookmarks')
+        .stream(primaryKey: ['user_id', 'book_id'])
+        .eq('user_id', userId)
+        .listen((_) {
+          _isRefreshingProfile = false;
+          loadProfile();
+        });
+  }
 
-  // ─── Pick & upload profile image ─────────────────────────────────────────
   Future<String?> _pickAndUploadProfileImage() async {
     final pickedFile = await _picker.pickImage(
       source: ImageSource.gallery,
@@ -115,7 +123,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
 
     final file = File(pickedFile.path);
     final username = await SessionManager.getUsername() ?? 'user';
-    final fileExt = file.path.contains('.') ? '.${file.path.split('.').last}' : '';
+    final fileExt =
+        file.path.contains('.') ? '.${file.path.split('.').last}' : '';
     final fileName =
         '${DateTime.now().millisecondsSinceEpoch}_$username$fileExt';
     final filePath = 'profile-images/$fileName';
@@ -127,7 +136,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     return _supabase.storage.from('profiles').getPublicUrl(filePath);
   }
 
-  // ─── Load profile ─────────────────────────────────────────────────────────
   Future<void> loadProfile() async {
     if (_isRefreshingProfile) return;
     _isRefreshingProfile = true;
@@ -150,13 +158,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         _realtimeStarted = true;
         _startRealtime(userId);
       }
+
       final studentProfileList = await _supabase
           .from('student_profiles')
           .select()
           .eq('user_id', userId);
 
       Map<String, dynamic>? studentProfileRes;
-
       if (studentProfileList.isNotEmpty) {
         studentProfileRes = studentProfileList.first;
       }
@@ -177,6 +185,7 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           .from('article_bookmarks')
           .select('articles(*)')
           .eq('user_id', userId);
+
       final savedPostsRes = await _supabase
           .from('saved_posts')
           .select('posts(*)')
@@ -184,7 +193,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           .order('created_at', ascending: true);
 
       final engineersOnly = (followingRes as List)
-          .where((f) => f['users'] != null && f['users']['role'] == 'engineer')
+          .where(
+              (f) => f['users'] != null && f['users']['role'] == 'engineer')
           .toList();
 
       final startedCoursesRes = await _supabase
@@ -193,7 +203,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           .eq('user_id', userId);
 
       final uniqueCourses = <dynamic>[];
-
       for (final row in startedCoursesRes) {
         final course = row['courses'];
         if (course == null) continue;
@@ -205,10 +214,10 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             .select('id')
             .eq('course_id', courseId);
 
-        final lessonIds = (lessonsRes as List).map((e) => e['id']).toList();
+        final lessonIds =
+            (lessonsRes as List).map((e) => e['id']).toList();
 
         int completedCount = 0;
-
         if (lessonIds.isNotEmpty) {
           final progressRes = await _supabase
               .from('lesson_progress')
@@ -228,7 +237,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         uniqueCourses.add({
           ...course,
           'progress_percent': progressPercent,
-          'is_finished': totalLessons > 0 && completedCount == totalLessons,
+          'is_finished':
+              totalLessons > 0 && completedCount == totalLessons,
         });
       }
 
@@ -249,7 +259,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         enrichedQuestions.add({
           ...q,
           'username': u?['username'] ?? userRes['username'],
-          'profile_image': u?['profile_image'] ?? userRes['profile_image'],
+          'profile_image':
+              u?['profile_image'] ?? userRes['profile_image'],
           'answers_count': (answersRes as List).length,
         });
       }
@@ -287,7 +298,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     }
   }
 
-  // ─── Edit dialog ──────────────────────────────────────────────────────────
   void showEditDialog() {
     final bioController = TextEditingController(text: user?['bio'] ?? '');
     String? tempSelectedImageUrl;
@@ -341,7 +351,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+            child:
+                const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
             onPressed: () async {
@@ -386,12 +397,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       child: TextField(
         controller: ctrl,
         maxLines: maxLines,
-        decoration: InputDecoration(border: InputBorder.none, hintText: hint),
+        decoration:
+            InputDecoration(border: InputBorder.none, hintText: hint),
       ),
     );
   }
 
-  // ─── Section header ───────────────────────────────────────────────────────
   Widget _sectionHeader({required String title, VoidCallback? onTap}) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -420,7 +431,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 
-  // ─── Horizontal book list ─────────────────────────────────────────────────
   Widget _horizontalList(List books) {
     return SizedBox(
       height: 210,
@@ -431,11 +441,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           final book = books[index];
           return GestureDetector(
             onTap: () => Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (_) => BookDetailScreen(bookId: book['id'].toString()),
-  ),
-).then((_) => loadProfile()),
+              context,
+              MaterialPageRoute(
+                builder: (_) =>
+                    BookDetailScreen(bookId: book['id'].toString()),
+              ),
+            ).then((_) => loadProfile()),
             child: Container(
               width: 125,
               margin: const EdgeInsets.only(right: 14),
@@ -450,12 +461,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: (book['image_url'] ?? '').toString().isNotEmpty
-                          ? CachedNetworkImage(
-                              imageUrl: book['image_url'],
-                              fit: BoxFit.cover,
-                            )
-                          : const Icon(Icons.book, size: 50),
+                      child:
+                          (book['image_url'] ?? '').toString().isNotEmpty
+                              ? CachedNetworkImage(
+                                  imageUrl: book['image_url'],
+                                  fit: BoxFit.cover,
+                                )
+                              : const Icon(Icons.book, size: 50),
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -478,7 +490,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 
-  // ─── Horizontal article list ──────────────────────────────────────────────
   Widget _horizontalArticleList(List articles) {
     return SizedBox(
       height: 210,
@@ -489,20 +500,21 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           final article = articles[index];
           return GestureDetector(
             onTap: () => Navigator.push(
-  context,
-  MaterialPageRoute(
-    builder: (_) =>
-        ArticleDetailScreen(articleId: article['id'].toString()),
-  ),
-).then((saved) {
-  if (saved == false) {
-    setState(() {
-      savedArticles.removeWhere((a) => a['id'] == article['id']);
-    });
-  } else {
-    loadProfile();
-  }
-}),
+              context,
+              MaterialPageRoute(
+                builder: (_) => ArticleDetailScreen(
+                    articleId: article['id'].toString()),
+              ),
+            ).then((saved) {
+              if (saved == false) {
+                setState(() {
+                  savedArticles
+                      .removeWhere((a) => a['id'] == article['id']);
+                });
+              } else {
+                loadProfile();
+              }
+            }),
             child: Container(
               width: 125,
               margin: const EdgeInsets.only(right: 14),
@@ -517,7 +529,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                     ),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: (article['image_url'] ?? '').toString().isNotEmpty
+                      child: (article['image_url'] ?? '')
+                              .toString()
+                              .isNotEmpty
                           ? CachedNetworkImage(
                               imageUrl: article['image_url'],
                               fit: BoxFit.cover,
@@ -555,7 +569,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(builder: (_) => PostCommentsScreen(post: post)),
+          MaterialPageRoute(
+              builder: (_) => PostCommentsScreen(post: post)),
         );
       },
       child: Container(
@@ -640,11 +655,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 
-  // ─── Saved tab ────────────────────────────────────────────────────────────
   Widget _buildSavedBooks() {
-    if (savedBooks.isEmpty && savedArticles.isEmpty && savedPosts.isEmpty) {
+    if (savedBooks.isEmpty &&
+        savedArticles.isEmpty &&
+        savedPosts.isEmpty) {
       return const Center(
-        child: Text('No saved items', style: TextStyle(color: Colors.white54)),
+        child: Text('No saved items',
+            style: TextStyle(color: Colors.white54)),
       );
     }
 
@@ -658,34 +675,27 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           title: 'Books',
           onTap: savedBooks.length > 3
               ? () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => SavedBooksScreen(books: savedBooks),
-                  ),
-                )
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          SavedBooksScreen(books: savedBooks),
+                    ),
+                  )
               : null,
         ),
         const SizedBox(height: 16),
         savedBooks.isEmpty
-            ? const Text(
-                'No saved books yet',
-                style: TextStyle(color: Colors.white54),
-              )
+            ? const Text('No saved books yet',
+                style: TextStyle(color: Colors.white54))
             : _horizontalList(firstThreeBooks),
-
         const SizedBox(height: 30),
-
         _sectionHeader(title: 'Articles'),
         const SizedBox(height: 16),
         savedArticles.isEmpty
-            ? const Text(
-                'No saved articles yet',
-                style: TextStyle(color: Colors.white54),
-              )
+            ? const Text('No saved articles yet',
+                style: TextStyle(color: Colors.white54))
             : _horizontalArticleList(firstThreeArticles),
-
         const SizedBox(height: 30),
-
         _sectionHeader(
           title: 'Posts',
           onTap: savedPosts.length > 1
@@ -693,32 +703,30 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => SavedPostsScreen(posts: savedPosts),
+                      builder: (_) =>
+                          SavedPostsScreen(posts: savedPosts),
                     ),
                   );
                 }
               : null,
         ),
         const SizedBox(height: 12),
-
         savedPosts.isEmpty
-            ? const Text(
-                'No saved posts yet',
-                style: TextStyle(color: Colors.white54),
-              )
+            ? const Text('No saved posts yet',
+                style: TextStyle(color: Colors.white54))
             : _savedPostCard(savedPosts.last),
       ],
     );
   }
 
-  // ─── Courses tab ──────────────────────────────────────────────────────────
   Widget _buildCoursesList() {
     if (myCourses.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: const [
-            Icon(Icons.school_outlined, color: Colors.white24, size: 60),
+            Icon(Icons.school_outlined,
+                color: Colors.white24, size: 60),
             SizedBox(height: 16),
             Text(
               'No courses started yet',
@@ -734,160 +742,152 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: myCourses.length,
-      itemBuilder: (context, index) {
-        final course = myCourses[index];
-        final imageUrl = course['image_url'] ?? '';
-        final title = course['title'] ?? '';
-        final instructor = course['instructor_name'] ?? '';
-        final instructorImage = course['instructor_image'] ?? '';
-        final rating = (course['rating'] ?? 0.0).toDouble();
-        final progressPercent = course['progress_percent'] ?? 0;
-        final isFinished = course['is_finished'] == true;
+    return RefreshIndicator(
+      onRefresh: loadProfile,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        physics: const AlwaysScrollableScrollPhysics(),
+        itemCount: myCourses.length,
+        itemBuilder: (context, index) {
+          final course = myCourses[index];
+          final imageUrl = course['image_url'] ?? '';
+          final title = course['title'] ?? '';
+          final instructor = course['instructor_name'] ?? '';
+          final instructorImage = course['instructor_image'] ?? '';
+          final rating = (course['rating'] ?? 0.0).toDouble();
+          final progressPercent = course['progress_percent'] ?? 0;
+          final isFinished = course['is_finished'] == true;
 
-        return GestureDetector(
-          onTap: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  CourseDetailScreen(courseId: course['id'].toString()),
-            ),
-          ).then((_) => loadProfile()),
-          child: Container(
-            margin: const EdgeInsets.only(bottom: 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFD8C09A),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Row(
-              children: [
-                // ── Course thumbnail ─────────────────────────────
-                ClipRRect(
-                  borderRadius: const BorderRadius.only(
-                    topLeft: Radius.circular(16),
-                    bottomLeft: Radius.circular(16),
-                  ),
-                  child: imageUrl.isNotEmpty
-                      ? CachedNetworkImage(
-                          imageUrl: imageUrl,
-                          width: 90,
-                          height: 80,
-                          fit: BoxFit.cover,
-                          placeholder: (c, u) => Shimmer.fromColors(
-                            baseColor: const Color(0xFF1A2F55),
-                            highlightColor: const Color(0xFF2A4A7F),
-                            child: Container(
+          return GestureDetector(
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CourseDetailScreen(
+                    courseId: course['id'].toString()),
+              ),
+            ).then((_) => loadProfile()),
+            child: Container(
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFD8C09A),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(16),
+                      bottomLeft: Radius.circular(16),
+                    ),
+                    child: imageUrl.isNotEmpty
+                        ? CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            width: 90,
+                            height: 80,
+                            fit: BoxFit.cover,
+                            placeholder: (c, u) => Shimmer.fromColors(
+                              baseColor: const Color(0xFF1A2F55),
+                              highlightColor: const Color(0xFF2A4A7F),
+                              child: Container(
+                                  width: 90,
+                                  height: 80,
+                                  color: Colors.white),
+                            ),
+                            errorWidget: (c, u, e) => Container(
                               width: 90,
                               height: 80,
-                              color: Colors.white,
+                              color: const Color(0xFF4A6FA5),
+                              child: const Icon(Icons.play_circle,
+                                  color: Colors.white54),
                             ),
-                          ),
-                          errorWidget: (c, u, e) => Container(
+                          )
+                        : Container(
                             width: 90,
                             height: 80,
                             color: const Color(0xFF4A6FA5),
-                            child: const Icon(
-                              Icons.play_circle,
-                              color: Colors.white54,
-                            ),
+                            child: const Icon(Icons.play_circle,
+                                color: Colors.white54),
                           ),
-                        )
-                      : Container(
-                          width: 90,
-                          height: 80,
-                          color: const Color(0xFF4A6FA5),
-                          child: const Icon(
-                            Icons.play_circle,
-                            color: Colors.white54,
-                          ),
-                        ),
-                ),
-
-                // ── Course info ──────────────────────────────────
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.all(10),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                title,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            isFinished
-                                ? Container(
-                                    width: 26,
-                                    height: 26,
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFF4CAF50),
-                                      shape: BoxShape.circle,
-                                    ),
-                                    child: const Icon(
-                                      Icons.check,
-                                      color: Colors.white,
-                                      size: 16,
-                                    ),
-                                  )
-                                : Text(
-                                    '$progressPercent%',
-                                    style: const TextStyle(
-                                      color: Color(0xFF4A6FA5),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 13,
-                                    ),
+                  ),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.all(10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13,
                                   ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Row(
-                          children: [
-                            CircleAvatar(
-                              radius: 12,
-                              backgroundImage: instructorImage.isNotEmpty
-                                  ? NetworkImage(instructorImage)
-                                  : null,
-                              backgroundColor: const Color(0xFF4A6FA5),
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                instructor,
-                                style: GoogleFonts.agbalumo(fontSize: 12),
-                                overflow: TextOverflow.ellipsis,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ),
-                            ),
-                            const Icon(
-                              Icons.star,
-                              color: Colors.orange,
-                              size: 14,
-                            ),
-                            Text(
-                              rating.toStringAsFixed(1),
-                              style: const TextStyle(fontSize: 12),
-                            ),
-                          ],
-                        ),
-                      ],
+                              const SizedBox(width: 8),
+                              isFinished
+                                  ? Container(
+                                      width: 26,
+                                      height: 26,
+                                      decoration: const BoxDecoration(
+                                        color: Color(0xFF4CAF50),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.check,
+                                          color: Colors.white, size: 16),
+                                    )
+                                  : Text(
+                                      '$progressPercent%',
+                                      style: const TextStyle(
+                                        color: Color(0xFF4A6FA5),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                      ),
+                                    ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 12,
+                                backgroundImage: instructorImage.isNotEmpty
+                                    ? NetworkImage(instructorImage)
+                                    : null,
+                                backgroundColor:
+                                    const Color(0xFF4A6FA5),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  instructor,
+                                  style:
+                                      GoogleFonts.agbalumo(fontSize: 12),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const Icon(Icons.star,
+                                  color: Colors.orange, size: 14),
+                              Text(
+                                rating.toStringAsFixed(1),
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 
@@ -917,7 +917,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => AnswerScreen(question: q)),
+                MaterialPageRoute(
+                    builder: (_) => AnswerScreen(question: q)),
               ).then((_) => loadProfile());
             },
             child: Container(
@@ -969,14 +970,14 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 
-  // ─── Build ────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Scaffold(
         backgroundColor: AppColors.primary,
         body: Center(
-          child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
+          child:
+              CircularProgressIndicator(color: Color(0xFF6C94C6)),
         ),
       );
     }
@@ -991,7 +992,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // ── Header ───────────────────────────────────────────
             Container(
               color: const Color(0xFF8B6F47),
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 60),
@@ -1002,7 +1002,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                       if (Navigator.canPop(context)) {
                         Navigator.pop(context);
                       } else {
-                        Navigator.pushReplacementNamed(context, '/home');
+                        Navigator.pushReplacementNamed(
+                            context, '/home');
                       }
                     },
                     child: Container(
@@ -1012,11 +1013,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                         color: AppColors.accent,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(
-                        Icons.arrow_back,
-                        color: Colors.black,
-                        size: 18,
-                      ),
+                      child: const Icon(Icons.arrow_back,
+                          color: Colors.black, size: 18),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1037,13 +1035,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                         ),
                       );
                     },
-                    child: const Icon(Icons.settings, color: AppColors.accent),
+                    child: const Icon(Icons.settings,
+                        color: AppColors.accent),
                   ),
                 ],
               ),
             ),
-
-            // ── Avatar ───────────────────────────────────────────
             Transform.translate(
               offset: const Offset(0, -50),
               child: Column(
@@ -1055,11 +1052,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                         : null,
                     backgroundColor: const Color(0xFF4A6FA5),
                     child: profileImage.isEmpty
-                        ? const Icon(
-                            Icons.person,
-                            size: 55,
-                            color: Colors.white,
-                          )
+                        ? const Icon(Icons.person,
+                            size: 55, color: Colors.white)
                         : null,
                   ),
                   const SizedBox(height: 8),
@@ -1073,8 +1067,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 ],
               ),
             ),
-
-            // ── Stats row ────────────────────────────────────────
             Transform.translate(
               offset: const Offset(0, -30),
               child: Padding(
@@ -1086,19 +1078,18 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                       onTap: () => Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) =>
-                              FollowingScreen(following: followingEngineers),
+                          builder: (_) => FollowingScreen(
+                              following: followingEngineers),
                         ),
                       ),
-                      child: _statColumn('Following', '$followingCount'),
+                      child:
+                          _statColumn('Following', '$followingCount'),
                     ),
                     _statColumn('Points', '$points'),
                   ],
                 ),
               ),
             ),
-
-            // ── Bio ──────────────────────────────────────────────
             if (bio.isNotEmpty)
               Transform.translate(
                 offset: const Offset(0, -20),
@@ -1116,7 +1107,6 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                   ),
                 ),
               ),
-
             Column(
               children: [
                 _buildInfoLine('University', user?['university']),
@@ -1124,19 +1114,16 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
                 _buildInfoLine('Year', user?['study_year']),
                 _buildInfoLine('Level', user?['level']),
                 _buildInfoLine('Interests', user?['interests']),
-                _buildInfoLine('Language', user?['preferred_language']),
+                _buildInfoLine(
+                    'Language', user?['preferred_language']),
               ],
             ),
-
             if (user?['show_email'] == true)
               Text(
                 'Email: ${user!['email']}',
                 style: const TextStyle(color: Colors.white70),
               ),
-
             const Divider(color: Colors.white24),
-
-            // ── Tabs ─────────────────────────────────────────────
             Row(
               children: [
                 _tab('My Courses', 0),
@@ -1145,14 +1132,12 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
               ],
             ),
             const Divider(color: Colors.white24, height: 1),
-
-            // ── Tab content ──────────────────────────────────────
             Expanded(
               child: selectedTab == 0
                   ? _buildCoursesList()
                   : selectedTab == 2
-                  ? _buildSavedBooks()
-                  : _buildMyQuestions(),
+                      ? _buildSavedBooks()
+                      : _buildMyQuestions(),
             ),
           ],
         ),
@@ -1160,27 +1145,26 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
     );
   }
 
-  // ─── Small helpers ────────────────────────────────────────────────────────
   Widget _statColumn(String label, String value) => Column(
-    children: [
-      Text(
-        label,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 16,
-        ),
-      ),
-      Text(
-        value,
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.bold,
-          fontSize: 20,
-        ),
-      ),
-    ],
-  );
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 20,
+            ),
+          ),
+        ],
+      );
 
   Widget _tab(String label, int index) {
     final isSelected = selectedTab == index;
@@ -1192,7 +1176,9 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
           decoration: BoxDecoration(
             border: Border(
               bottom: BorderSide(
-                color: isSelected ? AppColors.accent : Colors.transparent,
+                color: isSelected
+                    ? AppColors.accent
+                    : Colors.transparent,
                 width: 2,
               ),
             ),
@@ -1201,7 +1187,8 @@ class _StudentProfileScreenState extends State<StudentProfileScreen> {
             child: Text(
               label,
               style: GoogleFonts.agbalumo(
-                color: isSelected ? AppColors.accent : Colors.white54,
+                color:
+                    isSelected ? AppColors.accent : Colors.white54,
                 fontSize: 16,
               ),
             ),

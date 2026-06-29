@@ -66,7 +66,7 @@ def add_course(
         raise HTTPException(status_code=404, detail="User not found")
     user_id = user_result.data[0]["id"]
 
-    result = db.table("courses").insert({
+    result = supabase_admin.table("courses").insert({
         "title": course.title,
         "instructor_name": course.instructor_name,
         "instructor_image": course.instructor_image,
@@ -93,7 +93,7 @@ def add_lesson(
     if not course_result.data:
         raise HTTPException(status_code=404, detail="Course not found")
 
-    result = db.table("lessons").insert({
+    result = supabase_admin.table("lessons").insert({
         "course_id": course_id,
         "title": lesson.title,
         "video_url": lesson.video_url,
@@ -115,6 +115,8 @@ async def create_course_with_videos(
     course_image: UploadFile = File(...),
     videos: List[UploadFile] = File(...),
     category: Optional[str] = Form(None),
+    instructor_name: Optional[str] = Form(None),
+    instructor_image: Optional[str] = Form(None),
     current_user: dict = Depends(require_role("engineer", "admin")),
 ):
     db = get_db()
@@ -148,10 +150,11 @@ async def create_course_with_videos(
             pass
     duration_hours = int(total_duration_seconds / 3600) if total_duration_seconds > 0 else 0
 
-    course_result = db.table("courses").insert({
+    # supabase_admin kullan — RLS bypass
+    course_result = supabase_admin.table("courses").insert({
         "title": title,
-        "instructor_name": user["username"],
-        "instructor_image": user.get("profile_image") or "",
+        "instructor_name": instructor_name or user["username"],
+        "instructor_image": instructor_image or user.get("profile_image") or "",
         "description": description,
         "category": category or "",
         "image_url": image_url,
@@ -176,7 +179,8 @@ async def create_course_with_videos(
             else 0
         )
 
-        db.table("lessons").insert({
+        # supabase_admin kullan — RLS bypass
+        supabase_admin.table("lessons").insert({
             "course_id": course_id,
             "title": video_titles[i],
             "video_url": video_url,
@@ -205,7 +209,7 @@ def start_course(
 
     existing = db.table("student_courses").select("id").eq("user_id", user_id).eq("course_id", course_id).execute()
     if not existing.data:
-        db.table("student_courses").insert({"user_id": user_id, "course_id": course_id}).execute()
+        supabase_admin.table("student_courses").insert({"user_id": user_id, "course_id": course_id}).execute()
     return {"message": "Course started"}
 
 
@@ -229,15 +233,17 @@ def delete_course(
     if course.get("instructor_name") != user["username"] and user["role"] != "admin":
         raise HTTPException(status_code=403, detail="Not allowed to delete this course")
 
-    db.table("student_courses").delete().eq("course_id", course_id).execute()
-    db.table("lessons").delete().eq("course_id", course_id).execute()
-    db.table("courses").delete().eq("id", course_id).execute()
+    supabase_admin.table("student_courses").delete().eq("course_id", course_id).execute()
+    supabase_admin.table("lessons").delete().eq("course_id", course_id).execute()
+    supabase_admin.table("courses").delete().eq("id", course_id).execute()
     return {"message": "Course deleted"}
+
 
 class CourseUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     category: Optional[str] = None
+
 
 @router.put("/{course_id}")
 def update_course(
@@ -260,5 +266,5 @@ def update_course(
         raise HTTPException(status_code=403, detail="Not allowed to update this course")
 
     update_data = {k: v for k, v in course.dict().items() if v is not None}
-    db.table("courses").update(update_data).eq("id", course_id).execute()
+    supabase_admin.table("courses").update(update_data).eq("id", course_id).execute()
     return {"message": "Course updated"}

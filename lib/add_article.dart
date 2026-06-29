@@ -59,58 +59,59 @@ class _AddArticleScreenState extends State<AddArticleScreen> {
     }
   }
 
-Future<void> _pickImage() async {
-  try {
-    final XFile? pickedFile = await _picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80,
+  Future<void> _pickImage() async {
+    try {
+      final XFile? pickedFile = await _picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 80,
+      );
+
+      if (pickedFile == null) return;
+
+      final imageFile = File(pickedFile.path);
+      final sizeInBytes = await imageFile.length();
+
+      if (!mounted) return;
+
+      if (sizeInBytes > 5 * 1024 * 1024) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Image too large. Maximum size is 5MB'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      setState(() => _selectedImage = imageFile);
+    } catch (e) {
+      debugPrint(e.toString());
+    }
+  }
+
+  Future<void> _pickPdf() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['pdf'],
     );
+    if (result == null || result.files.single.path == null) return;
 
-    if (pickedFile == null) return;
-
-    final imageFile = File(pickedFile.path);
-    final sizeInBytes = await imageFile.length();
-
-    if (!mounted) return;
-
-    if (sizeInBytes > 5 * 1024 * 1024) {
+    final file = File(result.files.single.path!);
+    final sizeInBytes = await file.length();
+    if (sizeInBytes > 10 * 1024 * 1024) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Image too large. Maximum size is 5MB'),
+          content: Text('File too large. Maximum size is 10MB'),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
-  } catch (e) {
-    debugPrint(e.toString());
-  }
-}
-
-  Future<void> _pickPdf() async {
-  final result = await FilePicker.platform.pickFiles(
-    type: FileType.custom,
-    allowedExtensions: ['pdf'],
-  );
-  if (result == null || result.files.single.path == null) return;
-
-
-  final file = File(result.files.single.path!);
-  final sizeInBytes = await file.length();
-  if (sizeInBytes > 10 * 1024 * 1024) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('File too large. Maximum size is 10MB'),
-        backgroundColor: Colors.red,
-      ),
-    );
-    return;
+    setState(() => _selectedPdf = file);
   }
 
-  setState(() => _selectedPdf = file);
-}
   Future<String?> _uploadImage() async {
     if (_selectedImage == null) return null;
     final username = await SessionManager.getUsername() ?? 'user';
@@ -173,9 +174,8 @@ Future<void> _pickImage() async {
             .eq('id', widget.article!['id']);
 
         if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Article updated!')));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(const SnackBar(content: Text('Article updated!')));
         Navigator.pop(context, true);
         return;
       }
@@ -201,9 +201,8 @@ Future<void> _pickImage() async {
       await addPoints(userData['id'], 5);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Article published!')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Article published!')));
       Navigator.pop(context, true);
     } catch (e) {
       debugPrint('Error submitting article: $e');
@@ -409,7 +408,8 @@ Future<void> _pickImage() async {
   Widget _label(String text) {
     return Text(
       text,
-      style: GoogleFonts.agbalumo(color: const Color(0xFF6C94C6), fontSize: 16),
+      style: GoogleFonts.agbalumo(
+          color: const Color(0xFF6C94C6), fontSize: 16),
     );
   }
 

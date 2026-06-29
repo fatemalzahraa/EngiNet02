@@ -171,19 +171,26 @@ class _BookDetailScreenState extends State<BookDetailScreen> {
   }
 
   // ─── Load book ───────────────────────────────────────────────────────────
+// book_detail_screen.dart içindeki loadBook() metodunu bununla değiştir
   Future<void> loadBook() async {
     try {
+      // FK join yok — önce book'u çek, sonra engineer'ı ayrı çek
       final res = await supabase
-    .from('books')
-    .select('*, users!books_author_username_fkey(username, profile_image)')
-    .eq('id', _bookId)
-    .single();
+          .from('books')
+          .select('*')
+          .eq('id', _bookId)
+          .single();
 
-      final engineer = await supabase
-          .from('users')
-          .select('username, profile_image')
-          .eq('username', res['author_username'] ?? '')
-          .maybeSingle();
+      final authorUsername = res['author_username']?.toString() ?? '';
+
+      Map<String, dynamic>? engineer;
+      if (authorUsername.isNotEmpty) {
+        engineer = await supabase
+            .from('users')
+            .select('username, profile_image')
+            .eq('username', authorUsername)
+            .maybeSingle();
+      }
 
       res['engineer'] = engineer;
 

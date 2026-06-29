@@ -7,6 +7,9 @@ import 'package:shimmer/shimmer.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/post_comments_screen.dart';
 import 'package:enginet/core/app_colors.dart';
+import 'package:enginet/book_detail.dart';
+import 'package:enginet/article_detail.dart';
+import 'package:enginet/course_details.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -31,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int? currentUserId;
   Set<int> followedEngineerIds = {};
   String? _selectedSpecialty;
+  Map<String, String> _engineerSpecialtyByUsername = {};
 
   final List<String> _specialties = [
     'All',
@@ -67,7 +71,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _loadCurrentUser() async {
     final email = await SessionManager.getEmail();
-    debugPrint("=== email from SessionManager: $email ===");
     if (email == null || email.isEmpty) return;
 
     final userRes = await _supabase
@@ -86,6 +89,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final postIds = rawPosts.map((p) => p['id']).toList();
 
+    // ── Comments count ──
     final comments = await _supabase
         .from('comments')
         .select('post_id')
@@ -97,6 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
       commentsCount[pid] = (commentsCount[pid] ?? 0) + 1;
     }
 
+    // ── Likes & saves ──
     Set<dynamic> likedIds = {};
     Set<dynamic> savedIds = {};
 
@@ -117,13 +122,89 @@ class _HomeScreenState extends State<HomeScreen> {
       savedIds = saves.map((s) => s['post_id']).toSet();
     }
 
+    // ── Linked courses ──
+    final courseIds = rawPosts
+        .where((p) => p['linked_course_id'] != null)
+        .map((p) => int.tryParse(p['linked_course_id'].toString()))
+        .whereType<int>()
+        .toSet()
+        .toList();
+
+    final Map<int, Map<String, dynamic>> courseMap = {};
+    if (courseIds.isNotEmpty) {
+      final courses = await _supabase
+          .from('courses')
+          .select('id, title, image_url')
+          .inFilter('id', courseIds);
+      for (final c in courses) {
+        courseMap[int.tryParse(c['id'].toString()) ?? 0] =
+            Map<String, dynamic>.from(c);
+      }
+    }
+
+    // ── Linked books ──
+    final bookIds = rawPosts
+        .where((p) => p['linked_book_id'] != null)
+        .map((p) => int.tryParse(p['linked_book_id'].toString()))
+        .whereType<int>()
+        .toSet()
+        .toList();
+
+    final Map<int, Map<String, dynamic>> bookMap = {};
+    if (bookIds.isNotEmpty) {
+      final books = await _supabase
+          .from('books')
+          .select('id, title, image_url')
+          .inFilter('id', bookIds);
+      for (final b in books) {
+        bookMap[int.tryParse(b['id'].toString()) ?? 0] =
+            Map<String, dynamic>.from(b);
+      }
+    }
+
+    // ── Linked articles ──
+    final articleIds = rawPosts
+        .where((p) => p['linked_article_id'] != null)
+        .map((p) => int.tryParse(p['linked_article_id'].toString()))
+        .whereType<int>()
+        .toSet()
+        .toList();
+
+    final Map<int, Map<String, dynamic>> articleMap = {};
+    if (articleIds.isNotEmpty) {
+      final articles = await _supabase
+          .from('articles')
+          .select('id, title, image_url')
+          .inFilter('id', articleIds);
+      for (final a in articles) {
+        articleMap[int.tryParse(a['id'].toString()) ?? 0] =
+            Map<String, dynamic>.from(a);
+      }
+    }
+
     return rawPosts.map((post) {
       final pid = post['id'];
+      final courseId = post['linked_course_id'] != null
+          ? int.tryParse(post['linked_course_id'].toString())
+          : null;
+      final bookId = post['linked_book_id'] != null
+          ? int.tryParse(post['linked_book_id'].toString())
+          : null;
+      final articleId = post['linked_article_id'] != null
+          ? int.tryParse(post['linked_article_id'].toString())
+          : null;
+
       return {
         ...post,
         'comments_count': commentsCount[pid] ?? 0,
         'is_liked': likedIds.contains(pid),
         'is_saved': savedIds.contains(pid),
+        if (courseId != null && courseMap.containsKey(courseId))
+          'linked_course': courseMap[courseId],
+        if (bookId != null && bookMap.containsKey(bookId))
+          'linked_book': bookMap[bookId],
+        if (articleId != null && articleMap.containsKey(articleId))
+          'linked_article': articleMap[articleId],
       };
     }).toList();
   }
@@ -208,8 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           final engSpecialty =
               (profile['specialty'] ?? '').toString().toLowerCase();
-          final engSkills =
-              (profile['skills'] ?? '').toString().toLowerCase();
+          final engSkills = (profile['skills'] ?? '').toString().toLowerCase();
 
           final isMatch =
               studentInterests.any((interest) =>
@@ -244,18 +324,44 @@ class _HomeScreenState extends State<HomeScreen> {
         for (var p in specialtyProfiles)
           p['user_id'] as int: p['specialty']?.toString() ?? ''
       };
-      final engineersData = allFinal.map((e) => {
-        ...e,
-        'specialty': specialtyMap[e['id'] as int] ?? '',
-      }).toList();
+      final engineersData = allFinal
+          .map((e) => {
+                ...e,
+                'specialty': specialtyMap[e['id'] as int] ?? '',
+              })
+          .toList();
+
+      final allEngineerIds = allEngineers.map((e) => e['id'] as int).toList();
+      final allSpecialtyProfiles = allEngineerIds.isNotEmpty
+          ? await _supabase
+                .from('engineer_profiles')
+                .select('user_id, specialty')
+                .inFilter('user_id', allEngineerIds)
+          : [];
+      final allSpecialtyMap = {
+        for (var p in allSpecialtyProfiles)
+          p['user_id'] as int: p['specialty']?.toString() ?? ''
+      };
+      final engineerSpecialtyByUsername = <String, String>{};
+      for (final eng in allEngineers) {
+        final username = eng['username']?.toString() ?? '';
+        final userId = eng['id'] as int;
+        engineerSpecialtyByUsername[username] = allSpecialtyMap[userId] ?? '';
+      }
 
       List<dynamic> postsData = [];
 
       if (followedEngineerIds.isNotEmpty) {
+        final followedUsernames = allEngineers
+            .where((e) => followedEngineerIds.contains(e['id'] as int))
+            .map((e) => e['username'].toString())
+            .toList();
+
         final res = await _supabase
             .from('posts')
             .select('*')
-            .inFilter('user_id', followedEngineerIds.toList())
+            .or(
+                'user_id.in.(${followedEngineerIds.join(',')}),username.in.(${followedUsernames.map((u) => '"$u"').join(',')})')
             .order('created_at', ascending: false)
             .limit(_limit);
         postsData = res as List<dynamic>;
@@ -267,6 +373,7 @@ class _HomeScreenState extends State<HomeScreen> {
       setState(() {
         engineers = engineersData;
         posts = enrichedPosts;
+        _engineerSpecialtyByUsername = engineerSpecialtyByUsername;
         _hasMore = postsData.length == _limit;
         isLoading = false;
       });
@@ -275,9 +382,6 @@ class _HomeScreenState extends State<HomeScreen> {
       if (!mounted) return;
       setState(() => isLoading = false);
     }
-
-    debugPrint("=== currentUserId: $currentUserId ===");
-    debugPrint("=== followedEngineerIds: $followedEngineerIds ===");
   }
 
   Future<void> toggleFollowEngineer(int engineerId) async {
@@ -556,6 +660,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: ListView(
                 controller: _scrollController,
                 padding: const EdgeInsets.all(16),
+                physics: const AlwaysScrollableScrollPhysics(),
                 children: [
                   // ── Filtre satırı ──
                   SizedBox(
@@ -570,8 +675,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 spec == _selectedSpecialty;
                         return GestureDetector(
                           onTap: () => setState(() {
-                            _selectedSpecialty =
-                                spec == 'All' ? null : spec;
+                            _selectedSpecialty = spec == 'All' ? null : spec;
                           }),
                           child: Container(
                             margin: const EdgeInsets.only(right: 8),
@@ -591,9 +695,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             child: Text(
                               spec,
                               style: TextStyle(
-                                color: isSelected
-                                    ? Colors.black
-                                    : Colors.white70,
+                                color:
+                                    isSelected ? Colors.black : Colors.white70,
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -619,14 +722,12 @@ class _HomeScreenState extends State<HomeScreen> {
                               .where((e) => (e['specialty'] ?? '')
                                   .toString()
                                   .toLowerCase()
-                                  .contains(
-                                      _selectedSpecialty!.toLowerCase()))
+                                  .contains(_selectedSpecialty!.toLowerCase()))
                               .toList();
                       return filtered.isEmpty
                           ? const Center(
                               child: Text('No engineers found',
-                                  style:
-                                      TextStyle(color: Colors.white54)))
+                                  style: TextStyle(color: Colors.white54)))
                           : ListView.builder(
                               scrollDirection: Axis.horizontal,
                               itemCount: filtered.length,
@@ -647,15 +748,20 @@ class _HomeScreenState extends State<HomeScreen> {
                     final filteredPosts = _selectedSpecialty == null
                         ? posts
                         : posts.where((p) {
-                            final username =
-                                p['username']?.toString() ?? '';
-                            return engineers.any((e) =>
-                                e['username'] == username &&
-                                (e['specialty'] ?? '')
-                                    .toString()
+                            final username = p['username']?.toString() ?? '';
+                            final spec =
+                                (_engineerSpecialtyByUsername[username] ?? '')
                                     .toLowerCase()
-                                    .contains(
-                                        _selectedSpecialty!.toLowerCase()));
+                                    .trim();
+                            final selected =
+                                _selectedSpecialty!.toLowerCase().trim();
+                            return spec.isNotEmpty &&
+                                (spec.contains(selected
+                                        .split(' ')
+                                        .first
+                                        .toLowerCase()) ||
+                                    selected.contains(
+                                        spec.split(' ').first.toLowerCase()));
                           }).toList();
 
                     if (filteredPosts.isEmpty) {
@@ -683,8 +789,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     }
 
                     return Column(
-                      children: List.generate(
-                          filteredPosts.length,
+                      children: List.generate(filteredPosts.length,
                           (i) => _buildPostCard(i, filteredPosts[i])),
                     );
                   }),
@@ -864,8 +969,8 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? const Color(0xFF4CAF50)
                         : const Color.fromARGB(255, 88, 16, 15),
                     shape: BoxShape.circle,
-                    border: Border.all(
-                        color: const Color(0xFFD8C09A), width: 2),
+                    border:
+                        Border.all(color: const Color(0xFFD8C09A), width: 2),
                   ),
                   child: Icon(isFollowing ? Icons.check : Icons.add,
                       size: 16, color: Colors.white),
@@ -878,6 +983,218 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  Widget _buildLinkedItemCard(dynamic post) {
+    final linkedCourse = post['linked_course'] ?? post['courses'];
+    final linkedCourseId = post['linked_course_id'];
+    final linkedBookId = post['linked_book_id'];
+    final linkedArticleId = post['linked_article_id'];
+    final linkedBook = post['linked_book'];
+    final linkedArticle = post['linked_article'];
+
+    dynamic item;
+    String type = '';
+    String itemId = '';
+
+    if (linkedCourse != null) {
+      item = linkedCourse;
+      type = 'course';
+      itemId = (linkedCourseId ?? linkedCourse['id'])?.toString() ?? '';
+    } else if (linkedCourseId != null) {
+      type = 'course';
+      itemId = linkedCourseId.toString();
+    } else if (linkedBook != null) {
+      item = linkedBook;
+      type = 'book';
+      itemId = (linkedBookId ?? linkedBook['id'])?.toString() ?? '';
+    } else if (linkedBookId != null) {
+      type = 'book';
+      itemId = linkedBookId.toString();
+    } else if (linkedArticle != null) {
+      item = linkedArticle;
+      type = 'article';
+      itemId = (linkedArticleId ?? linkedArticle['id'])?.toString() ?? '';
+    } else if (linkedArticleId != null) {
+      type = 'article';
+      itemId = linkedArticleId.toString();
+    } else {
+      return const SizedBox.shrink();
+    }
+
+    IconData fallbackIcon;
+    Color iconColor;
+    String typeLabel;
+    String table;
+    switch (type) {
+      case 'book':
+        fallbackIcon = Icons.menu_book;
+        iconColor = Colors.brown;
+        typeLabel = 'Book';
+        table = 'books';
+        break;
+      case 'article':
+        fallbackIcon = Icons.article;
+        iconColor = const Color(0xFF5B7FA6);
+        typeLabel = 'Article';
+        table = 'articles';
+        break;
+      default:
+        fallbackIcon = Icons.play_circle;
+        iconColor = Colors.grey;
+        typeLabel = 'Course';
+        table = 'courses';
+    }
+
+    // item varsa direkt kullan, yoksa Supabase'den çek
+    final Future<Map<String, dynamic>?> itemFuture = item != null
+        ? Future.value(Map<String, dynamic>.from(item as Map))
+        : (itemId.isNotEmpty
+            ? _supabase
+                .from(table)
+                .select('id, title, image_url')
+                .eq('id', int.parse(itemId))
+                .maybeSingle()
+                .then((v) =>
+                    v != null ? Map<String, dynamic>.from(v) : null)
+            : Future.value(null));
+
+    return FutureBuilder<Map<String, dynamic>?>(
+      future: itemFuture,
+      builder: (context, snapshot) {
+        final data = snapshot.data;
+        final title = data?['title']?.toString() ?? '';
+        final imageUrl = data?['image_url']?.toString() ?? '';
+        final isWaiting =
+            snapshot.connectionState == ConnectionState.waiting;
+
+        return GestureDetector(
+          onTap: () {
+            if (itemId.isEmpty) return;
+            if (type == 'course') {
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          CourseDetailScreen(courseId: itemId)));
+            } else if (type == 'book') {
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          BookDetailScreen(bookId: itemId)));
+            } else if (type == 'article') {
+              Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          ArticleDetailScreen(articleId: itemId)));
+            }
+          },
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF5ECD7),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.black12),
+            ),
+            padding: const EdgeInsets.all(10),
+            child: Row(
+              children: [
+                // Image / icon
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: isWaiting
+                      ? Shimmer.fromColors(
+                          baseColor: const Color(0xFF1A2F55),
+                          highlightColor: const Color(0xFF2A4A7F),
+                          child: Container(
+                              width: 52,
+                              height: 52,
+                              color: Colors.white),
+                        )
+                      : imageUrl.isNotEmpty
+                          ? CachedNetworkImage(
+                              imageUrl: imageUrl,
+                              width: 52,
+                              height: 52,
+                              fit: BoxFit.cover,
+                              errorWidget: (c, u, e) => Container(
+                                width: 52,
+                                height: 52,
+                                color: Colors.black38,
+                                child: Icon(fallbackIcon,
+                                    size: 32, color: iconColor),
+                              ),
+                              placeholder: (c, u) => Shimmer.fromColors(
+                                baseColor: const Color(0xFF1A2F55),
+                                highlightColor: const Color(0xFF2A4A7F),
+                                child: Container(
+                                    width: 52,
+                                    height: 52,
+                                    color: Colors.white),
+                              ),
+                            )
+                          : Container(
+                              width: 52,
+                              height: 52,
+                              color: Colors.black38,
+                              child: Icon(fallbackIcon,
+                                  size: 32, color: iconColor),
+                            ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: iconColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          typeLabel,
+                          style: TextStyle(
+                              fontSize: 10,
+                              color: iconColor,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      isWaiting
+                          ? Shimmer.fromColors(
+                              baseColor: const Color(0xFF1A2F55),
+                              highlightColor: const Color(0xFF2A4A7F),
+                              child: Container(
+                                  width: 120,
+                                  height: 12,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(4),
+                                  )),
+                            )
+                          : Text(
+                              title.isNotEmpty ? title : typeLabel,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 13,
+                                  color: Colors.black87),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.chevron_right,
+                    color: Colors.black38, size: 20),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildPostCard(int index, dynamic post) {
     final content = post['content']?.toString() ?? '';
     final username = post['username']?.toString() ?? '';
@@ -885,7 +1202,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final likes = post['likes'] ?? 0;
     final comments = post['comments_count'] ?? post['comments'] ?? 0;
     final postImageUrl = post['image_url']?.toString() ?? '';
-    final linkedCourse = post['linked_course'] ?? post['courses'];
+
+    final hasLinkedItem = post['linked_course'] != null ||
+        post['linked_course_id'] != null ||
+        post['linked_book'] != null ||
+        post['linked_book_id'] != null ||
+        post['linked_article'] != null ||
+        post['linked_article_id'] != null ||
+        post['courses'] != null;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -939,54 +1263,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   imageUrl: postImageUrl, fit: BoxFit.contain),
             ),
           ],
-          if (linkedCourse != null) ...[
+          if (hasLinkedItem) ...[
             const SizedBox(height: 10),
-            Container(
-              decoration: BoxDecoration(
-                color: const Color(0xFFF5ECD7),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              padding: const EdgeInsets.all(10),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: linkedCourse['image_url'] != null &&
-                            linkedCourse['image_url'].toString().isNotEmpty
-                        ? CachedNetworkImage(
-                            imageUrl: linkedCourse['image_url'].toString(),
-                            width: 52,
-                            height: 52,
-                            fit: BoxFit.cover,
-                            errorWidget: (c, u, e) => const Icon(
-                                Icons.play_circle,
-                                size: 40,
-                                color: Colors.grey),
-                            placeholder: (c, u) => Shimmer.fromColors(
-                              baseColor: const Color(0xFF1A2F55),
-                              highlightColor: const Color(0xFF2A4A7F),
-                              child: Container(
-                                  width: 52, height: 52, color: Colors.white),
-                            ),
-                          )
-                        : const Icon(Icons.play_circle,
-                            size: 40, color: Colors.grey),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      linkedCourse['title']?.toString() ?? '',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: Colors.black87),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            _buildLinkedItemCard(post),
           ],
           const SizedBox(height: 12),
           Row(
@@ -1074,7 +1353,8 @@ class _HomeScreenState extends State<HomeScreen> {
               )
             : Container(
                 color: const Color(0xFF4A6FA5),
-                child: const Icon(Icons.person, color: Colors.white, size: 22),
+                child:
+                    const Icon(Icons.person, color: Colors.white, size: 22),
               ),
       ),
     );

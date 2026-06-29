@@ -7,7 +7,6 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:enginet/core/session_manager.dart';
 import 'package:enginet/core/app_colors.dart';
-import 'package:path/path.dart' as path;
 
 class AddPostScreen extends StatefulWidget {
   const AddPostScreen({super.key});
@@ -21,26 +20,27 @@ class _AddPostScreenState extends State<AddPostScreen> {
   final _contentController = TextEditingController();
   final ImagePicker _picker = ImagePicker();
 
+  // Linked item state
   List<dynamic> _courses = [];
+  List<dynamic> _books = [];
+  List<dynamic> _articles = [];
+
   int? _selectedCourseId;
-  String _selectedCategory = 'bilgi';
+  int? _selectedBookId;
+  int? _selectedArticleId;
+
   bool _isLoading = false;
-  bool _loadingCourses = true;
+  bool _loadingItems = true;
 
   File? _selectedImage;
 
-  final List<String> _categories = [
-    'bilgi',
-    'soru',
-    'ipucu',
-    'egitim',
-    'duyuru',
-  ];
+  // Which type is selected
+  String _linkedType = 'none'; // 'none' | 'course' | 'book' | 'article'
 
   @override
   void initState() {
     super.initState();
-    _loadCourses();
+    _loadItems();
   }
 
   @override
@@ -49,22 +49,34 @@ class _AddPostScreenState extends State<AddPostScreen> {
     super.dispose();
   }
 
-  Future<void> _loadCourses() async {
+  Future<void> _loadItems() async {
     try {
       final courses = await _supabase
           .from('courses')
           .select('id, title')
           .order('title', ascending: true);
 
+      final books = await _supabase
+          .from('books')
+          .select('id, title')
+          .order('title', ascending: true);
+
+      final articles = await _supabase
+          .from('articles')
+          .select('id, title')
+          .order('title', ascending: true);
+
       if (!mounted) return;
       setState(() {
         _courses = courses;
-        _loadingCourses = false;
+        _books = books;
+        _articles = articles;
+        _loadingItems = false;
       });
     } catch (e) {
-      debugPrint('Error loading courses: $e');
+      debugPrint('Error loading items: $e');
       if (!mounted) return;
-      setState(() => _loadingCourses = false);
+      setState(() => _loadingItems = false);
     }
   }
 
@@ -74,23 +86,17 @@ class _AddPostScreenState extends State<AddPostScreen> {
         source: ImageSource.gallery,
         imageQuality: 80,
       );
-
       if (pickedFile == null) return;
-
-      setState(() {
-        _selectedImage = File(pickedFile.path);
-      });
+      setState(() => _selectedImage = File(pickedFile.path));
     } catch (e) {
       debugPrint('Error picking image: $e');
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Failed to pick image')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Failed to pick image')));
     }
   }
 
   Future<String?> _uploadImage() async {
     if (_selectedImage == null) return null;
-
     try {
       final username = await SessionManager.getUsername() ?? 'user';
       final fileExt = path.extension(_selectedImage!.path);
@@ -98,17 +104,13 @@ class _AddPostScreenState extends State<AddPostScreen> {
           '${DateTime.now().millisecondsSinceEpoch}_$username$fileExt';
       final filePath = 'post-images/$fileName';
 
-      await _supabase.storage
-          .from('posts')
-          .upload(
+      await _supabase.storage.from('posts').upload(
             filePath,
             _selectedImage!,
             fileOptions: const FileOptions(upsert: true),
           );
 
-      final imageUrl = _supabase.storage.from('posts').getPublicUrl(filePath);
-
-      return imageUrl;
+      return _supabase.storage.from('posts').getPublicUrl(filePath);
     } catch (e) {
       debugPrint('Error uploading image: $e');
       rethrow;
@@ -117,9 +119,8 @@ class _AddPostScreenState extends State<AddPostScreen> {
 
   Future<void> _submitPost() async {
     if (_contentController.text.trim().isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Please write something')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Please write something')));
       return;
     }
 
@@ -136,8 +137,12 @@ class _AddPostScreenState extends State<AddPostScreen> {
             'username': username,
             'content': _contentController.text.trim(),
             'image_url': imageUrl,
-            'linked_course_id': _selectedCourseId,
-            'category': _selectedCategory,
+            'linked_course_id':
+                _linkedType == 'course' ? _selectedCourseId : null,
+            'linked_book_id':
+                _linkedType == 'book' ? _selectedBookId : null,
+            'linked_article_id':
+                _linkedType == 'article' ? _selectedArticleId : null,
             'likes': 0,
           })
           .select('id')
@@ -158,31 +163,27 @@ class _AddPostScreenState extends State<AddPostScreen> {
             .eq('following_id', currentUser['id']);
         if (followers.isNotEmpty) {
           final notifications = (followers as List)
-              .map(
-                (f) => {
-                  'user_id': f['follower_id'],
-                  'message': '${currentUser['username']} shared a new post.',
-                  'is_read': 0,
-                  'post_id': postId,
-                },
-              )
+              .map((f) => {
+                    'user_id': f['follower_id'],
+                    'message':
+                        '${currentUser['username']} shared a new post.',
+                    'is_read': 0,
+                    'post_id': postId,
+                  })
               .toList();
-
           await _supabase.from('notifications').insert(notifications);
         }
       }
 
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Post published!')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Post published!')));
       Navigator.pop(context, true);
     } catch (e) {
       debugPrint('Error posting: $e');
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Failed to publish post')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Failed to publish post')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -202,7 +203,8 @@ class _AddPostScreenState extends State<AddPostScreen> {
               color: AppColors.accent,
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.arrow_back, color: Colors.black, size: 18),
+            child:
+                const Icon(Icons.arrow_back, color: Colors.black, size: 18),
           ),
         ),
         title: Text(
@@ -220,21 +222,17 @@ class _AddPostScreenState extends State<AddPostScreen> {
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
                 ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 8,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               ),
               child: _isLoading
                   ? const SizedBox(
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.black,
-                      ),
+                          strokeWidth: 2, color: Colors.black),
                     )
-                  : Text('Publish', style: GoogleFonts.agbalumo(fontSize: 14)),
+                  : Text('Publish',
+                      style: GoogleFonts.agbalumo(fontSize: 14)),
             ),
           ),
         ],
@@ -244,6 +242,7 @@ class _AddPostScreenState extends State<AddPostScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ── Content ──
             Container(
               decoration: BoxDecoration(
                 color: const Color(0xFFD8C09A),
@@ -253,7 +252,8 @@ class _AddPostScreenState extends State<AddPostScreen> {
               child: TextField(
                 controller: _contentController,
                 maxLines: 6,
-                style: const TextStyle(fontSize: 15, color: Colors.black87),
+                style:
+                    const TextStyle(fontSize: 15, color: Colors.black87),
                 decoration: const InputDecoration(
                   border: InputBorder.none,
                   hintText: 'What\'s on your mind?',
@@ -263,15 +263,13 @@ class _AddPostScreenState extends State<AddPostScreen> {
             ),
             const SizedBox(height: 16),
 
+            // ── Image ──
             Text(
               'Image (optional)',
               style: GoogleFonts.agbalumo(
-                color: const Color(0xFF6C94C6),
-                fontSize: 16,
-              ),
+                  color: const Color(0xFF6C94C6), fontSize: 16),
             ),
             const SizedBox(height: 8),
-
             GestureDetector(
               onTap: _pickImage,
               child: Container(
@@ -284,141 +282,164 @@ class _AddPostScreenState extends State<AddPostScreen> {
                 child: _selectedImage != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(12),
-                        child: Image.file(
-                          _selectedImage!,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                        ),
+                        child: Image.file(_selectedImage!,
+                            fit: BoxFit.cover,
+                            width: double.infinity),
                       )
                     : const Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(
-                            Icons.add_a_photo,
-                            size: 40,
-                            color: Colors.black54,
-                          ),
+                          Icon(Icons.add_a_photo,
+                              size: 40, color: Colors.black54),
                           SizedBox(height: 8),
-                          Text(
-                            'Tap to choose image',
-                            style: TextStyle(color: Colors.black54),
-                          ),
+                          Text('Tap to choose image',
+                              style: TextStyle(color: Colors.black54)),
                         ],
                       ),
               ),
             ),
-
             if (_selectedImage != null) ...[
               const SizedBox(height: 8),
               TextButton(
-                onPressed: () {
-                  setState(() {
-                    _selectedImage = null;
-                  });
-                },
-                child: const Text(
-                  'Remove image',
-                  style: TextStyle(color: Colors.redAccent),
-                ),
+                onPressed: () => setState(() => _selectedImage = null),
+                child: const Text('Remove image',
+                    style: TextStyle(color: Colors.redAccent)),
               ),
             ],
 
             const SizedBox(height: 16),
 
+            // ── Link type selector ──
             Text(
-              'Category',
+              'Link a Course / Book / Article (optional)',
               style: GoogleFonts.agbalumo(
-                color: const Color(0xFF6C94C6),
-                fontSize: 16,
-              ),
+                  color: const Color(0xFF6C94C6), fontSize: 16),
             ),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              children: _categories.map((cat) {
-                final isSelected = _selectedCategory == cat;
-                return GestureDetector(
-                  onTap: () => setState(() => _selectedCategory = cat),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? AppColors.accent
-                          : const Color(0xFF1A2F55),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: AppColors.accent, width: 1),
-                    ),
-                    child: Text(
-                      cat,
-                      style: TextStyle(
-                        color: isSelected ? Colors.black : Colors.white,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                );
-              }).toList(),
+            Row(
+              children: [
+                _typeChip('None', 'none'),
+                const SizedBox(width: 8),
+                _typeChip('Course', 'course'),
+                const SizedBox(width: 8),
+                _typeChip('Book', 'book'),
+                const SizedBox(width: 8),
+                _typeChip('Article', 'article'),
+              ],
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
 
-            Text(
-              'Link a Course (optional)',
-              style: GoogleFonts.agbalumo(
-                color: const Color(0xFF6C94C6),
-                fontSize: 16,
+            // ── Dropdown based on type ──
+            if (_linkedType != 'none')
+              _loadingItems
+                  ? const Center(
+                      child: CircularProgressIndicator(
+                          color: Color(0xFF6C94C6)))
+                  : _buildDropdown(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _typeChip(String label, String value) {
+    final isSelected = _linkedType == value;
+    return GestureDetector(
+      onTap: () => setState(() {
+        _linkedType = value;
+        _selectedCourseId = null;
+        _selectedBookId = null;
+        _selectedArticleId = null;
+      }),
+      child: Container(
+        padding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.accent : const Color(0xFF1A2F55),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: isSelected ? AppColors.accent : Colors.white24,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.black : Colors.white70,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDropdown() {
+    List<dynamic> items;
+    int? selectedId;
+    void Function(int?) onChanged;
+    IconData icon;
+
+    switch (_linkedType) {
+      case 'course':
+        items = _courses;
+        selectedId = _selectedCourseId;
+        onChanged = (val) => setState(() => _selectedCourseId = val);
+        icon = Icons.play_circle;
+        break;
+      case 'book':
+        items = _books;
+        selectedId = _selectedBookId;
+        onChanged = (val) => setState(() => _selectedBookId = val);
+        icon = Icons.menu_book;
+        break;
+      case 'article':
+        items = _articles;
+        selectedId = _selectedArticleId;
+        onChanged = (val) => setState(() => _selectedArticleId = val);
+        icon = Icons.article;
+        break;
+      default:
+        return const SizedBox.shrink();
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFD8C09A),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<int?>(
+          value: selectedId,
+          isExpanded: true,
+          dropdownColor: const Color(0xFFD8C09A),
+          hint: Row(
+            children: [
+              Icon(icon, size: 18, color: Colors.black45),
+              const SizedBox(width: 8),
+              const Text('Select...',
+                  style: TextStyle(color: Colors.black45)),
+            ],
+          ),
+          items: [
+            const DropdownMenuItem<int?>(
+              value: null,
+              child:
+                  Text('None', style: TextStyle(color: Colors.black54)),
+            ),
+            ...items.map(
+              (item) => DropdownMenuItem<int?>(
+                value: item['id'] as int?,
+                child: Text(
+                  item['title']?.toString() ?? '',
+                  style: const TextStyle(
+                      color: Colors.black87, fontSize: 13),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            _loadingCourses
-                ? const Center(
-                    child: CircularProgressIndicator(color: Color(0xFF6C94C6)),
-                  )
-                : Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD8C09A),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: DropdownButtonHideUnderline(
-                      child: DropdownButton<int?>(
-                        value: _selectedCourseId,
-                        isExpanded: true,
-                        dropdownColor: const Color(0xFFD8C09A),
-                        hint: const Text(
-                          'Select a course',
-                          style: TextStyle(color: Colors.black45),
-                        ),
-                        items: [
-                          const DropdownMenuItem<int?>(
-                            value: null,
-                            child: Text(
-                              'None',
-                              style: TextStyle(color: Colors.black54),
-                            ),
-                          ),
-                          ..._courses.map(
-                            (course) => DropdownMenuItem<int?>(
-                              value: course['id'] as int?,
-                              child: Text(
-                                course['title']?.toString() ?? '',
-                                style: const TextStyle(
-                                  color: Colors.black87,
-                                  fontSize: 13,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ),
-                        ],
-                        onChanged: (val) =>
-                            setState(() => _selectedCourseId = val),
-                      ),
-                    ),
-                  ),
           ],
+          onChanged: onChanged,
         ),
       ),
     );

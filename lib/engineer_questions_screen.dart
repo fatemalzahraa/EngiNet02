@@ -45,6 +45,7 @@ class _EngineerQuestionsScreenState extends State<EngineerQuestionsScreen> {
     'Fırat Üniversitesi',
     'Galatasaray Üniversitesi',
     'Gaziantep Üniversitesi',
+    'Gaziantep islam bilim ve teknolojiÜniversitesi',
     'Gebze Teknik Üniversitesi',
     'Hacettepe Üniversitesi',
     'Harran Üniversitesi',
