@@ -186,39 +186,7 @@ Future<void> loadComments() async {
     }
   }
 
-  // ─── Load article ─────────────────────────────────────────────────────────
-  Future<void> loadArticle() async {
-    try {
-      final res = await supabase
-          .from('articles')
-          .select()
-          .eq('id', _articleId)
-          .single();
 
-      if (!mounted) return;
-      setState(() => article = res);
-    } catch (e) {
-      debugPrint('❌ loadArticle error: $e');
-    }
-  }
-
-  // ─── Comments ─────────────────────────────────────────────────────────────
-  Future<void> loadComments() async {
-    try {
-      final res = await supabase
-          .from('comments')
-          .select()
-          .eq('article_id', _articleId)
-          .order('created_at', ascending: true);
-
-      if (!mounted) return;
-      setState(() {
-        comments = List<Map<String, dynamic>>.from(res as List);
-      });
-    } catch (e) {
-      debugPrint('❌ loadComments error: $e');
-    }
-  }
 
   Future<void> addComment() async {
     if (_currentUser == null) {

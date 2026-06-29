@@ -58,6 +58,20 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
     _loadAll();
   }
 
+void _resumeCourse() {
+  if (lessons.isEmpty) return;
+  
+  int targetIndex = 0;
+  for (int i = 0; i < lessons.length; i++) {
+    final lessonId = lessons[i]['id'] as int? ?? 0;
+    if (_progress[lessonId] != true) {
+      targetIndex = i;
+      break;
+    }
+    targetIndex = lessons.length - 1;
+  }
+  _openLesson(targetIndex);
+}
   // ── Completion reward ────────────────────────────────────────────────────
   Future<void> _giveCompletionReward() async {
     if (_currentUser == null || course == null) return;
@@ -124,16 +138,20 @@ class _CourseDetailScreenState extends State<CourseDetailScreen> {
   }
 
   // ── Load all ─────────────────────────────────────────────────────────────
-  Future<void> _loadAll() async {
-    _currentUser = await _fetchCurrentUser();
-    await Future.wait([
-      loadCourse(),
-      _loadProgress(),
-      _loadComments(),
-      _checkLike(),
-      _loadMyRating(),
-    ]);
-  }
+Future<void> _loadAll() async {
+  _currentUser = await _fetchCurrentUser();
+  
+  // Önce course ve progress'i sırayla yükle
+  await loadCourse();
+  await _loadProgress();
+  
+  // Geri kalanlar paralel çalışabilir
+  await Future.wait([
+    _loadComments(),
+    _checkLike(),
+    _loadMyRating(),
+  ]);
+}
 
   // _deleteCourse() metodunun üstüne ekle:
 Future<void> _showEditDialog() async {
@@ -508,120 +526,103 @@ Future<void> loadCourse() async {
         course = Map<String, dynamic>.from(data);
         lessons = List<dynamic>.from(data['lessons'] ?? []);
         commentsCount = data['comments_count'] ?? 0;
-        // likes zaten course['likes'] içinde geliyor
-        _calculateVideosDuration(List<dynamic>.from(data['lessons'] ?? []));
-        isLoading = false;
+        // isLoading burada false YAPMA
       });
     }
   } catch (e) {
     debugPrint('❌ Error loading course: $e');
-    if (!mounted) return;
-    setState(() => isLoading = false);
   }
 }
-  Future<void> _calculateVideosDuration(List<dynamic> courseLessons) async {
-    if (_isCalculatingDuration) return;
-    _isCalculatingDuration = true;
 
-    int totalSeconds = 0;
-    for (final lesson in courseLessons) {
-      final videoUrl = lesson['video_url']?.toString() ?? '';
-      if (videoUrl.isEmpty) continue;
-      try {
-        final controller = VideoPlayerController.networkUrl(
-          Uri.parse(videoUrl),
-        );
-        await controller.initialize();
-        totalSeconds += controller.value.duration.inSeconds;
-        await controller.dispose();
-      } catch (e) {
-        debugPrint('❌ Duration error: $e');
-      }
+Future<void> _loadProgress() async {
+  try {
+    final token = await SessionManager.getToken();
+    if (token == null || token.isEmpty) {
+      if (mounted) setState(() => isLoading = false); // <-- buraya
+      return;
     }
 
-    if (!mounted) return;
-    setState(() {
-      _totalDurationSeconds = totalSeconds;
-      _isCalculatingDuration = false;
-    });
-  }
+    final res = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/profile/lesson-progress/${widget.courseId}'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
 
-  Future<void> _loadProgress() async {
-    try {
-      final token = await SessionManager.getToken();
-      if (token == null || token.isEmpty) return;
+    if (res.statusCode == 200) {
+      final Map<String, dynamic> data = jsonDecode(res.body);
+      if (!mounted) return;
+      setState(() {
+        _progress = {};
+        _watchedSeconds = {};
 
-      final res = await http.get(
-        Uri.parse(
-          '${AppConstants.baseUrl}/profile/lesson-progress/${widget.courseId}',
-        ),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-
-      if (res.statusCode == 200) {
-        final Map<String, dynamic> data = jsonDecode(res.body);
-        if (!mounted) return;
-        setState(() {
-          _progress = {};
-          _watchedSeconds = {};
-
-          data.forEach((k, v) {
-            final lessonId = int.parse(k);
-
-            if (v is Map) {
-              _progress[lessonId] =
-                  v['completed'] == true || v['completed'] == 1;
-              _watchedSeconds[lessonId] =
-                  int.tryParse(v['watched_seconds'].toString()) ?? 0;
-            } else {
-              _progress[lessonId] = v == true || v == 1 || v.toString() == '1';
-              _watchedSeconds[lessonId] = 0;
-            }
-          });
-
-          _courseStarted = _progress.isNotEmpty || _watchedSeconds.isNotEmpty;
+        data.forEach((k, v) {
+          final lessonId = int.parse(k);
+          if (v is Map) {
+            _progress[lessonId] = v['completed'] == true || v['completed'] == 1;
+            _watchedSeconds[lessonId] = int.tryParse(v['watched_seconds'].toString()) ?? 0;
+          } else {
+            _progress[lessonId] = v == true || v == 1 || v.toString() == '1';
+            _watchedSeconds[lessonId] = 0;
+          }
         });
-      }
-    } catch (e) {
-      debugPrint('❌ Error loading progress: $e');
+
+        _courseStarted = _progress.values.any((v) => v) ||
+            _watchedSeconds.values.any((s) => s > 0);
+        
+        isLoading = false; // <-- buraya taşındı
+      });
     }
+  } catch (e) {
+    debugPrint('❌ Error loading progress: $e');
+    if (mounted) setState(() => isLoading = false); // <-- catch'e de ekle
   }
+}
 
   // ── Start course ──────────────────────────────────────────────────────────
-  Future<void> _startCourse() async {
-    try {
-      final token = await SessionManager.getToken();
+ Future<void> _startCourse() async {
+  try {
+    final token = await SessionManager.getToken();
 
-      if (token == null || token.isEmpty) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Please login first')));
-        return;
-      }
-
-      final res = await http.post(
-        Uri.parse('${AppConstants.baseUrl}/courses/${widget.courseId}/start'),
-        headers: {'Authorization': 'Bearer $token'},
-      );
-
-      if (res.statusCode != 200) {
-        if (!mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Start failed: ${res.body}')));
-        return;
-      }
-
-      setState(() => _courseStarted = true);
-      if (lessons.isNotEmpty) _openLesson(0);
-    } catch (e) {
-      debugPrint('❌ Error starting course: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Error starting course: $e')));
+    if (token == null || token.isEmpty) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Please login first')));
+      return;
     }
+
+    final res = await http.post(
+      Uri.parse('${AppConstants.baseUrl}/courses/${widget.courseId}/start'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (res.statusCode != 200) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Start failed: ${res.body}')));
+      return;
+    }
+
+    setState(() => _courseStarted = true);
+
+    if (lessons.isNotEmpty) {
+      // İlk tamamlanmamış dersi bul
+      int targetIndex = 0;
+      for (int i = 0; i < lessons.length; i++) {
+        final lessonId = lessons[i]['id'] as int? ?? 0;
+        if (_progress[lessonId] != true) {
+          targetIndex = i;
+          break;
+        }
+        // Hepsi tamamlandıysa son dersi aç
+        targetIndex = lessons.length - 1;
+      }
+      _openLesson(targetIndex);
+    }
+  } catch (e) {
+    debugPrint('❌ Error starting course: $e');
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text('Error starting course: $e')));
   }
+}
 
   // ── Progress helpers ──────────────────────────────────────────────────────
   int get _completedCount => _progress.values.where((v) => v).length;
@@ -831,7 +832,7 @@ if (_currentUser != null &&
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         GestureDetector(
-                          onTap: _courseStarted ? null : _startCourse,
+                          onTap: _courseStarted ? _resumeCourse : _startCourse,
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 16,

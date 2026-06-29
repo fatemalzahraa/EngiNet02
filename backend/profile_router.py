@@ -174,21 +174,19 @@ def save_lesson_progress(
 
     user_id = user_res.data["id"]
 
-    # Check existing progress
-    existing = db.table("lesson_progress").select("*").eq("user_id", user_id).eq("lesson_id", lesson_id).single().execute()
+    existing = supabase.table("lesson_progress").select("*").eq("user_id", user_id).eq("lesson_id", lesson_id).execute()
 
     if existing.data:
-        # Update: keep max watched_seconds, keep completed if already true
-        new_completed = is_completed or existing.data.get("is_completed", False)
-        new_seconds = max(watched_seconds, existing.data.get("watched_seconds") or 0)
+        current = existing.data[0]
+        new_completed = is_completed or current.get("is_completed", False)
+        new_seconds = max(watched_seconds, current.get("watched_seconds") or 0)
 
-        db.table("lesson_progress").update({
+        supabase.table("lesson_progress").update({
             "is_completed": new_completed,
             "watched_seconds": new_seconds,
         }).eq("user_id", user_id).eq("lesson_id", lesson_id).execute()
     else:
-        # Insert new record
-        db.table("lesson_progress").insert({
+        supabase.table("lesson_progress").insert({
             "user_id": user_id,
             "lesson_id": lesson_id,
             "is_completed": is_completed,
@@ -198,6 +196,36 @@ def save_lesson_progress(
     return {"message": "Progress saved"}
 
 
+@router.get("/lesson-progress/{course_id}")
+def get_lesson_progress(
+    course_id: int,
+    current_user: dict = Depends(require_role("student", "engineer", "admin")),
+):
+    db = get_db()
+
+    user_res = db.table("users").select("id").eq("email", current_user["email"]).single().execute()
+    if not user_res.data:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user_id = user_res.data["id"]
+
+    lessons_res = supabase.table("lessons").select("id").eq("course_id", course_id).execute()
+    lesson_ids = [row["id"] for row in (lessons_res.data or [])]
+
+    if not lesson_ids:
+        return {}
+
+    progress_res = supabase.table("lesson_progress").select(
+        "lesson_id, is_completed, watched_seconds"
+    ).eq("user_id", user_id).in_("lesson_id", lesson_ids).execute()
+
+    return {
+        str(row["lesson_id"]): {
+            "completed": bool(row["is_completed"]),
+            "watched_seconds": row["watched_seconds"] or 0,
+        }
+        for row in (progress_res.data or [])
+    }
 # ── Get lesson progress for a course ─────────────────────
 @router.get("/lesson-progress/{course_id}")
 def get_lesson_progress(
