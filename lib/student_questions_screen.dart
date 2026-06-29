@@ -13,12 +13,15 @@ class StudentQuestionsScreen extends StatefulWidget {
 
 class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
   final _universityController = TextEditingController();
-  final _specialtyController = TextEditingController();
 
+  String? _selectedSpecialty;
   String _studyYear = '1st';
   String _level = 'Beginner';
   String _preferredLanguage = 'English';
   bool _isLoading = false;
+
+  bool _showUniversitySuggestions = false;
+  List<String> _filteredUniversities = [];
 
   final Set<String> _selectedInterests = {'Flutter', 'Web Dev'};
 
@@ -36,58 +39,149 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
     'Mechanical Eng',
   ];
 
+  final List<String> _specialties = [
+    'Computer Engineering',
+    'Software Engineering',
+    'Electrical Engineering',
+    'Electronics Engineering',
+    'Mechanical Engineering',
+    'Civil Engineering',
+    'Chemical Engineering',
+    'Biomedical Engineering',
+    'Environmental Engineering',
+    'Industrial Engineering',
+    'Aerospace Engineering',
+    'Materials Engineering',
+    'Mining Engineering',
+    'Petroleum Engineering',
+    'Food Engineering',
+    'Textile Engineering',
+    'Architecture',
+    'Other',
+  ];
+
+  final List<String> _turkishUniversities = [
+    'Ankara Üniversitesi',
+    'Atatürk Üniversitesi',
+    'Balıkesir Üniversitesi',
+    'Bilkent Üniversitesi',
+    'Boğaziçi Üniversitesi',
+    'Bursa Teknik Üniversitesi',
+    'Bursa Uludağ Üniversitesi',
+    'Çukurova Üniversitesi',
+    'Dokuz Eylül Üniversitesi',
+    'Ege Üniversitesi',
+    'Erciyes Üniversitesi',
+    'Eskişehir Osmangazi Üniversitesi',
+    'Eskişehir Teknik Üniversitesi',
+    'Fırat Üniversitesi',
+    'Galatasaray Üniversitesi',
+    'Gaziantep Üniversitesi',
+    'Gaziantep İslam Bilim ve Teknoloji Üniversitesi',
+    'Gebze Teknik Üniversitesi',
+    'Hacettepe Üniversitesi',
+    'Harran Üniversitesi',
+    'İhsan Doğramacı Bilkent Üniversitesi',
+    'İnönü Üniversitesi',
+    'İstanbul Teknik Üniversitesi',
+    'İstanbul Üniversitesi',
+    'İstanbul Üniversitesi-Cerrahpaşa',
+    'İzmir Ekonomi Üniversitesi',
+    'İzmir Katip Çelebi Üniversitesi',
+    'İzmir Yüksek Teknoloji Enstitüsü',
+    'Karadeniz Teknik Üniversitesi',
+    'Kırıkkale Üniversitesi',
+    'Koç Üniversitesi',
+    'Malatya Turgut Özal Üniversitesi',
+    'Manisa Celal Bayar Üniversitesi',
+    'Marmara Üniversitesi',
+    'Mersin Üniversitesi',
+    'Muğla Sıtkı Koçman Üniversitesi',
+    'Necmettin Erbakan Üniversitesi',
+    'Ondokuz Mayıs Üniversitesi',
+    'Orta Doğu Teknik Üniversitesi',
+    'Pamukkale Üniversitesi',
+    'Sabancı Üniversitesi',
+    'Sakarya Üniversitesi',
+    'Selçuk Üniversitesi',
+    'Sivas Cumhuriyet Üniversitesi',
+    'Süleyman Demirel Üniversitesi',
+    'TOBB Ekonomi ve Teknoloji Üniversitesi',
+    'Trakya Üniversitesi',
+    'Türk-Alman Üniversitesi',
+    'Yıldız Teknik Üniversitesi',
+    'Yozgat Bozok Üniversitesi',
+    'Zonguldak Bülent Ecevit Üniversitesi',
+  ];
+
   @override
   void dispose() {
     _universityController.dispose();
-    _specialtyController.dispose();
     super.dispose();
   }
 
-  Future<void> _saveProfile() async {
-  final university = _universityController.text.trim();
-  final specialty = _specialtyController.text.trim();
-
-  if (university.isEmpty || specialty.isEmpty || _selectedInterests.isEmpty) {
-    _showSnackBar('Please fill all required fields', isError: true);
-    return;
+  void _onUniversityChanged(String value) {
+    if (value.isEmpty) {
+      setState(() {
+        _filteredUniversities = [];
+        _showUniversitySuggestions = false;
+      });
+      return;
+    }
+    final filtered = _turkishUniversities
+        .where((u) => u.toLowerCase().contains(value.toLowerCase()))
+        .toList();
+    setState(() {
+      _filteredUniversities = filtered;
+      _showUniversitySuggestions = filtered.isNotEmpty;
+    });
   }
 
-  setState(() => _isLoading = true);
+  Future<void> _saveProfile() async {
+    final university = _universityController.text.trim();
+    final specialty = _selectedSpecialty;
 
-  try {
-    final supabase = Supabase.instance.client;
-    final email = await SessionManager.getEmail();
-
-    final user = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', email ?? '')
-        .maybeSingle();
-
-    if (user == null) {
-      _showSnackBar('User not found', isError: true);
+    if (university.isEmpty || specialty == null || _selectedInterests.isEmpty) {
+      _showSnackBar('Please fill all required fields', isError: true);
       return;
     }
 
-    await supabase.from('student_profiles').upsert({
-      'user_id': user['id'],
-      'university': university,
-      'specialty': specialty,
-      'study_year': _studyYear,
-      'level': _level,
-      'interests': _selectedInterests.join(','),
-      'preferred_language': _preferredLanguage,
-    }, onConflict: 'user_id');
+    setState(() => _isLoading = true);
 
-    if (!mounted) return;
-    Navigator.pushReplacementNamed(context, '/home');
-  } catch (e) {
-    debugPrint('Student profile error: $e');
-    _showSnackBar('Error: $e', isError: true);
-  } finally {
-    if (mounted) setState(() => _isLoading = false);
+    try {
+      final supabase = Supabase.instance.client;
+      final email = await SessionManager.getEmail();
+
+      final user = await supabase
+          .from('users')
+          .select('id')
+          .eq('email', email ?? '')
+          .maybeSingle();
+
+      if (user == null) {
+        _showSnackBar('User not found', isError: true);
+        return;
+      }
+
+      await supabase.from('student_profiles').upsert({
+        'user_id': user['id'],
+        'university': university,
+        'specialty': specialty,
+        'study_year': _studyYear,
+        'level': _level,
+        'interests': _selectedInterests.join(','),
+        'preferred_language': _preferredLanguage,
+      }, onConflict: 'user_id');
+
+      if (!mounted) return;
+      Navigator.pushReplacementNamed(context, '/home');
+    } catch (e) {
+      debugPrint('Student profile error: $e');
+      _showSnackBar('Error: $e', isError: true);
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
-}
 
   void _showSnackBar(String message, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
@@ -113,49 +207,14 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
     );
   }
 
-  Widget _textField({
-    required TextEditingController controller,
-    required String hint,
-    required IconData icon,
-  }) {
+  Widget _fieldContainer({required Widget child}) {
     return Container(
-      height: 78,
       padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.07),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: Colors.white.withOpacity(0.12)),
+        color: AppColors.accent,
+        borderRadius: BorderRadius.circular(30),
       ),
-      child: Row(
-        children: [
-          Icon(icon, color: Colors.white38, size: 26),
-          const SizedBox(width: 16),
-          Expanded(
-            child: TextField(
-              controller: controller,
-              style: GoogleFonts.robotoCondensed(
-                color: Colors.black87,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-              ),
-              decoration: InputDecoration(
-                filled: true,
-                fillColor: Colors.white,
-                hintText: hint,
-                hintStyle: const TextStyle(color: Colors.black45),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 14,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(9),
-                  borderSide: BorderSide.none,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+      child: child,
     );
   }
 
@@ -227,7 +286,7 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
   Widget build(BuildContext context) {
     final canContinue =
         _universityController.text.trim().isNotEmpty &&
-        _specialtyController.text.trim().isNotEmpty &&
+        _selectedSpecialty != null &&
         _selectedInterests.isNotEmpty;
 
     return Scaffold(
@@ -262,16 +321,90 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
                   const SizedBox(height: 36),
 
                   _sectionTitle('Academic'),
-                  _textField(
-                    controller: _universityController,
-                    hint: 'GIBTÜ',
-                    icon: Icons.school_outlined,
+
+                  // ── University autocomplete ──
+                  _fieldContainer(
+                    child: TextField(
+                      controller: _universityController,
+                      onChanged: (val) {
+                        _onUniversityChanged(val);
+                        localSetState(() {});
+                        setState(() {});
+                      },
+                      decoration: const InputDecoration(
+                        icon: Icon(Icons.school, color: Colors.black54),
+                        hintText: 'University',
+                        hintStyle: TextStyle(color: Colors.black54),
+                        border: InputBorder.none,
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 16),
-                  _textField(
-                    controller: _specialtyController,
-                    hint: 'Software Engineering',
-                    icon: Icons.build_outlined,
+                  if (_showUniversitySuggestions)
+                    Container(
+                      margin: const EdgeInsets.only(top: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1A2F55),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      constraints: const BoxConstraints(maxHeight: 200),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _filteredUniversities.length,
+                        itemBuilder: (context, i) {
+                          return ListTile(
+                            dense: true,
+                            title: Text(
+                              _filteredUniversities[i],
+                              style: const TextStyle(
+                                  color: Colors.white, fontSize: 13),
+                            ),
+                            onTap: () {
+                              _universityController.text =
+                                  _filteredUniversities[i];
+                              setState(() {
+                                _showUniversitySuggestions = false;
+                                _filteredUniversities = [];
+                              });
+                              localSetState(() {});
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  const SizedBox(height: 14),
+
+                  // ── Specialty dropdown ──
+                  _fieldContainer(
+                    child: DropdownButtonHideUnderline(
+                      child: DropdownButton<String>(
+                        value: _selectedSpecialty,
+                        hint: const Row(
+                          children: [
+                            Icon(Icons.build_outlined, color: Colors.black54),
+                            SizedBox(width: 16),
+                            Text('Specialty / Field',
+                                style: TextStyle(color: Colors.black54)),
+                          ],
+                        ),
+                        isExpanded: true,
+                        dropdownColor: const Color(0xFF1A2F55),
+                        style: const TextStyle(
+                            color: Colors.black87, fontSize: 15),
+                        items: _specialties
+                            .map((s) => DropdownMenuItem(
+                                  value: s,
+                                  child: Text(s,
+                                      style: const TextStyle(
+                                          color: Colors.white)),
+                                ))
+                            .toList(),
+                        onChanged: (val) {
+                          setState(() => _selectedSpecialty = val);
+                          localSetState(() {});
+                        },
+                      ),
+                    ),
                   ),
 
                   const SizedBox(height: 32),
@@ -312,7 +445,8 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
                         text: lang,
                         selected: _preferredLanguage == lang,
                         withCheck: true,
-                        onTap: () => setState(() => _preferredLanguage = lang),
+                        onTap: () =>
+                            setState(() => _preferredLanguage = lang),
                       );
                     }).toList(),
                   ),
@@ -335,6 +469,7 @@ class _StudentQuestionsScreenState extends State<StudentQuestionsScreen> {
                               _selectedInterests.add(interest);
                             }
                           });
+                          localSetState(() {});
                         },
                       );
                     }).toList(),

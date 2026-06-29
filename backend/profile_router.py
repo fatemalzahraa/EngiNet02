@@ -40,7 +40,6 @@ async def update_profile_full(
 ):
     db = get_db()
 
-    # Get user by email
     user_res = db.table("users").select("id").eq("email", current_user["email"]).single().execute()
     if not user_res.data:
         raise HTTPException(status_code=404, detail="User not found")
@@ -48,7 +47,6 @@ async def update_profile_full(
     user_id = user_res.data["id"]
     profile_image_url = None
 
-    # Upload image if provided
     if image:
         file_ext = image.filename.split(".")[-1]
         file_path = f"profile-images/{user_id}_{username}.{file_ext}"
@@ -65,7 +63,6 @@ async def update_profile_full(
 
         profile_image_url = supabase.storage.from_("profiles").get_public_url(file_path)
 
-    # Build update payload
     update_data = {
         "username": username,
         "email": email,
@@ -139,26 +136,23 @@ def get_my_courses(current_user: dict = Depends(get_current_user)):
 
     user_id = user_res.data["id"]
 
-    # Get lesson IDs completed by user
     progress_res = db.table("lesson_progress").select("lesson_id").eq("user_id", user_id).execute()
     lesson_ids = [row["lesson_id"] for row in (progress_res.data or [])]
 
     if not lesson_ids:
         return []
 
-    # Get course IDs from those lessons
     lessons_res = db.table("lessons").select("course_id").in_("id", lesson_ids).execute()
     course_ids = list({row["course_id"] for row in (lessons_res.data or [])})
 
     if not course_ids:
         return []
 
-    # Get courses
     courses_res = db.table("courses").select("*").in_("id", course_ids).execute()
     return courses_res.data or []
 
 
-# ── Mark lesson as complete / incomplete ──────────────────
+# ── Save lesson progress ──────────────────────────────────
 @router.post("/lesson-progress")
 def save_lesson_progress(
     lesson_id: int,
@@ -178,7 +172,8 @@ def save_lesson_progress(
 
     if existing.data:
         current = existing.data[0]
-        new_completed = is_completed or current.get("is_completed", False)
+        prev_completed = current.get("is_completed", 0)
+        new_completed = 1 if (is_completed or prev_completed == 1) else 0
         new_seconds = max(watched_seconds, current.get("watched_seconds") or 0)
 
         supabase.table("lesson_progress").update({
@@ -189,13 +184,14 @@ def save_lesson_progress(
         supabase.table("lesson_progress").insert({
             "user_id": user_id,
             "lesson_id": lesson_id,
-            "is_completed": is_completed,
+            "is_completed": 1 if is_completed else 0,
             "watched_seconds": watched_seconds,
         }).execute()
 
     return {"message": "Progress saved"}
 
 
+# ── Get lesson progress for a course ─────────────────────
 @router.get("/lesson-progress/{course_id}")
 def get_lesson_progress(
     course_id: int,
@@ -221,40 +217,7 @@ def get_lesson_progress(
 
     return {
         str(row["lesson_id"]): {
-            "completed": bool(row["is_completed"]),
-            "watched_seconds": row["watched_seconds"] or 0,
-        }
-        for row in (progress_res.data or [])
-    }
-# ── Get lesson progress for a course ─────────────────────
-@router.get("/lesson-progress/{course_id}")
-def get_lesson_progress(
-    course_id: int,
-    current_user: dict = Depends(require_role("student", "engineer", "admin")),
-):
-    db = get_db()
-
-    user_res = db.table("users").select("id").eq("email", current_user["email"]).single().execute()
-    if not user_res.data:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    user_id = user_res.data["id"]
-
-    # Get lessons for this course
-    lessons_res = db.table("lessons").select("id").eq("course_id", course_id).execute()
-    lesson_ids = [row["id"] for row in (lessons_res.data or [])]
-
-    if not lesson_ids:
-        return {}
-
-    # Get progress for these lessons
-    progress_res = db.table("lesson_progress").select(
-        "lesson_id, is_completed, watched_seconds"
-    ).eq("user_id", user_id).in_("lesson_id", lesson_ids).execute()
-
-    return {
-        str(row["lesson_id"]): {
-            "completed": bool(row["is_completed"]),
+            "completed": row["is_completed"] == 1,
             "watched_seconds": row["watched_seconds"] or 0,
         }
         for row in (progress_res.data or [])

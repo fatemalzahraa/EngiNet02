@@ -209,13 +209,13 @@ class _StudentProfileScreenState extends State<StudentProfileScreen>
 
         final courseId = course['id'];
 
-        final lessonsRes = await _supabase
-            .from('lessons')
-            .select('id')
-            .eq('course_id', courseId);
+      final lessonsRes = await _supabase
+    .from('lessons')
+    .select('id')
+    .eq('course_id', courseId);
 
-        final lessonIds =
-            (lessonsRes as List).map((e) => e['id']).toList();
+final lessonIds = (lessonsRes as List).map((e) => e['id']).toList();
+print('lessonIds types: ${lessonIds.map((e) => '${e.runtimeType}:$e').toList()}');
 
         int completedCount = 0;
         if (lessonIds.isNotEmpty) {
