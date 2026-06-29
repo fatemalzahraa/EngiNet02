@@ -10,6 +10,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
+import 'package:enginet/core/constants.dart';
 
 class BookScreen extends StatefulWidget {
   const BookScreen({super.key});
@@ -85,79 +86,99 @@ class _BookScreenState extends State<BookScreen> {
     if (confirm == true) _deleteBook(id);
   }
 
-  Future<void> _deleteBook(String id) async {
-    try {
-      await supabase.from('books').delete().eq('id', id);
-      if (!mounted) return;
+Future<void> _deleteBook(String id) async {
+  try {
+    final token = await SessionManager.getToken();
+    if (token == null) return;
+
+    final res = await http.delete(
+      Uri.parse('${AppConstants.baseUrl}/books/$id'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (!mounted) return;
+    if (res.statusCode == 200) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Book deleted successfully')),
       );
       loadBooks();
-    } catch (e) {
-      debugPrint("Delete error: $e");
     }
+  } catch (e) {
+    debugPrint("Delete error: $e");
   }
+}
 
-  void _editBook(dynamic book) {
-    final titleController = TextEditingController(text: book['title'] ?? '');
-    final descController = TextEditingController(text: book['description'] ?? '');
+void _editBook(dynamic book) {
+  final titleController = TextEditingController(text: book['title'] ?? '');
+  final descController = TextEditingController(text: book['description'] ?? '');
 
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Edit Book'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: titleController),
-            const SizedBox(height: 10),
-            TextField(controller: descController, maxLines: 3),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              await supabase
-                  .from('books')
-                  .update({
-                    'title': titleController.text.trim(),
-                    'description': descController.text.trim(),
-                  })
-                  .eq('id', book['id']);
-              Navigator.pop(context);
-              loadBooks();
-            },
-            child: const Text('Save'),
-          ),
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Edit Book'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(controller: titleController),
+          const SizedBox(height: 10),
+          TextField(controller: descController, maxLines: 3),
         ],
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () async {
+            final token = await SessionManager.getToken();
+            if (token == null) return;
+
+            await http.put(
+              Uri.parse('${AppConstants.baseUrl}/books/${book['id']}'),
+              headers: {
+                'Authorization': 'Bearer $token',
+                'Content-Type': 'application/json',
+              },
+              body: jsonEncode({
+                'title': titleController.text.trim(),
+                'description': descController.text.trim(),
+              }),
+            );
+            Navigator.pop(context);
+            loadBooks();
+          },
+          child: const Text('Save'),
+        ),
+      ],
+    ),
+  );
+}
+Future<void> loadBooks() async {
+  try {
+    final token = await SessionManager.getToken();
+    final headers = token != null ? {'Authorization': 'Bearer $token'} : <String, String>{};
+    
+    final res = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/books/'),
+      headers: headers,
     );
-  }
 
-  Future<void> loadBooks() async {
-    try {
-      final response = await supabase
-          .from('books')
-          .select()
-          .order('created_at', ascending: false);
-
-      final data = List<Map<String, dynamic>>.from(response);
+    if (res.statusCode == 200) {
+      final data = List<Map<String, dynamic>>.from(jsonDecode(res.body));
       if (!mounted) return;
       setState(() {
         allBooks = data;
         filteredBooks = data;
         isLoading = false;
       });
-    } catch (e) {
-      debugPrint("Error loading books: $e");
-      if (!mounted) return;
-      setState(() => isLoading = false);
     }
+  } catch (e) {
+    debugPrint("Error loading books: $e");
+    if (!mounted) return;
+    setState(() => isLoading = false);
   }
+}
 
   /// Kişiselleştirilmiş öneriler — hybrid engine (/recommendations)
   /// Token yoksa veya hata olursa popularity fallback'e düşer.
@@ -218,26 +239,26 @@ final token = session?.accessToken;
   }
 
   /// Popularity fallback — direkt Supabase (token gerekmez)
-  Future<void> _loadPopularFallback() async {
-    try {
-      final response = await supabase
-          .from('books')
-          .select('id, title, image_url, likes, category')
-          .order('likes', ascending: false)
-          .limit(10);
+Future<void> _loadPopularFallback() async {
+  try {
+    final res = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/books/?limit=10'),
+    );
 
-      final result = List<Map<String, dynamic>>.from(response);
+    if (res.statusCode == 200) {
+      final data = List<Map<String, dynamic>>.from(jsonDecode(res.body));
       if (!mounted) return;
       setState(() {
-        recommendedBooks = result;
+        recommendedBooks = data.take(10).toList();
         isLoadingRecommended = false;
       });
-    } catch (e) {
-      debugPrint('Popular fallback error: $e');
-      if (!mounted) return;
-      setState(() => isLoadingRecommended = false);
     }
+  } catch (e) {
+    debugPrint('Popular fallback error: $e');
+    if (!mounted) return;
+    setState(() => isLoadingRecommended = false);
   }
+}
 
   Future<void> saveSearch(String query) async {
     if (query.trim().length < 2) return;

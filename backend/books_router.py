@@ -3,8 +3,14 @@ from database import get_db
 from pydantic import BaseModel
 from typing import Optional
 from dependencies import get_current_user, require_role, add_points_supabase
+from supabase import create_client
+import os
 
 router = APIRouter(prefix="/books", tags=["Books"])
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 
 class BookCreate(BaseModel):
@@ -41,12 +47,39 @@ def get_all_books(search: Optional[str] = None, category: Optional[str] = None):
 
 
 @router.get("/{book_id}")
-def get_book(book_id: int):
-    db = get_db()
-    result = db.table("books").select("*").eq("id", book_id).execute()
+def get_book(book_id: int, current_user: dict = Depends(get_current_user)):
+    result = supabase_admin.table("books").select("*").eq("id", book_id).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Book not found")
-    return result.data[0]
+    book = result.data[0]
+
+    comments = supabase_admin.table("comments").select("id").eq("book_id", book_id).execute()
+    book["comments_count"] = len(comments.data)
+
+    likes = supabase_admin.table("likes").select("id").eq("book_id", book_id).execute()
+    book["likes"] = len(likes.data)
+
+    user_result = supabase_admin.table("users").select("id").eq("email", current_user["email"]).execute()
+    if user_result.data:
+        user_id = user_result.data[0]["id"]
+        my_like = supabase_admin.table("likes").select("id").eq("user_id", user_id).eq("book_id", book_id).execute()
+        book["is_liked"] = len(my_like.data) > 0
+        my_bookmark = supabase_admin.table("bookmarks").select("id").eq("user_id", user_id).eq("book_id", book_id).execute()
+        book["is_bookmarked"] = len(my_bookmark.data) > 0
+        my_rating = supabase_admin.table("book_ratings").select("rating").eq("user_id", user_id).eq("book_id", book_id).execute()
+        book["my_rating"] = my_rating.data[0]["rating"] if my_rating.data else 0
+    else:
+        book["is_liked"] = False
+        book["is_bookmarked"] = False
+        book["my_rating"] = 0
+
+    return book
+
+
+@router.get("/{book_id}/comments")
+def get_book_comments(book_id: int):
+    result = supabase_admin.table("comments").select("*").eq("book_id", book_id).order("created_at").execute()
+    return result.data
 
 
 @router.post("/")

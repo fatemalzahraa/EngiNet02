@@ -49,8 +49,19 @@ def get_course(course_id: int):
     if not course_result.data:
         raise HTTPException(status_code=404, detail="Course not found")
     course = course_result.data[0]
+    
     lessons = supabase_admin.table("lessons").select("*").eq("course_id", course_id).order("order_index").execute().data
+    
+    # Comments count
+    comments = supabase_admin.table("course_comments").select("id").eq("course_id", course_id).execute().data
+    
+    # Likes count
+    likes = supabase_admin.table("course_likes").select("id").eq("course_id", course_id).execute().data
+    
     course["lessons"] = lessons
+    course["comments_count"] = len(comments)
+    course["likes"] = len(likes)
+    
     return course
 
 
@@ -267,3 +278,17 @@ def update_course(
     update_data = {k: v for k, v in course.dict().items() if v is not None}
     supabase_admin.table("courses").update(update_data).eq("id", course_id).execute()
     return {"message": "Course updated"}
+
+@router.get("/{course_id}/my-like")
+def check_my_like(
+    course_id: int,
+    current_user: dict = Depends(get_current_user),
+):
+    db = get_db()
+    user_result = db.table("users").select("id").eq("email", current_user["email"]).execute()
+    if not user_result.data:
+        return {"is_liked": False}
+    user_id = user_result.data[0]["id"]
+    
+    res = supabase_admin.table("course_likes").select("id").eq("user_id", user_id).eq("course_id", course_id).execute()
+    return {"is_liked": len(res.data) > 0}

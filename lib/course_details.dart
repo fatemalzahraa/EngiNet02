@@ -327,16 +327,24 @@ Future<void> _showEditDialog() async {
   }
 
   // ── Like ─────────────────────────────────────────────────────────────────
-  Future<void> _checkLike() async {
-    if (_currentUser == null) return;
-    final res = await supabase
-        .from('course_likes')
-        .select()
-        .eq('user_id', _currentUser!['id'])
-        .eq('course_id', int.parse(widget.courseId))
-        .maybeSingle();
-    if (mounted) setState(() => isLiked = res != null);
+Future<void> _checkLike() async {
+  final token = await SessionManager.getToken();
+  if (token == null) return;
+  
+  try {
+    final res = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/courses/${widget.courseId}/my-like'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body);
+      if (mounted) setState(() => isLiked = data['is_liked'] == true);
+    }
+  } catch (e) {
+    debugPrint('❌ checkLike error: $e');
   }
+}
 
   Future<void> _toggleLike() async {
     if (_currentUser == null || course == null || _isProcessingLike) return;
@@ -483,7 +491,7 @@ Future<void> _showEditDialog() async {
   }
 
   // ── Load course ───────────────────────────────────────────────────────────
- Future<void> loadCourse() async {
+Future<void> loadCourse() async {
   try {
     final token = await SessionManager.getToken();
     final res = await http.get(
@@ -499,6 +507,8 @@ Future<void> _showEditDialog() async {
       setState(() {
         course = Map<String, dynamic>.from(data);
         lessons = List<dynamic>.from(data['lessons'] ?? []);
+        commentsCount = data['comments_count'] ?? 0;
+        // likes zaten course['likes'] içinde geliyor
         _calculateVideosDuration(List<dynamic>.from(data['lessons'] ?? []));
         isLoading = false;
       });

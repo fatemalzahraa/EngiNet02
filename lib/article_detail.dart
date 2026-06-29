@@ -8,6 +8,9 @@ import 'package:enginet/core/session_manager.dart';
 import 'article_comments_screen.dart';
 import 'package:enginet/engineer_profile.dart';
 import 'package:enginet/core/app_colors.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:enginet/core/constants.dart';
 
 class ArticleDetailScreen extends StatefulWidget {
   final String articleId;
@@ -104,27 +107,69 @@ class _ArticleDetailScreenState extends State<ArticleDetailScreen> {
   }
 
   // ─── Init: fetch user once, then everything in parallel ──────────────────
-  Future<void> _initData() async {
-    if (_articleId == 0) {
-      if (mounted) setState(() => isLoading = false);
-      return;
-    }
-
-    try {
-      _currentUser = await _fetchCurrentUser();
-      await Future.wait([
-        loadArticle(),
-        loadComments(),
-        checkLike(),
-        checkSaved(),
-        loadMyRating(),
-      ]);
-    } catch (e) {
-      debugPrint('❌ _initData error: $e');
-    }
-
+Future<void> _initData() async {
+  if (_articleId == 0) {
     if (mounted) setState(() => isLoading = false);
+    return;
   }
+  try {
+    _currentUser = await _fetchCurrentUser();
+    await Future.wait([
+      loadArticle(),
+      loadComments(),
+    ]);
+  } catch (e) {
+    debugPrint('❌ _initData error: $e');
+  }
+  if (mounted) setState(() => isLoading = false);
+}
+
+Future<void> loadArticle() async {
+  try {
+    final token = await SessionManager.getToken();
+    if (token == null) return;
+
+    final res = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/articles/$_articleId'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (!mounted) return;
+      setState(() {
+        article = data;
+        isLiked = data['is_liked'] == true;
+        isSaved = data['is_saved'] == true;
+        myRating = data['my_rating'] ?? 0;
+      });
+    }
+  } catch (e) {
+    debugPrint('❌ loadArticle error: $e');
+  }
+}
+
+Future<void> loadComments() async {
+  try {
+    final token = await SessionManager.getToken();
+    if (token == null) return;
+
+    final res = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/articles/$_articleId/comments'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+
+    if (res.statusCode == 200) {
+      final data = jsonDecode(res.body) as List;
+      if (!mounted) return;
+      setState(() {
+        comments = List<Map<String, dynamic>>.from(data);
+      });
+    }
+  } catch (e) {
+    debugPrint('❌ loadComments error: $e');
+  }
+}
 
   Future<Map<String, dynamic>?> _fetchCurrentUser() async {
     try {
